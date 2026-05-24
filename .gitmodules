@@ -1,6 +1,6 @@
 [submodule "rtl/core/ibex_core"]
 	path = rtl/core/ibex_core
-	url = https://github.com/lowRISC/ibex.git
+	url = https://github.com/shridharb11/ibex.git
 [submodule "rtl/bus/pulp_axi"]
 	path = rtl/bus/pulp_axi
 	url = https://github.com/pulp-platform/axi.git
@@ -12,4 +12,4 @@
 	url = https://github.com/pulp-platform/axi_spi_master.git
 [submodule "rtl/crypto/ed25519"]
 	path = rtl/crypto/ed25519
-	url = https://github.com/VibhuKavBhat/ED25519-ASIC-Implementation.git
+	url = https://github.com/shridharb11/ED25519-ASIC-Implementation.git

@@ -1,6 +1,6 @@
 // Copyright 2025
 // SoC Address Decoder
-// Wraps obi_demux for data path (7 slaves) and fetch path (2 slaves: BootROM, ISRAM)
+// Wraps obi_demux for data path (7 slaves) and fetch path (2 slaves: BootROM, ISRAM) //update : 8 slaves for datapath
 // Uses ObiDefaultConfig: 32-bit addr/data, 1-bit ID, no integrity, no optional fields
 
 `include "E:\SENTINELSOC\Crocsoc\croc\rtl\obi\include\obi\typedef.svh"
@@ -15,6 +15,8 @@ module soc_addr_decode #(
   parameter logic [31:0] DSRAM_BASE    = 32'h0002_0000,
   parameter logic [31:0] DSRAM_MASK    = 32'hFFFF_F000, // 4KB
   parameter logic [31:0] CTRL_BASE     = 32'h0003_0000,
+  parameter logic [31:0] DBG_BASE      = 32'h1A11_0000,  //added debug memory map parameters 
+  parameter logic [31:0] DBG_MASK      = 32'hFFFF_0000,
   parameter logic [31:0] CTRL_MASK     = 32'hFFFF_F000, // 4KB
   parameter logic [31:0] BUF_BASE      = 32'h0004_0000,
   parameter logic [31:0] BUF_MASK      = 32'hFFFF_F000, // 4KB
@@ -22,6 +24,7 @@ module soc_addr_decode #(
   parameter logic [31:0] SHA_MASK      = 32'hFFFF_F000, // 4KB
   parameter logic [31:0] APB_BASE      = 32'h1000_0000,
   parameter logic [31:0] APB_MASK      = 32'hF000_0000, // 256MB
+  
   // Max outstanding transactions through the demux
   parameter int unsigned NumMaxTrans   = 2
 ) (
@@ -145,7 +148,16 @@ module soc_addr_decode #(
   output logic [ 3:0] apb_be_o,
   output logic [31:0] apb_wdata_o,
   input  logic [31:0] apb_rdata_i,
-  input  logic        apb_err_i
+  input  logic        apb_err_i,
+
+  // Debug Target Interface
+  output logic        dbg_req_o,
+  output logic [31:0] dbg_addr_o,
+  output logic        dbg_we_o,
+  output logic [ 3:0] dbg_be_o,
+  output logic [31:0] dbg_wdata_o,
+  input  logic        dbg_rvalid_i,
+  input  logic [31:0] dbg_rdata_i
 );
 
   // --------------------------------------------------------------------------
@@ -157,18 +169,19 @@ module soc_addr_decode #(
   `OBI_TYPEDEF_DEFAULT_ALL(soc_obi, SocObiCfg)
 
   // --------------------------------------------------------------------------
-  // Slave index encoding for data demux (7 slaves)
+  // Slave index encoding for data demux (8 slaves)
   // --------------------------------------------------------------------------
-  typedef enum logic [2:0] {
-    SEL_BOOTROM = 3'd0,
-    SEL_ISRAM   = 3'd1,
-    SEL_DSRAM   = 3'd2,
-    SEL_CTRL    = 3'd3,
-    SEL_BUF     = 3'd4,
-    SEL_SHA     = 3'd5,
-    SEL_APB     = 3'd6,
-    SEL_ERR     = 3'd7  // unmapped address → error responder
-  } data_sel_e;
+  typedef enum logic [3:0] {   // ← widen to 4 bits
+    SEL_BOOTROM = 4'd0,
+    SEL_ISRAM   = 4'd1,
+    SEL_DSRAM   = 4'd2,
+    SEL_CTRL    = 4'd3,
+    SEL_BUF     = 4'd4,
+    SEL_SHA     = 4'd5,
+    SEL_APB     = 4'd6,
+    SEL_DBG     = 4'd7,
+    SEL_ERR     = 4'd8
+} data_sel_e;
 
   // --------------------------------------------------------------------------
   // Slave index encoding for fetch demux (2 slaves)
@@ -232,6 +245,7 @@ module soc_addr_decode #(
     else if ((data_addr_i & CTRL_MASK)    == CTRL_BASE)    data_sel = SEL_CTRL;
     else if ((data_addr_i & BUF_MASK)     == BUF_BASE)     data_sel = SEL_BUF;
     else if ((data_addr_i & SHA_MASK)     == SHA_BASE)     data_sel = SEL_SHA;
+    else if ((data_addr_i & DBG_MASK)     == DBG_BASE)     data_sel = SEL_DBG; //added debug memory map address decode
     else if ((data_addr_i & APB_MASK)     == APB_BASE)     data_sel = SEL_APB;
     else                                                    data_sel = SEL_ERR;
   end
@@ -241,15 +255,17 @@ module soc_addr_decode #(
   // --------------------------------------------------------------------------
   fetch_sel_e fetch_sel;
 
-  always_comb begin
+  always_comb begin 
     if ((instr_addr_i & ISRAM_MASK) == ISRAM_BASE) fetch_sel = FSEL_ISRAM;
     else                                            fetch_sel = FSEL_BOOTROM;
   end
 
   // --------------------------------------------------------------------------
-  // Data demux — 8 manager ports (7 slaves + 1 error responder)
+  // Data demux — 8 manager ports (8 slaves + 1 error responder)
   // --------------------------------------------------------------------------
-  localparam int unsigned DataNumMgrPorts = 8;
+
+  localparam int unsigned DataNumMgrPorts = 9; // SEL_BOOTROM..SEL_ERR = indices 0..8
+
 
   soc_obi_req_t [DataNumMgrPorts-1:0] data_mgr_req;
   soc_obi_rsp_t [DataNumMgrPorts-1:0] data_mgr_rsp;
@@ -260,7 +276,7 @@ module soc_addr_decode #(
     .obi_rsp_t   ( soc_obi_rsp_t   ),
     .NumMgrPorts ( DataNumMgrPorts  ),
     .NumMaxTrans ( NumMaxTrans      ),
-    .select_t    ( logic [2:0]      )
+    .select_t    ( logic [3:0]      ) //widen select_t to 4 bits to accommodate 10 ports
   ) u_data_demux (
     .clk_i,
     .rst_ni,
@@ -472,6 +488,26 @@ module soc_addr_decode #(
     data_mgr_rsp[SEL_APB].r.rdata = apb_rdata_i;
     data_mgr_rsp[SEL_APB].r.err   = apb_err_i;
   end
+
+  // --------------------------------------------------------------------------
+  // Debug Module slave port — data demux only
+  // dm_top.slave_* is a simple 1-cycle request/response interface
+  // --------------------------------------------------------------------------
+  assign dbg_req_o   = data_mgr_req[SEL_DBG].req;
+  assign dbg_addr_o  = data_mgr_req[SEL_DBG].a.addr;
+  assign dbg_we_o    = data_mgr_req[SEL_DBG].a.we;
+  assign dbg_be_o    = data_mgr_req[SEL_DBG].a.be;
+  assign dbg_wdata_o = data_mgr_req[SEL_DBG].a.wdata;
+
+  // dm_top grants immediately (no backpressure on slave port)
+  always_comb begin
+    data_mgr_rsp[SEL_DBG]          = '0;
+    data_mgr_rsp[SEL_DBG].gnt      = data_mgr_req[SEL_DBG].req; // always grant
+    data_mgr_rsp[SEL_DBG].rvalid   = dbg_rvalid_i;
+    data_mgr_rsp[SEL_DBG].r.rdata  = dbg_rdata_i;
+    data_mgr_rsp[SEL_DBG].r.err    = 1'b0;
+  end
+
 
   // --------------------------------------------------------------------------
   // Error responder — unmapped address

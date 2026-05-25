@@ -85,8 +85,31 @@ module soc_top (
   logic        irq_nm;
 
   // Debug — stubbed until riscv_dbg is integrated
-  logic        debug_req;
+    // Debug target interface (addr_decode → dm_top)
+  logic        dbg_req;
+  logic [31:0] dbg_addr;
+  logic        dbg_we;
+  logic [ 3:0] dbg_be;
+  logic [31:0] dbg_wdata;
+  logic        dbg_rvalid;
+  logic [31:0] dbg_rdata;
+  // Debugger Signals 
+  logic        debug_req_raw;
+  logic        debug_req_gated;
+  logic        debug_disable;
+  logic        ndmreset; // Non-debug module reset (optional system reset)
 
+  // DMI (Debug Module Interface)
+  logic        dmi_req_valid, dmi_req_ready;
+  logic [40:0] dmi_req_data;
+  logic        dmi_resp_valid, dmi_resp_ready;
+  logic [33:0] dmi_resp_data;
+
+  // Security Gating: Tie to 0 for development. 
+  // Later, tie to SHA valid signal to block debug on boot.
+  assign debug_disable = 1'b0;
+  assign debug_req_gated = debug_req_raw & ~debug_disable;
+  
   // ---------------------------------------------------------------------------
   // Decoder ↔ slave flat signals
   // ---------------------------------------------------------------------------
@@ -198,7 +221,6 @@ module soc_top (
   assign instr_rdata_intg = 7'h0;
   assign data_rdata_intg  = 7'h0;
   assign irq_nm           = 1'b0;
-  assign debug_req        = 1'b0; // TODO: connect riscv_dbg
 
   // ---------------------------------------------------------------------------
   // Ibex RV32IMC instantiation
@@ -266,7 +288,7 @@ module soc_top (
     .scramble_req_o             (                   ),
 
     // Debug
-    .debug_req_i                ( debug_req         ),
+    .debug_req_i                (debug_req_gated),
     .crash_dump_o               (                   ),
     .double_fault_seen_o        (                   ),
 
@@ -390,7 +412,15 @@ module soc_top (
     .apb_be_o           ( apb_bridge_be      ),
     .apb_wdata_o        ( apb_bridge_wdata   ),
     .apb_rdata_i        ( apb_bridge_rdata   ),
-    .apb_err_i          ( apb_bridge_err     )
+    .apb_err_i          ( apb_bridge_err     ),
+
+    .dbg_req_o    ( dbg_req    ),
+    .dbg_addr_o   ( dbg_addr   ),
+    .dbg_we_o     ( dbg_we     ),
+    .dbg_be_o     ( dbg_be     ),
+    .dbg_wdata_o  ( dbg_wdata  ),
+    .dbg_rvalid_i ( dbg_rvalid ),
+    .dbg_rdata_i  ( dbg_rdata  )
   );
 
   // ---------------------------------------------------------------------------
@@ -608,6 +638,73 @@ sha_ed25519_obi_wrapper u_sha_ctrl (
   //   - Ibex debug_req_i
   //   - dm_* OBI/memory interface for debug module access
   // ---------------------------------------------------------------------------
-  assign jtag_tdo_o = 1'b0;
+  // ---------------------------------------------------------------------------
+  // JTAG DTM (Debug Transport Module)
+  // ---------------------------------------------------------------------------
+  dmi_jtag u_dmi_jtag (
+    .clk_i            (clk_i),
+    .rst_ni           (rst_ni),
+    .testmode_i       (1'b0),
+    
+    // JTAG pins
+    .tck_i            (jtag_tck_i),
+    .tms_i            (jtag_tms_i),
+    .trst_ni          (jtag_trst_ni),
+    .td_i             (jtag_tdi_i),
+    .td_o             (jtag_tdo_o),
+    .tdo_oe_o         (), // Leave disconnected if using simple inout/output
+    
+    // DMI Interface
+    .dmi_req_o        (dmi_req_data),
+    .dmi_req_valid_o  (dmi_req_valid),
+    .dmi_req_ready_i  (dmi_req_ready),
+    .dmi_resp_i       (dmi_resp_data),
+    .dmi_resp_valid_i (dmi_resp_valid),
+    .dmi_resp_ready_o (dmi_resp_ready)
+  );
+
+  // ---------------------------------------------------------------------------
+  // RISC-V Debug Module (DM)
+  // ---------------------------------------------------------------------------
+  dm_top #(
+    .NrHarts(1),
+    .BusWidth(32)
+  ) u_dm_top (
+    .clk_i            (clk_i),
+    .rst_ni           (rst_ni),
+    .testmode_i       (1'b0),
+    .ndmreset_o       (ndmreset),
+    .dmactive_o       (),
+    .debug_req_o      (debug_req_raw),
+    .unavailable_i    (1'b0),
+    
+    // DMI Interface
+    .dmi_req_i        (dmi_req_data),
+    .dmi_req_valid_i  (dmi_req_valid),
+    .dmi_req_ready_o  (dmi_req_ready),
+    .dmi_resp_o       (dmi_resp_data),
+    .dmi_resp_valid_o (dmi_resp_valid),
+    .dmi_resp_ready_i (dmi_resp_ready),
+    
+    // Target Memory Interface (Ibex reads from this when halted)
+    // TODO: Connect these to your soc_addr_decode for address 0x1A11_0000
+    .slave_req_i    ( dbg_req    ),
+    .slave_we_i     ( dbg_we     ),
+    .slave_addr_i   ( dbg_addr   ),
+    .slave_wdata_i  ( dbg_wdata  ),
+    .slave_be_i     ( dbg_be     ),
+    .slave_rvalid_o ( dbg_rvalid ),
+    .slave_rdata_o  ( dbg_rdata  ),
+    
+    // SBA Master Interface (TIED OFF for simple configuration!)
+    .master_req_o     (),
+    .master_add_o     (),
+    .master_we_o      (),
+    .master_wdata_o   (),
+    .master_be_o      (),
+    .master_gnt_i     (1'b0),
+    .master_r_valid_i (1'b0),
+    .master_r_rdata_i (32'h0)
+  );
 
 endmodule

@@ -16,3 +16,6 @@ sw/**/*.map
 
 .vscode/
 *.swp
+
+.bender/
+Bender.lock

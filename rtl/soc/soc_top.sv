@@ -9,6 +9,7 @@
 
 `include "obi/typedef.svh"
 `include "obi/assign.svh"
+`include "apb/typedef.svh"
 
 module soc_top (
   // Clock and reset — raw pins for now, PLL stub to be added
@@ -53,6 +54,39 @@ module soc_top (
   localparam int unsigned DSRAM_SIZE_WORDS   = 1024; // 4KB
 
   // ---------------------------------------------------------------------------
+  // OBI and APB type definitions for bridge
+  // ---------------------------------------------------------------------------
+  // OBI types — using default config (no optional fields)
+  `OBI_TYPEDEF_DEFAULT_ALL(obi_apb, obi_pkg::ObiDefaultConfig)
+
+  // APB types
+  typedef logic [31:0] apb_addr_t;
+  typedef logic [31:0] apb_data_t;
+  typedef logic [ 3:0] apb_strb_t;
+  `APB_TYPEDEF_ALL(apb, apb_addr_t, apb_data_t, apb_strb_t)
+
+  // Struct instances
+  obi_apb_req_t  apb_obi_req;
+  obi_apb_rsp_t  apb_obi_rsp;
+  apb_req_t      apb_req;
+  apb_resp_t     apb_rsp;
+
+  // PLIC register bus interface — simple valid/ready/addr/data/write
+typedef struct packed {
+  logic        valid;
+  logic        write;
+  logic [31:0] addr;
+  logic [31:0] wdata;
+  logic [ 3:0] wstrb;
+} plic_reg_req_t;
+
+typedef struct packed {
+  logic        ready;
+  logic        error;
+  logic [31:0] rdata;
+} plic_reg_rsp_t;
+
+  // ---------------------------------------------------------------------------
   // Ibex ↔ decoder flat signals
   // ---------------------------------------------------------------------------
 
@@ -83,6 +117,21 @@ module soc_top (
   logic        irq_timer;
   logic        irq_external;
   logic        irq_nm;
+
+  // PLIC OBI slave signals
+  logic        plic_req;
+  logic        plic_gnt;
+  logic        plic_rvalid;
+  logic [31:0] plic_addr;
+  logic        plic_we;
+  logic [ 3:0] plic_be;
+  logic [31:0] plic_wdata;
+  logic [31:0] plic_rdata;
+  logic        plic_err;
+
+  // PLIC register bus
+  plic_reg_req_t plic_reg_req;
+  plic_reg_rsp_t plic_reg_rsp;
 
   // Debug — stubbed until riscv_dbg is integrated
     // Debug target interface (addr_decode → dm_top)
@@ -545,28 +594,23 @@ module soc_top (
 
 sha_ed25519_obi_wrapper u_sha_ctrl (
 
-    .clk_i              ( clk_i                ),
-    .rst_ni             ( rst_ni               ),
+    .clk_i              (clk_i),
+    .rst_ni             (rst_ni),
     // OBI slave interface
-    .req_i              ( sha_req              ),
-    .we_i               ( sha_we               ),
-    .be_i               ( sha_be               ),
-    .addr_i             ( sha_addr             ),
-    .wdata_i            ( sha_wdata            ),
-    .gnt_o              ( sha_gnt              ),
-    .rvalid_o           ( sha_rvalid           ),
-    .rdata_o            ( sha_rdata            ),
-    .err_o              ( sha_err              ),
+    .req_i              (sha_req),
+    .we_i               (sha_we),
+    .be_i               (sha_be),
+    .addr_i             (sha_addr),
+    .wdata_i            (sha_wdata),
+    .gnt_o              (sha_gnt),
+    .rvalid_o           (sha_rvalid),
+    .rdata_o            (sha_rdata),
+    .err_o              (sha_err),
     // Crypto control/status
-    .start_verify_o     ( sha_start            ),
-    .verify_done_i      ( sha_verify_done      ),
-    .signature_valid_i  ( sha_signature_valid  )
-
+    .start_verify_o     (sha_start),
+    .verify_done_i      (sha_verify_done),
+    .signature_valid_i  (sha_signature_valid)
 );
-  // ---------------------------------------------------------------------------
-  // SHA + ED25519 CSR stub
-  // ---------------------------------------------------------------------------
-  // TODO: connect to actual SHA+ED25519 OBI CSR wrapper (your friend's module)
 
   // ---------------------------------------------------------------------------
   // OBI → APB bridge
@@ -574,12 +618,82 @@ sha_ed25519_obi_wrapper u_sha_ctrl (
   // TODO: instantiate obi_to_apb here with correct apb_req_t / apb_rsp_t types
   // and connect to APB peripheral mux below
   // Stubbed for now — returns error on all accesses
-  assign apb_bridge_gnt    = apb_bridge_req;
-  assign apb_bridge_rdata  = 32'hDEAD_BEEF;
-  assign apb_bridge_err    = 1'b1;
-  always_ff @(posedge clk_i or negedge rst_ni) begin
-    if (!rst_ni) apb_bridge_rvalid <= 1'b0;
-    else         apb_bridge_rvalid <= apb_bridge_req & apb_bridge_gnt;
+  // Pack flat apb_bridge_* signals into OBI request struct
+  assign apb_obi_req.req     = apb_bridge_req;
+  assign apb_obi_req.a.addr  = apb_bridge_addr;
+  assign apb_obi_req.a.we    = apb_bridge_we;
+  assign apb_obi_req.a.be    = apb_bridge_be;
+  assign apb_obi_req.a.wdata = apb_bridge_wdata;
+  assign apb_obi_req.a.aid   = '0;
+
+  // Unpack OBI response struct into flat signals
+  assign apb_bridge_gnt    = apb_obi_rsp.gnt;
+  assign apb_bridge_rvalid = apb_obi_rsp.rvalid;
+  assign apb_bridge_rdata  = apb_obi_rsp.r.rdata;
+  assign apb_bridge_err    = apb_obi_rsp.r.err;
+
+  // OBI to APB bridge — converts OBI requests to APB transactions
+  obi_to_apb #(
+    .ObiCfg            (obi_pkg::ObiDefaultConfig),
+    .obi_req_t         (obi_apb_req_t),
+    .obi_rsp_t         (obi_apb_rsp_t),
+    .apb_req_t         (apb_req_t),
+    .apb_rsp_t         (apb_resp_t),
+    .EnableSameCycleRsp(1'b0)
+  ) u_obi_to_apb (
+    .clk_i      (clk_i),
+    .rst_ni     (rst_ni),
+    .obi_req_i  (apb_obi_req),
+    .obi_rsp_o  (apb_obi_rsp),
+    .apb_req_o  (apb_req),
+    .apb_rsp_i  (apb_rsp)
+  );
+
+  // ---------------------------------------------------------------------------
+  // APB Address Decoder & Peripheral Response Mux
+  // ---------------------------------------------------------------------------
+  logic psel_uart, psel_timer, psel_spi, psel_qspi, psel_gpio;
+  logic [31:0] prdata_uart, prdata_timer, prdata_spi, prdata_qspi, prdata_gpio;
+  logic pready_uart, pready_timer, pready_spi, pready_qspi, pready_gpio;
+  logic pslverr_uart, pslverr_timer, pslverr_spi, pslverr_qspi, pslverr_gpio;
+
+  // APB peripheral select decoding
+  assign psel_uart  = apb_req.psel && (apb_req.paddr >= 32'h1050_3000 && apb_req.paddr < 32'h1050_4000);
+  assign psel_timer = apb_req.psel && (apb_req.paddr >= 32'h1050_1000 && apb_req.paddr < 32'h1050_2000);
+  assign psel_qspi  = apb_req.psel && (apb_req.paddr >= 32'h1050_0000 && apb_req.paddr < 32'h1050_1000);
+  assign psel_spi   = apb_req.psel && (apb_req.paddr >= 32'h1050_2000 && apb_req.paddr < 32'h1050_3000);
+  assign psel_gpio  = apb_req.psel && (apb_req.paddr >= 32'h1060_0000 && apb_req.paddr < 32'h1060_1000);
+
+  // APB response mux — combine responses from all peripherals
+  always_comb begin
+    apb_rsp.prdata  = 32'h0;
+    apb_rsp.pready  = 1'b1;
+    apb_rsp.pslverr = 1'b0;
+    if (psel_uart) begin
+      apb_rsp.prdata  = prdata_uart;
+      apb_rsp.pready  = pready_uart;
+      apb_rsp.pslverr = pslverr_uart;
+    end
+    if (psel_timer) begin
+      apb_rsp.prdata  = prdata_timer;
+      apb_rsp.pready  = pready_timer;
+      apb_rsp.pslverr = pslverr_timer;
+    end
+    if (psel_qspi) begin
+      apb_rsp.prdata  = prdata_qspi;
+      apb_rsp.pready  = pready_qspi;
+      apb_rsp.pslverr = pslverr_qspi;
+    end
+    if (psel_spi) begin
+      apb_rsp.prdata  = prdata_spi;
+      apb_rsp.pready  = pready_spi;
+      apb_rsp.pslverr = pslverr_spi;
+    end
+    if (psel_gpio) begin
+      apb_rsp.prdata  = prdata_gpio;
+      apb_rsp.pready  = pready_gpio;
+      apb_rsp.pslverr = pslverr_gpio;
+    end
   end
 
   // ---------------------------------------------------------------------------
@@ -589,8 +703,24 @@ sha_ed25519_obi_wrapper u_sha_ctrl (
 
   // UART
   // u_apb_uart : apb_uart #(...) (...)
-  assign uart_tx_o   = 1'b1; // idle
-  assign irq_uart    = 1'b0;
+// UART
+  apb_uart_sv #(
+    .APB_ADDR_WIDTH ( 12 )
+  ) u_apb_uart (
+    .CLK (clk_i),
+    .RSTN (rst_ni),
+    .PADDR (apb_req.paddr[11:0]),
+    .PWDATA (apb_req.pwdata),
+    .PWRITE (apb_req.pwrite),
+    .PSEL (psel_uart),
+    .PENABLE (apb_req.penable),
+    .PRDATA (prdata_uart),
+    .PREADY (pready_uart),
+    .PSLVERR (pslverr_uart),
+    .rx_i (uart_rx_i),
+    .tx_o (uart_tx_o),
+    .event_o (irq_uart)
+  );
 
   // SPI
   // u_apb_spi : apb_spi_master #(...) (...)
@@ -613,15 +743,39 @@ sha_ed25519_obi_wrapper u_sha_ctrl (
   // u_apb_timer : apb_timer #(...) (...)
   assign irq_timer_periph = 1'b0;
 
-  // ---------------------------------------------------------------------------
-  // PLIC stub
-  // TODO: instantiate rv_plic and connect all irq_* lines
-  // PLIC output → irq_external (Ibex external interrupt pin)
-  // ---------------------------------------------------------------------------
-  assign irq_external = irq_uart | irq_spi | irq_qspi |
-                        irq_gpio | irq_timer_periph   |
-                        irq_buf  | irq_sha;
-  // ^^^ Temporary OR — replace with proper PLIC priority arbitration
+  // OBI -> PLIC reg adapter
+  // OBI is req/gnt/rvalid, reg bus is valid/ready/rdata
+  // Grant immediately, rvalid one cycle later
+  assign plic_gnt            = plic_req;
+  assign plic_reg_req.valid  = plic_req;
+  assign plic_reg_req.write  = plic_we;
+  assign plic_reg_req.addr   = plic_addr;
+  assign plic_reg_req.wdata  = plic_wdata;
+  assign plic_reg_req.wstrb  = plic_be;
+
+  always_ff @(posedge clk_i or negedge rst_ni) begin
+    if (!rst_ni) plic_rvalid <= 1'b0;
+    else         plic_rvalid <= plic_req & plic_gnt;
+  end
+
+  assign plic_rdata = plic_reg_rsp.rdata;
+  assign plic_err   = plic_reg_rsp.error;
+
+  plic_top #(
+    .N_SOURCE (12),
+    .N_TARGET (1),
+    .MAX_PRIO (7),
+    .reg_req_t (plic_reg_req_t),
+    .reg_rsp_t (plic_reg_rsp_t)
+  ) u_plic (
+    .clk_i(clk_i),
+    .rst_ni(rst_ni),
+    .req_i(plic_reg_req),
+    .resp_o(plic_reg_rsp),
+    .le_i(12'h0), // all level-triggered
+    .irq_sources_i({5'h0, irq_sha, irq_buf, irq_timer_periph, irq_gpio, irq_qspi, irq_spi, irq_uart} ),
+    .eip_targets_o(irq_external)  // Ibex irq_external_i
+  );
 
   // ---------------------------------------------------------------------------
   // CLINT stub

@@ -1,0 +1,32 @@
+package:
+  name: sentinel_soc
+  authors:
+    - "Team No Risk V, NITK Surathkal"
+
+dependencies:
+  obi:
+    git: https://github.com/pulp-platform/obi.git
+    rev: main
+  apb:
+    git: https://github.com/pulp-platform/apb.git
+    rev: master
+  common_cells:
+    git: https://github.com/pulp-platform/common_cells.git
+    rev: master
+
+
+sources:
+  - rtl/soc_top.sv
+  - rtl/soc_addr_decode.sv
+  - rtl/soc_buffer.sv
+  - rtl/soc_ctrl_regs.sv
+  - rtl/soc_bootrom.sv
+  - rtl/soc_sram.sv
+  - rtl/sha_ed25519_subsystem.sv
+  - rtl/sha_ed25519_obi_wrapper.sv
+  - target: simulation
+    files:
+      - tb/tb_soc_top.sv
+
+export_include_dirs:
+  - rtl/include

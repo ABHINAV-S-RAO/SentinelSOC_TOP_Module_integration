@@ -8,6 +8,8 @@
 rtl/core/ibex_core/rtl/ibex_pkg.sv
 rtl/core/ibex_core/rtl/ibex_tracer_pkg.sv
 
+rtl/core/ibex_core/vendor/lowrisc_ip/ip/prim_generic/rtl/prim_clock_gating.sv
+
 # DIFT modules
 rtl/core/dift/ibex_dift_logic.sv
 rtl/core/dift/ibex_dift_mem.sv

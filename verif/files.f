@@ -1,5 +1,5 @@
-+incdir+rtl/core/ibex_core/vendor/lowrisc_ip/dv/sv/dv_utils/dv_fcov_macros.svh
-+incdir+rtl/core/ibex_core/vendor/lowrisc_ip/ip/prim/rtl/prim_assert.sv
++incdir+rtl/core/ibex_core/vendor/lowrisc_ip/dv/sv/dv_utils
++incdir+rtl/core/ibex_core/vendor/lowrisc_ip/ip/prim/rtl
 
 # Bender deps
 -f verif/bender_files.f

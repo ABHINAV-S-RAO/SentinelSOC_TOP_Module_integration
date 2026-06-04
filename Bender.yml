@@ -15,18 +15,3 @@ dependencies:
     rev: master
 
 
-sources:
-  - rtl/soc_top.sv
-  - rtl/soc_addr_decode.sv
-  - rtl/soc_buffer.sv
-  - rtl/soc_ctrl_regs.sv
-  - rtl/soc_bootrom.sv
-  - rtl/soc_sram.sv
-  - rtl/sha_ed25519_subsystem.sv
-  - rtl/sha_ed25519_obi_wrapper.sv
-  - target: simulation
-    files:
-      - tb/tb_soc_top.sv
-
-export_include_dirs:
-  - rtl/include

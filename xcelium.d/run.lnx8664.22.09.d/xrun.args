@@ -1,0 +1,19 @@
+//
+// File created by:  xrun
+// Do not modify this file
+//
+-define
+DIFT
+-f
+verif/files.f
+-top
+ibex_core_tb
+-access
++rwc
+-notimingchecks
+-timescale
+1ns/1ps
+-input
+probe.tcl
+-log
+verif/sim_wave_t25.log

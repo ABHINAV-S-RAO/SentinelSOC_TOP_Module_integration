@@ -1,0 +1,14 @@
+.bender/git/checkouts/common_cells-229df333cc9dff23/include/common_cells/registers.svh
+/home/ibexcore/project/SentinelSOC_TOP_Module_integration/.bender/git/checkouts/common_cells-229df333cc9dff23/include/common_cells/registers.svh
+.bender/git/checkouts/common_cells-229df333cc9dff23/include/common_cells/assertions.svh
+/home/ibexcore/project/SentinelSOC_TOP_Module_integration/.bender/git/checkouts/common_cells-229df333cc9dff23/include/common_cells/assertions.svh
+rtl/core/ibex_core/vendor/lowrisc_ip/ip/prim/rtl/prim_assert.sv
+/home/ibexcore/project/SentinelSOC_TOP_Module_integration/rtl/core/ibex_core/vendor/lowrisc_ip/ip/prim/rtl/prim_assert.sv
+rtl/core/ibex_core/vendor/lowrisc_ip/ip/prim/rtl/prim_assert_standard_macros.svh
+/home/ibexcore/project/SentinelSOC_TOP_Module_integration/rtl/core/ibex_core/vendor/lowrisc_ip/ip/prim/rtl/prim_assert_standard_macros.svh
+rtl/core/ibex_core/vendor/lowrisc_ip/ip/prim/rtl/prim_assert_sec_cm.svh
+/home/ibexcore/project/SentinelSOC_TOP_Module_integration/rtl/core/ibex_core/vendor/lowrisc_ip/ip/prim/rtl/prim_assert_sec_cm.svh
+rtl/core/ibex_core/vendor/lowrisc_ip/ip/prim/rtl/prim_flop_macros.sv
+/home/ibexcore/project/SentinelSOC_TOP_Module_integration/rtl/core/ibex_core/vendor/lowrisc_ip/ip/prim/rtl/prim_flop_macros.sv
+rtl/core/ibex_core/vendor/lowrisc_ip/dv/sv/dv_utils/dv_fcov_macros.svh
+/home/ibexcore/project/SentinelSOC_TOP_Module_integration/rtl/core/ibex_core/vendor/lowrisc_ip/dv/sv/dv_utils/dv_fcov_macros.svh

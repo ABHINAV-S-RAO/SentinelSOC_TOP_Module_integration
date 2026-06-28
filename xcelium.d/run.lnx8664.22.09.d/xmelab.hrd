@@ -1,0 +1,11 @@
+//
+// File created by:  xrun
+// Do not modify this file
+//
+
+ibex_core_tb
+-ACCESS
++rwc
+-NOTIMINGCHECKS
+-timescale
+1ns/1ps

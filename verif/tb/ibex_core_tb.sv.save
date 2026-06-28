@@ -43,7 +43,6 @@ module ibex_core_tb;
   // Word index 0 => byte address BOOT_ADDR.
   // Handler lives at word index 256 => byte address BOOT_ADDR + 0x400.
   localparam int HANDLER_IDX = 256;
-  localparam int BOOT_WORD   = 32;
 
   // =========================================================================
   // DUT signals
@@ -449,7 +448,7 @@ module ibex_core_tb;
   //                                 = 0x1000_0000 + 0x400 = 0x1000_0400.
   //
   // Each test:
-  //   1. pc_wr = BOOT_WORD(start of instr_mem)
+  //   1. pc_wr = 0 (start of instr_mem)
   //   2. emit_preamble(tpr, tcr) — sets mtvec, programs TPR and TCR
   //   3. emit test body instructions
   //   4. emit ECALL (causes trap; core jumps to handler; handler loops)
@@ -569,7 +568,7 @@ module ibex_core_tb;
 
       // ---- INTEGER: add x14, x12, x13 ----
       test_num++;
-      pc_wr = BOOT_WORD;
+      pc_wr = 0;
       emit_preamble(
         tpr_set_ls_en(tpr_alu_mode(INTEGER_LOW, INTEGER_HIGH, mode),
                       1'b1, 1'b1, 1'b0) | tpr_ls_or(),
@@ -591,7 +590,7 @@ module ibex_core_tb;
 
       // ---- LOGICAL: or x14, x12, x13 ----
       test_num++;
-      pc_wr = BOOT_WORD;
+      pc_wr = 0;
       emit_preamble(
         tpr_set_ls_en(tpr_alu_mode(LOGICAL_LOW, LOGICAL_HIGH, mode),
                       1'b1, 1'b1, 1'b0) | tpr_ls_or(),
@@ -613,7 +612,7 @@ module ibex_core_tb;
 
       // ---- SHIFT: slli x14, x12, 1 (single source) ----
       test_num++;
-      pc_wr = BOOT_WORD;
+      pc_wr = 0;
       emit_preamble(
         tpr_set_ls_en(tpr_alu_mode(SHIFT_LOW, SHIFT_HIGH, mode),
                       1'b1, 1'b1, 1'b0) | tpr_ls_or(),
@@ -634,7 +633,7 @@ module ibex_core_tb;
 
       // ---- COMPARISON: slt x14, x12, x13 ----
       test_num++;
-      pc_wr = BOOT_WORD;
+      pc_wr = 0;
       emit_preamble(
         tpr_set_ls_en(tpr_alu_mode(COMPARISON_LOW, COMPARISON_HIGH, mode),
                       1'b1, 1'b1, 1'b0) | tpr_ls_or(),
@@ -668,7 +667,7 @@ module ibex_core_tb;
       automatic logic [1:0] mode = m[1:0];
       automatic logic exp;
       test_num++;
-      pc_wr = BOOT_WORD;
+      pc_wr = 0;
       emit_preamble(
         tpr_set_ls_en(tpr_alu_mode(LOADSTORE_LOW, LOADSTORE_HIGH, mode),
                       1'b1, 1'b1, 1'b0),
@@ -694,7 +693,7 @@ module ibex_core_tb;
   // -----------------------------------------------------------------------
   task automatic tpr_store_propagation_test();
     test_num++;
-    pc_wr = BOOT_WORD;
+    pc_wr = 0;
     // en_dst_addr=1 so store data tag propagates to shadow RAM
     emit_preamble(
       tpr_set_ls_en(tpr_alu_mode(LOADSTORE_LOW, LOADSTORE_HIGH, ALU_MODE_OR),
@@ -736,7 +735,7 @@ module ibex_core_tb;
     input string       msg
   );
     test_num++;
-    pc_wr = BOOT_WORD;
+    pc_wr = 0;
     emit_preamble(
       tpr_ls_or(),
       32'h1 << check_bit
@@ -807,7 +806,7 @@ module ibex_core_tb;
   task automatic tcr_branch_tests();
     // S1 tainted: check fires regardless of branch outcome
     test_num++;
-    pc_wr = BOOT_WORD;
+    pc_wr = 0;
     emit_preamble(tpr_ls_or(), 32'h1 << BRANCH_CHECK_S1);
     load_imm32(5'd10, DMEM_BASE);
     emit(f_lw(5'd12, 5'd10, 12'h0));
@@ -823,7 +822,7 @@ module ibex_core_tb;
 
     // S1 tainted, branch not taken (values differ)
     test_num++;
-    pc_wr = BOOT_WORD;
+    pc_wr = 0;
     emit_preamble(tpr_ls_or(), 32'h1 << BRANCH_CHECK_S1);
     load_imm32(5'd10, DMEM_BASE);
     emit(f_lw(5'd12, 5'd10, 12'h0));
@@ -839,7 +838,7 @@ module ibex_core_tb;
 
     // S2 tainted
     test_num++;
-    pc_wr = BOOT_WORD;
+    pc_wr = 0;
     emit_preamble(tpr_ls_or(), 32'h1 << BRANCH_CHECK_S2);
     load_imm32(5'd10, DMEM_BASE);
     emit(f_lw(5'd12, 5'd10, 12'h0));
@@ -855,7 +854,7 @@ module ibex_core_tb;
 
     // Neither tainted: no exception
     test_num++;
-    pc_wr = BOOT_WORD;
+    pc_wr = 0;
     emit_preamble(tpr_ls_or(),
                   (32'h1 << BRANCH_CHECK_S1) | (32'h1 << BRANCH_CHECK_S2));
     load_imm32(5'd10, DMEM_BASE);
@@ -886,7 +885,7 @@ module ibex_core_tb;
 
     // JUMP_CHECK_S1: rs1 (jump target address register) is tainted => exception
     test_num++;
-    pc_wr = BOOT_WORD;
+    pc_wr = 0;
     emit_preamble(
       tpr_ls_or() | tpr_alu_mode(JUMP_LOW, JUMP_HIGH, ALU_MODE_OR),
       32'h1 << JUMP_CHECK_S1
@@ -908,7 +907,7 @@ module ibex_core_tb;
 
     // JUMP_CHECK_S1 negative: rs1 clean => no exception
     test_num++;
-    pc_wr = BOOT_WORD;
+    pc_wr = 0;
     emit_preamble(
       tpr_ls_or(),
       32'h1 << JUMP_CHECK_S1
@@ -934,7 +933,7 @@ module ibex_core_tb;
     // i.e. the tainted data lands in a register under a check.
     // With OR mode, load of tag_mem[0]=1 gives dest tag=1 => fires.
     test_num++;
-    pc_wr = BOOT_WORD;
+    pc_wr = 0;
     emit_preamble(
       tpr_ls_or(),
       32'h1 << LOADSTORE_CHECK_D
@@ -952,7 +951,7 @@ module ibex_core_tb;
     // is tainted.  x10 is loaded from a tainted source so it gets tainted;
     // the second lw uses x10 as base.
     test_num++;
-    pc_wr = BOOT_WORD;
+    pc_wr = 0;
     emit_preamble(
       tpr_ls_or(),
       32'h1 << LOADSTORE_CHECK_SA
@@ -969,7 +968,7 @@ module ibex_core_tb;
 
     // LOADSTORE_CHECK_S (bit 7): exception when store data is tainted.
     test_num++;
-    pc_wr = BOOT_WORD;
+    pc_wr = 0;
     emit_preamble(
       tpr_set_ls_en(tpr_alu_mode(LOADSTORE_LOW, LOADSTORE_HIGH, ALU_MODE_OR),
                     1'b1, 1'b1, 1'b1),
@@ -988,7 +987,7 @@ module ibex_core_tb;
     // LOADSTORE_CHECK_DA (bit 6): exception when store base address register
     // is tainted.  Load a tainted address into x10, use x10 as store base.
     test_num++;
-    pc_wr = BOOT_WORD;
+    pc_wr = 0;
     emit_preamble(
       tpr_ls_or(),
       32'h1 << LOADSTORE_CHECK_DA
@@ -1019,7 +1018,7 @@ module ibex_core_tb;
   task automatic execute_pc_test();
     automatic int ecall_idx;
     test_num++;
-    pc_wr = BOOT_WORD;
+    pc_wr = 0;
     emit_preamble(
       tpr_ls_or() | tpr_alu_mode(JUMP_LOW, JUMP_HIGH, ALU_MODE_OR),
       32'h1 << EXECUTE_PC
@@ -1044,7 +1043,7 @@ module ibex_core_tb;
   // -----------------------------------------------------------------------
   task automatic csr_path_test();
     test_num++;
-    pc_wr = BOOT_WORD;
+    pc_wr = 0;
     // No DIFT policy — TPR=0, TCR=0.  mtvec still needs setting.
     load_imm32(5'd28, MTVEC_VAL);
     emit(f_csrrw(CSRA_MTVEC, 5'd28, 5'd0));
@@ -1089,7 +1088,7 @@ module ibex_core_tb;
       automatic logic [1:0] mode = m[1:0];
       automatic logic exp;
       test_num++;
-      pc_wr = BOOT_WORD;
+      pc_wr = 0;
       emit_preamble(
         tpr_set_ls_en(tpr_alu_mode(INTEGER_LOW, INTEGER_HIGH, mode),
                       1'b1, 1'b1, 1'b0) | tpr_ls_or(),
@@ -1112,7 +1111,7 @@ module ibex_core_tb;
 
     // DIV and REM with OR mode: both results should be tainted when S1 is tainted
     test_num++;
-    pc_wr = BOOT_WORD;
+    pc_wr = 0;
     emit_preamble(
       tpr_set_ls_en(tpr_alu_mode(INTEGER_LOW, INTEGER_HIGH, ALU_MODE_OR),
                     1'b1, 1'b1, 1'b0) | tpr_ls_or(),
@@ -1136,7 +1135,7 @@ module ibex_core_tb;
 
     // INTEGER_CHECK_D with MUL: should fire when result is tainted
     test_num++;
-    pc_wr = BOOT_WORD;
+    pc_wr = 0;
     emit_preamble(
       tpr_set_ls_en(tpr_alu_mode(INTEGER_LOW, INTEGER_HIGH, ALU_MODE_OR),
                     1'b1, 1'b1, 1'b0) | tpr_ls_or(),

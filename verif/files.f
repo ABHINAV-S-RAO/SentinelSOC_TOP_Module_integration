@@ -65,4 +65,4 @@ rtl/soc/soc_top.sv
 
 # TB LAST
 +incdir+verif/uart_verif
-verif/uart_verif/tb_top.sv
+verif/uart_verif/files/tb_top.sv

@@ -64,5 +64,5 @@ verif/uart_verif/stubs/dbg_uart_test_stub.sv
 rtl/soc/soc_top.sv
 
 # TB LAST
-+incdir+verif/uart_verif
++incdir+verif/uart_verif/files
 verif/uart_verif/files/tb_top.sv

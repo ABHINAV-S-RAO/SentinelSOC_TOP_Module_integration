@@ -3,8 +3,8 @@
 // Wraps obi_demux for data path (7 slaves) and fetch path (2 slaves: BootROM, ISRAM) //update : 8 slaves for datapath
 // Uses ObiDefaultConfig: 32-bit addr/data, 1-bit ID, no integrity, no optional fields
 
-`include "E:\SENTINELSOC\Crocsoc\croc\rtl\obi\include\obi\typedef.svh"
-`include "E:\SENTINELSOC\Crocsoc\croc\rtl\obi\include\obi\assign.svh"
+`include "obi/typedef.svh"
+`include "obi/assign.svh"
 
 module soc_addr_decode #(
   // Memory map parameters — override at SoC top level if needed

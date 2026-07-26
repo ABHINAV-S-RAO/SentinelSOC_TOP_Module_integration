@@ -639,63 +639,53 @@ soc_addr_decode #(
     .isram_lock_o   ( ctrl_isram_lock )
   );
 
-  // ---------------------------------------------------------------------------
-  // Buffer block (OBI slave + AXI-Stream master)
-  // ---------------------------------------------------------------------------
-  soc_buffer u_buffer (
-    .clk_i          ( clk_i       ),
-    .rst_ni         ( rst_ni      ),
 
-    // OBI slave — CSR + data write port
-    .req_i          ( buf_req     ),
-    .we_i           ( buf_we      ),
-    .be_i           ( buf_be      ),
-    .addr_i         ( buf_addr    ),
-    .wdata_i        ( buf_wdata   ),
-    .gnt_o          ( buf_gnt     ),
-    .rvalid_o       ( buf_rvalid  ),
-    .rdata_o        ( buf_rdata   ),
-    .err_o          ( buf_err     ),
-
-    .accel_data_o  ( accel_data        ),
-    .accel_addr_o  ( accel_addr        ),
-    .accel_valid_o ( accel_valid       ),
-    .accel_data_i  ( 32'h0             ),
-    .accel_done_i  ( sha_verify_done   ),
-    // IRQ → PLIC
-    .irq_o          ( irq_buf     )
-  );
+  logic [2:0]  otp_addr;
+  logic        otp_rd_en;
+  logic [31:0] otp_data;
+  logic        crypto_boot_active;
 
   top_most u_crypto (
-    .clk(clk_i),
-    .rst_n(rst_ni),
-    .accel_data_i(accel_data),
-    .accel_addr_i(accel_addr),
-    .accel_valid_i(accel_valid),
-    .start_verify_i(sha_start),
-    .verify_done_o(sha_verify_done),
-    .signature_valid(sha_signature_valid)
-);
+    .clk               (clk_i),
+    .rst_n             (rst_ni),
 
-sha_ed25519_obi_wrapper u_sha_ctrl (
+    // CSR slave port — repointed from soc_buffer onto the existing
+    // buf_* decoder output (address range, byte enables, etc. unchanged)
+    .csr_req_i         (buf_req),
+    .csr_we_i          (buf_we),
+    .csr_be_i          (buf_be),
+    .csr_addr_i        (buf_addr),
+    .csr_wdata_i       (buf_wdata),
+    .csr_gnt_o         (buf_gnt),
+    .csr_rvalid_o      (buf_rvalid),
+    .csr_rdata_o       (buf_rdata),
+    .csr_err_o         (buf_err),
 
-    .clk_i              (clk_i),
-    .rst_ni             (rst_ni),
-    // OBI slave interface
-    .req_i              (sha_req),
-    .we_i               (sha_we),
-    .be_i               (sha_be),
-    .addr_i             (sha_addr),
-    .wdata_i            (sha_wdata),
-    .gnt_o              (sha_gnt),
-    .rvalid_o           (sha_rvalid),
-    .rdata_o            (sha_rdata),
-    .err_o              (sha_err),
-    // Crypto control/status
-    .start_verify_o     (sha_start),
-    .verify_done_i      (sha_verify_done),
-    .signature_valid_i  (sha_signature_valid)
-);
+    .start_verify_i    (sha_start),
+    .otp_addr_o        (otp_addr),
+    .otp_rd_en_o       (otp_rd_en),
+    .otp_data_i        (otp_data),
+    .boot_active_o     (crypto_boot_active),
+    .verify_done_o     (sha_verify_done),
+    .signature_valid_o (sha_signature_valid)
+  );
+
+  otp #(
+    .RD_ADDRW    (3),
+    .PUB_KEY_BITS(256)
+  ) u_otp (
+    .clk         (clk_i),
+    .rst         (~rst_ni),
+    .boot_active (crypto_boot_active),
+    .rd_en       (otp_rd_en),
+    .rd_addr     (otp_addr),
+    .rd_data     (otp_data),
+    .prog_en     (1'b0),
+    .prog_addr   ('0),
+    .prog_data   (1'b0),
+    .test_mode   (1'b0),
+    .otp_lock    ()
+  );
 
   // ---------------------------------------------------------------------------
   // OBI → APB bridge

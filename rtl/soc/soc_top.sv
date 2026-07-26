@@ -250,6 +250,7 @@ typedef struct packed {
 
   // ISRAM write lock from control registers
   logic        ctrl_isram_lock;
+  logic ctrl_boot_done;
 
   // ---------------------------------------------------------------------------
   // IRQ lines from peripherals to PLIC
@@ -366,111 +367,154 @@ typedef struct packed {
   // ---------------------------------------------------------------------------
   // Address decoder + fetch demux
   // ---------------------------------------------------------------------------
-  soc_addr_decode u_addr_decode (
-    .clk_i              ( clk_i              ),
-    .rst_ni             ( rst_ni             ),
+soc_addr_decode #(
+  .BOOTROM_BASE ( 32'h0000_0000 ),
+  .BOOTROM_MASK ( 32'hFFFF_F000 ),
+  .ISRAM_BASE   ( 32'h0001_0000 ),
+  .ISRAM_MASK   ( 32'hFFFF_F000 ),
+  .DSRAM_BASE   ( 32'h0002_0000 ),
+  .DSRAM_MASK   ( 32'hFFFF_F000 ),
+  .CTRL_BASE    ( 32'h0003_0000 ),
+  .CTRL_MASK    ( 32'hFFFF_F000 ),
+  .BUF_BASE     ( 32'h0004_0000 ),
+  .BUF_MASK     ( 32'hFFFF_F000 ),
+  .SHA_BASE     ( 32'h0005_0000 ),
+  .SHA_MASK     ( 32'hFFFF_F000 ),
+  .PLIC_BASE    ( 32'h0C00_0000 ),   
+  .PLIC_MASK    ( 32'hFFC0_0000 ),   
+  .DBG_BASE     ( 32'h1A11_0000 ),
+  .DBG_MASK     ( 32'hFFFF_0000 ),
+  .APB_BASE     ( 32'h1000_0000 ),
+  .APB_MASK     ( 32'hF000_0000 ),
+  .NumMaxTrans  ( 2 )
+) u_addr_decode (
+  .clk_i  ( clk_i  ),
+  .rst_ni ( rst_ni ),
 
-    // Ibex instruction fetch
-    .instr_req_i        ( instr_req          ),
-    .instr_gnt_o        ( instr_gnt          ),
-    .instr_rvalid_o     ( instr_rvalid       ),
-    .instr_addr_i       ( instr_addr         ),
-    .instr_rdata_o      ( instr_rdata        ),
-    .instr_err_o        ( instr_err          ),
+  // Ibex instruction fetch
+  .instr_req_i    ( instr_req    ),
+  .instr_gnt_o    ( instr_gnt    ),
+  .instr_rvalid_o ( instr_rvalid ),
+  .instr_addr_i   ( instr_addr   ),
+  .instr_rdata_o  ( instr_rdata  ),
+  .instr_err_o    ( instr_err    ),
 
-    // Ibex data
-    .data_req_i         ( data_req           ),
-    .data_gnt_o         ( data_gnt           ),
-    .data_rvalid_o      ( data_rvalid        ),
-    .data_we_i          ( data_we            ),
-    .data_be_i          ( data_be            ),
-    .data_addr_i        ( data_addr          ),
-    .data_wdata_i       ( data_wdata         ),
-    .data_rdata_o       ( data_rdata         ),
-    .data_err_o         ( data_err           ),
+  // Ibex data
+  .data_req_i    ( data_req    ),
+  .data_gnt_o    ( data_gnt    ),
+  .data_rvalid_o ( data_rvalid ),
+  .data_we_i     ( data_we     ),
+  .data_be_i     ( data_be     ),
+  .data_addr_i   ( data_addr   ),
+  .data_wdata_i  ( data_wdata  ),
+  .data_rdata_o  ( data_rdata  ),
+  .data_err_o    ( data_err    ),
 
-    // ISRAM lock
-    .ctrl_isram_lock_i  ( ctrl_isram_lock    ),
+  // BootROM
+  .bootrom_req_o    ( bootrom_req    ),
+  .bootrom_gnt_i    ( bootrom_gnt    ),
+  .bootrom_rvalid_i ( bootrom_rvalid ),
+  .bootrom_addr_o   ( bootrom_addr   ),
+  .bootrom_we_o     ( bootrom_we     ),
+  .bootrom_be_o     ( bootrom_be     ),
+  .bootrom_wdata_o  ( bootrom_wdata  ),
+  .bootrom_rdata_i  ( bootrom_rdata  ),
+  .bootrom_err_i    ( bootrom_err    ),
 
-    // Slaves
-    .bootrom_req_o      ( bootrom_req        ),
-    .bootrom_gnt_i      ( bootrom_gnt        ),
-    .bootrom_rvalid_i   ( bootrom_rvalid     ),
-    .bootrom_addr_o     ( bootrom_addr       ),
-    .bootrom_we_o       ( bootrom_we         ),
-    .bootrom_be_o       ( bootrom_be         ),
-    .bootrom_wdata_o    ( bootrom_wdata      ),
-    .bootrom_rdata_i    ( bootrom_rdata      ),
-    .bootrom_err_i      ( bootrom_err        ),
+  // ISRAM
+  .isram_req_o       ( isram_req    ),
+  .isram_gnt_i       ( isram_gnt    ),
+  .isram_rvalid_i    ( isram_rvalid ),
+  .isram_addr_o      ( isram_addr   ),
+  .isram_we_o        ( isram_we     ),
+  .isram_be_o        ( isram_be     ),
+  .isram_wdata_o     ( isram_wdata  ),
+  .isram_rdata_i     ( isram_rdata  ),
+  .isram_err_i       ( isram_err    ),
+  .ctrl_isram_lock_i ( ctrl_isram_lock ),
 
-    .isram_req_o        ( isram_req          ),
-    .isram_gnt_i        ( isram_gnt          ),
-    .isram_rvalid_i     ( isram_rvalid       ),
-    .isram_addr_o       ( isram_addr         ),
-    .isram_we_o         ( isram_we           ),
-    .isram_be_o         ( isram_be           ),
-    .isram_wdata_o      ( isram_wdata        ),
-    .isram_rdata_i      ( isram_rdata        ),
-    .isram_err_i        ( isram_err          ),
+  // Access-control inputs — NEW connections, not present in the
+  // instantiation shown earlier; needed for priv-gating (CTRL/BUF/SHA)
+  // and ISRAM fetch-verification to actually function.
+  .boot_done_i  ( ctrl_boot_done   ), 
+  .dbg_mode_i   ( dbg_mode         ), 
+  .fw_verified_i ( sha_signature_valid ),
 
-    .dsram_req_o        ( dsram_req          ),
-    .dsram_gnt_i        ( dsram_gnt          ),
-    .dsram_rvalid_i     ( dsram_rvalid       ),
-    .dsram_addr_o       ( dsram_addr         ),
-    .dsram_we_o         ( dsram_we           ),
-    .dsram_be_o         ( dsram_be           ),
-    .dsram_wdata_o      ( dsram_wdata        ),
-    .dsram_rdata_i      ( dsram_rdata        ),
-    .dsram_err_i        ( dsram_err          ),
+  // DSRAM
+  .dsram_req_o    ( dsram_req    ),
+  .dsram_gnt_i    ( dsram_gnt    ),
+  .dsram_rvalid_i ( dsram_rvalid ),
+  .dsram_addr_o   ( dsram_addr   ),
+  .dsram_we_o     ( dsram_we     ),
+  .dsram_be_o     ( dsram_be     ),
+  .dsram_wdata_o  ( dsram_wdata  ),
+  .dsram_rdata_i  ( dsram_rdata  ),
+  .dsram_err_i    ( dsram_err    ),
 
-    .ctrl_req_o         ( ctrl_req           ),
-    .ctrl_gnt_i         ( ctrl_gnt           ),
-    .ctrl_rvalid_i      ( ctrl_rvalid        ),
-    .ctrl_addr_o        ( ctrl_addr          ),
-    .ctrl_we_o          ( ctrl_we            ),
-    .ctrl_be_o          ( ctrl_be            ),
-    .ctrl_wdata_o       ( ctrl_wdata         ),
-    .ctrl_rdata_i       ( ctrl_rdata         ),
-    .ctrl_err_i         ( ctrl_err           ),
+  // Control Registers (privileged)
+  .ctrl_req_o    ( ctrl_req    ),
+  .ctrl_gnt_i    ( ctrl_gnt    ),
+  .ctrl_rvalid_i ( ctrl_rvalid ),
+  .ctrl_addr_o   ( ctrl_addr   ),
+  .ctrl_we_o     ( ctrl_we     ),
+  .ctrl_be_o     ( ctrl_be     ),
+  .ctrl_wdata_o  ( ctrl_wdata  ),
+  .ctrl_rdata_i  ( ctrl_rdata  ),
+  .ctrl_err_i    ( ctrl_err    ),
 
-    .buf_req_o          ( buf_req            ),
-    .buf_gnt_i          ( buf_gnt            ),
-    .buf_rvalid_i       ( buf_rvalid         ),
-    .buf_addr_o         ( buf_addr           ),
-    .buf_we_o           ( buf_we             ),
-    .buf_be_o           ( buf_be             ),
-    .buf_wdata_o        ( buf_wdata          ),
-    .buf_rdata_i        ( buf_rdata          ),
-    .buf_err_i          ( buf_err            ),
+  // Buffer CSR (privileged)
+  .buf_req_o    ( buf_req    ),
+  .buf_gnt_i    ( buf_gnt    ),
+  .buf_rvalid_i ( buf_rvalid ),
+  .buf_addr_o   ( buf_addr   ),
+  .buf_we_o     ( buf_we     ),
+  .buf_be_o     ( buf_be     ),
+  .buf_wdata_o  ( buf_wdata  ),
+  .buf_rdata_i  ( buf_rdata  ),
+  .buf_err_i    ( buf_err    ),
 
-    .sha_req_o          ( sha_req            ),
-    .sha_gnt_i          ( sha_gnt            ),
-    .sha_rvalid_i       ( sha_rvalid         ),
-    .sha_addr_o         ( sha_addr           ),
-    .sha_we_o           ( sha_we             ),
-    .sha_be_o           ( sha_be             ),
-    .sha_wdata_o        ( sha_wdata          ),
-    .sha_rdata_i        ( sha_rdata          ),
-    .sha_err_i          ( sha_err            ),
+  // SHA + ED25519 CSR (privileged)
+  .sha_req_o    ( sha_req    ),
+  .sha_gnt_i    ( sha_gnt    ),
+  .sha_rvalid_i ( sha_rvalid ),
+  .sha_addr_o   ( sha_addr   ),
+  .sha_we_o     ( sha_we     ),
+  .sha_be_o     ( sha_be     ),
+  .sha_wdata_o  ( sha_wdata  ),
+  .sha_rdata_i  ( sha_rdata  ),
+  .sha_err_i    ( sha_err    ),
 
-    .apb_req_o          ( apb_bridge_req     ),
-    .apb_gnt_i          ( apb_bridge_gnt     ),
-    .apb_rvalid_i       ( apb_bridge_rvalid  ),
-    .apb_addr_o         ( apb_bridge_addr    ),
-    .apb_we_o           ( apb_bridge_we      ),
-    .apb_be_o           ( apb_bridge_be      ),
-    .apb_wdata_o        ( apb_bridge_wdata   ),
-    .apb_rdata_i        ( apb_bridge_rdata   ),
-    .apb_err_i          ( apb_bridge_err     ),
+  //PLIC
+  .plic_req_o    ( plic_req    ),
+  .plic_gnt_i    ( plic_gnt    ),
+  .plic_rvalid_i ( plic_rvalid ),
+  .plic_addr_o   ( plic_addr   ),
+  .plic_we_o     ( plic_we     ),
+  .plic_be_o     ( plic_be     ),
+  .plic_wdata_o  ( plic_wdata  ),
+  .plic_rdata_i  ( plic_rdata  ),
+  .plic_err_i    ( plic_err    ),
 
-    .dbg_req_o    ( dbg_req    ),
-    .dbg_addr_o   ( dbg_addr   ),
-    .dbg_we_o     ( dbg_we     ),
-    .dbg_be_o     ( dbg_be     ),
-    .dbg_wdata_o  ( dbg_wdata  ),
-    .dbg_rvalid_i ( dbg_rvalid ),
-    .dbg_rdata_i  ( dbg_rdata  )
-  );
+  // OBI-to-APB bridge
+  .apb_req_o    ( apb_bridge_req    ),
+  .apb_gnt_i    ( apb_bridge_gnt    ),
+  .apb_rvalid_i ( apb_bridge_rvalid ),
+  .apb_addr_o   ( apb_bridge_addr   ),
+  .apb_we_o     ( apb_bridge_we     ),
+  .apb_be_o     ( apb_bridge_be     ),
+  .apb_wdata_o  ( apb_bridge_wdata  ),
+  .apb_rdata_i  ( apb_bridge_rdata  ),
+  .apb_err_i    ( apb_bridge_err    ),
+
+  // Debug target interface (dm_top slave port)
+  .dbg_req_o    ( dbg_req    ),
+  .dbg_addr_o   ( dbg_addr   ),
+  .dbg_we_o     ( dbg_we     ),
+  .dbg_be_o     ( dbg_be     ),
+  .dbg_wdata_o  ( dbg_wdata  ),
+  .dbg_rvalid_i ( dbg_rvalid ),
+  .dbg_rdata_i  ( dbg_rdata  )
+);
 
   // ---------------------------------------------------------------------------
   // BootROM — read-only, initialised from bootrom.hex at synthesis
@@ -551,6 +595,7 @@ typedef struct packed {
     .err_o          ( ctrl_err        ),
     .crypto_verified_i ( sha_signature_valid ),
     // Control outputs
+    .boot_done_o    ( ctrl_boot_done ),
     .isram_lock_o   ( ctrl_isram_lock )
   );
 
@@ -764,7 +809,7 @@ sha_ed25519_obi_wrapper u_sha_ctrl (
   plic_top #(
     .N_SOURCE (12),
     .N_TARGET (1),
-    .MAX_PRIO (7),
+    .MAX_PRIO (3),
     .reg_req_t (plic_reg_req_t),
     .reg_rsp_t (plic_reg_rsp_t)
   ) u_plic (

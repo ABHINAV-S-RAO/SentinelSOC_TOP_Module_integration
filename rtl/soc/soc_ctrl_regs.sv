@@ -53,6 +53,7 @@ module soc_ctrl_regs (
   input  logic        crypto_verified_i,
 
   // Control outputs
+  output logic        boot_done_o  ,  // feeds soc_addr_decode ctrl_boot_done_i
   output logic        isram_lock_o    // feeds soc_addr_decode ctrl_isram_lock_i
 );
 
@@ -156,5 +157,6 @@ module soc_ctrl_regs (
   // Output assignments
   // --------------------------------------------------------------------------
   assign isram_lock_o = isram_lock_q;
+  assign boot_done_o  = boot_done_q;
 
 endmodule

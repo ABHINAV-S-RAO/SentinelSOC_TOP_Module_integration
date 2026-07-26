@@ -1,7 +1,40 @@
 // Copyright 2025
 // SoC Address Decoder
-// Wraps obi_demux for data path (7 slaves) and fetch path (2 slaves: BootROM, ISRAM) //update : 8 slaves for datapath
+// Wraps obi_demux for data path (8 slaves) and fetch path (2 slaves: BootROM, ISRAM)
 // Uses ObiDefaultConfig: 32-bit addr/data, 1-bit ID, no integrity, no optional fields
+//
+// =============================================================================
+// ACCESS-CONTROL MODEL (Req 1-4)
+// =============================================================================
+// Privileged CSR ranges: Control Registers (CTRL), Buffer CSR (BUF),
+// SHA/ED25519 CSR (SHA). These hold verification-critical state and must
+// not be reachable by firmware once the boot phase is over.
+//
+//   Phase                          | CSR writes | CSR reads | ISRAM writes         | ISRAM fetch
+//   -----------------------------------------------------------------------------------------------
+//   Boot phase (boot_done_i=0)     | allowed    | allowed   | allowed (unless dbg)  | n/a (BootROM)
+//   Post-boot, normal execution    | BLOCKED    | BLOCKED   | BLOCKED (lock is set) | BLOCKED until fw_verified_i
+//   Any time, dbg_mode_i=1         | BLOCKED    | allowed   | BLOCKED (unconditional)| (fetch gate independent of dbg)
+//
+// ISRAM writes are blocked by dbg_mode_i UNCONDITIONALLY (not just
+// post-boot) — a halted-core debug session must never be able to inject
+// or modify firmware in ISRAM, even during the boot window before the
+// bootloader's own write-lock is set.
+//
+// Denied CSR accesses are redirected to SEL_ERR (reuses the existing
+// unmapped-address error responder — DEAD_BEEF + err=1). This keeps the
+// gating logic in one place (see priv_hit / priv_denied below) instead of
+// duplicating checks in every per-slave always_comb block.
+//
+// To add another privileged block in future (e.g. a second crypto CSR
+// range), add a BASE/MASK parameter pair and OR its hit condition into
+// priv_hit — no other change needed.
+//
+// NOTE ISRAM_write lock (ctrl_isram_lock_i) is a SEPARATE, orthogonal
+// mechanism: it gates *firmware writes into ISRAM* (bootloader sets it
+// once done copying firmware in). It is unrelated to the CSR privilege
+// gating above.
+// =============================================================================
 
 `include "obi/typedef.svh"
 `include "obi/assign.svh"
@@ -15,16 +48,27 @@ module soc_addr_decode #(
   parameter logic [31:0] DSRAM_BASE    = 32'h0002_0000,
   parameter logic [31:0] DSRAM_MASK    = 32'hFFFF_F000, // 4KB
   parameter logic [31:0] CTRL_BASE     = 32'h0003_0000,
-  parameter logic [31:0] DBG_BASE      = 32'h1A11_0000,  //added debug memory map parameters 
-  parameter logic [31:0] DBG_MASK      = 32'hFFFF_0000,
   parameter logic [31:0] CTRL_MASK     = 32'hFFFF_F000, // 4KB
   parameter logic [31:0] BUF_BASE      = 32'h0004_0000,
   parameter logic [31:0] BUF_MASK      = 32'hFFFF_F000, // 4KB
   parameter logic [31:0] SHA_BASE      = 32'h0005_0000,
   parameter logic [31:0] SHA_MASK      = 32'hFFFF_F000, // 4KB
+  parameter logic [31:0] PLIC_BASE = 32'h0C00_0000,
+  parameter logic [31:0] PLIC_MASK = 32'hFFC0_0000, // 4MB 	
+
+  // ---------------------------------------------------------------------
+  // PLACEHOLDER — reserve address space for future privileged blocks.
+  // Uncomment, add to priv_hit below, and wire into a new SEL_/port pair
+  // when a second crypto CSR block (or similar) is added.
+  // ---------------------------------------------------------------------
+  // parameter logic [31:0] CRYPTO2_BASE = 32'h0006_0000,
+  // parameter logic [31:0] CRYPTO2_MASK = 32'hFFFF_F000, // 4KB
+
+  parameter logic [31:0] DBG_BASE      = 32'h1A11_0000,
+  parameter logic [31:0] DBG_MASK      = 32'hFFFF_0000,
   parameter logic [31:0] APB_BASE      = 32'h1000_0000,
   parameter logic [31:0] APB_MASK      = 32'hF000_0000, // 256MB
-  
+
   // Max outstanding transactions through the demux
   parameter int unsigned NumMaxTrans   = 2
 ) (
@@ -56,7 +100,6 @@ module soc_addr_decode #(
 
   //--------------------------------------------------------------------
   // BootROM — OBI subordinate (read-only, shared by fetch + data)
-  // Fetch path only for now; data access port added later if needed
   //--------------------------------------------------------------------
   output logic        bootrom_req_o,
   input  logic        bootrom_gnt_i,
@@ -70,7 +113,8 @@ module soc_addr_decode #(
 
   //--------------------------------------------------------------------
   // ISRAM — OBI subordinate (dual path: fetch read + data write/read)
-  // Write port gating is handled externally by ctrl_isram_lock_i
+  // Write port gated by ctrl_isram_lock_i (orthogonal to priv gating)
+  // Fetch port gated by fw_verified_i (Req 4)
   //--------------------------------------------------------------------
   output logic        isram_req_o,
   input  logic        isram_gnt_i,
@@ -86,6 +130,26 @@ module soc_addr_decode #(
   input  logic        ctrl_isram_lock_i,
 
   //--------------------------------------------------------------------
+  // Access-control inputs (Req 1-4)
+  //--------------------------------------------------------------------
+  // Set once bootloader has finished and written BOOT_STATUS.boot_done
+  // in soc_ctrl_regs. Before this: full CSR RW access (boot phase).
+  input  logic        boot_done_i,
+
+  // Direct wire from Ibex core debug_mode (core halted under active debug
+  // session). TODO: ibex_top does not currently expose this as a port —
+  // add `output logic debug_mode_o` to ibex_top, wired from
+  // u_ibex_core's internal debug_mode_q (in cs_registers), and connect
+  // here. Until that exists, tie to 1'b0 (fail-closed: no post-boot CSR
+  // reads at all) rather than 1'b1.
+  input  logic        dbg_mode_i,
+
+  // Firmware signature-verified status — direct wire from SHA+ED25519
+  // (same source soc_ctrl_regs.crypto_verified_i uses). Gates instruction
+  // fetch from ISRAM (Req 4).
+  input  logic        fw_verified_i,
+
+  //--------------------------------------------------------------------
   // DSRAM — OBI subordinate
   //--------------------------------------------------------------------
   output logic        dsram_req_o,
@@ -99,7 +163,7 @@ module soc_addr_decode #(
   input  logic        dsram_err_i,
 
   //--------------------------------------------------------------------
-  // Control Registers — OBI subordinate
+  // Control Registers — OBI subordinate (PRIVILEGED — see gating above)
   //--------------------------------------------------------------------
   output logic        ctrl_req_o,
   input  logic        ctrl_gnt_i,
@@ -112,7 +176,7 @@ module soc_addr_decode #(
   input  logic        ctrl_err_i,
 
   //--------------------------------------------------------------------
-  // Buffer CSR — OBI subordinate
+  // Buffer CSR — OBI subordinate (PRIVILEGED — see gating above)
   //--------------------------------------------------------------------
   output logic        buf_req_o,
   input  logic        buf_gnt_i,
@@ -125,7 +189,7 @@ module soc_addr_decode #(
   input  logic        buf_err_i,
 
   //--------------------------------------------------------------------
-  // SHA + ED25519 CSR — OBI subordinate
+  // SHA + ED25519 CSR — OBI subordinate (PRIVILEGED — see gating above)
   //--------------------------------------------------------------------
   output logic        sha_req_o,
   input  logic        sha_gnt_i,
@@ -136,6 +200,17 @@ module soc_addr_decode #(
   output logic [31:0] sha_wdata_o,
   input  logic [31:0] sha_rdata_i,
   input  logic        sha_err_i,
+  
+  //interrupt plic 
+  output logic        plic_req_o,
+  input  logic        plic_gnt_i,
+  input  logic        plic_rvalid_i,
+  output logic [31:0] plic_addr_o,
+  output logic        plic_we_o,
+  output logic [ 3:0] plic_be_o,
+  output logic [31:0] plic_wdata_o,
+  input  logic [31:0] plic_rdata_i,
+  input  logic        plic_err_i,
 
   //--------------------------------------------------------------------
   // OBI-to-APB Bridge — OBI subordinate
@@ -150,7 +225,8 @@ module soc_addr_decode #(
   input  logic [31:0] apb_rdata_i,
   input  logic        apb_err_i,
 
-  // Debug Target Interface
+  // Debug Target Interface (dm_top slave port — separate JTAG-side access,
+  // NOT gated by the priv model above; out of scope for this pass)
   output logic        dbg_req_o,
   output logic [31:0] dbg_addr_o,
   output logic        dbg_we_o,
@@ -171,17 +247,20 @@ module soc_addr_decode #(
   // --------------------------------------------------------------------------
   // Slave index encoding for data demux (8 slaves)
   // --------------------------------------------------------------------------
-  typedef enum logic [3:0] {   // ← widen to 4 bits
+  typedef enum logic [3:0] {
     SEL_BOOTROM = 4'd0,
     SEL_ISRAM   = 4'd1,
     SEL_DSRAM   = 4'd2,
     SEL_CTRL    = 4'd3,
     SEL_BUF     = 4'd4,
     SEL_SHA     = 4'd5,
-    SEL_APB     = 4'd6,
-    SEL_DBG     = 4'd7,
-    SEL_ERR     = 4'd8
-} data_sel_e;
+    SEL_PLIC	= 4'd6,
+    SEL_APB     = 4'd7,
+    SEL_DBG     = 4'd8,
+    SEL_ERR     = 4'd9
+    // If a new privileged slave is added (e.g. SEL_CRYPTO2), widen this
+    // enum, bump DataNumMgrPorts below, and add a new manager-port slot.
+  } data_sel_e;
 
   // --------------------------------------------------------------------------
   // Slave index encoding for fetch demux (2 slaves)
@@ -234,6 +313,24 @@ module soc_addr_decode #(
   assign instr_err_o    = fetch_rsp_s.r.err;
 
   // --------------------------------------------------------------------------
+  // Privileged CSR access gating (Req 1-3)
+  // --------------------------------------------------------------------------
+  logic priv_hit;
+  logic priv_write_ok, priv_read_ok, priv_denied;
+
+  always_comb begin
+    priv_hit = ((data_addr_i & CTRL_MASK) == CTRL_BASE) ||
+               ((data_addr_i & BUF_MASK)  == BUF_BASE)  ||
+               ((data_addr_i & SHA_MASK)  == SHA_BASE);
+               // OR in additional privileged ranges here, e.g.:
+               // || ((data_addr_i & CRYPTO2_MASK) == CRYPTO2_BASE)
+  end
+
+  assign priv_write_ok = ~boot_done_i;                 // writes: boot phase only, ever
+  assign priv_read_ok  = ~boot_done_i | dbg_mode_i;     // reads: boot phase, or debug-halted
+  assign priv_denied   = priv_hit & (data_we_i ? ~priv_write_ok : ~priv_read_ok);
+
+  // --------------------------------------------------------------------------
   // Data path address decode → select signal
   // --------------------------------------------------------------------------
   data_sel_e data_sel;
@@ -242,10 +339,12 @@ module soc_addr_decode #(
     if      ((data_addr_i & BOOTROM_MASK) == BOOTROM_BASE) data_sel = SEL_BOOTROM;
     else if ((data_addr_i & ISRAM_MASK)   == ISRAM_BASE)   data_sel = SEL_ISRAM;
     else if ((data_addr_i & DSRAM_MASK)   == DSRAM_BASE)   data_sel = SEL_DSRAM;
+    else if (priv_denied)                                  data_sel = SEL_ERR; // Req 1-3
     else if ((data_addr_i & CTRL_MASK)    == CTRL_BASE)    data_sel = SEL_CTRL;
     else if ((data_addr_i & BUF_MASK)     == BUF_BASE)     data_sel = SEL_BUF;
     else if ((data_addr_i & SHA_MASK)     == SHA_BASE)     data_sel = SEL_SHA;
-    else if ((data_addr_i & DBG_MASK)     == DBG_BASE)     data_sel = SEL_DBG; //added debug memory map address decode
+    else if ((data_addr_i & PLIC_MASK) == PLIC_BASE) data_sel = SEL_PLIC;
+    else if ((data_addr_i & DBG_MASK)     == DBG_BASE)     data_sel = SEL_DBG;
     else if ((data_addr_i & APB_MASK)     == APB_BASE)     data_sel = SEL_APB;
     else                                                    data_sel = SEL_ERR;
   end
@@ -255,17 +354,15 @@ module soc_addr_decode #(
   // --------------------------------------------------------------------------
   fetch_sel_e fetch_sel;
 
-  always_comb begin 
+  always_comb begin
     if ((instr_addr_i & ISRAM_MASK) == ISRAM_BASE) fetch_sel = FSEL_ISRAM;
     else                                            fetch_sel = FSEL_BOOTROM;
   end
 
   // --------------------------------------------------------------------------
-  // Data demux — 8 manager ports (8 slaves + 1 error responder)
+  // Data demux — 9 manager ports (8 slaves + 1 error responder)
   // --------------------------------------------------------------------------
-
-  localparam int unsigned DataNumMgrPorts = 9; // SEL_BOOTROM..SEL_ERR = indices 0..8
-
+  localparam int unsigned DataNumMgrPorts = 10; // SEL_BOOTROM..SEL_ERR = indices 0..8
 
   soc_obi_req_t [DataNumMgrPorts-1:0] data_mgr_req;
   soc_obi_rsp_t [DataNumMgrPorts-1:0] data_mgr_rsp;
@@ -276,7 +373,7 @@ module soc_addr_decode #(
     .obi_rsp_t   ( soc_obi_rsp_t   ),
     .NumMgrPorts ( DataNumMgrPorts  ),
     .NumMaxTrans ( NumMaxTrans      ),
-    .select_t    ( logic [3:0]      ) //widen select_t to 4 bits to accommodate 10 ports
+    .select_t    ( logic [3:0]      )
   ) u_data_demux (
     .clk_i,
     .rst_ni,
@@ -316,7 +413,6 @@ module soc_addr_decode #(
   // BootROM — arbiter between fetch demux [FSEL_BOOTROM] and
   //           data demux [SEL_BOOTROM]
   // Simple priority: fetch wins over data (instruction fetch is latency-critical)
-  // During boot, data accesses to BootROM are not expected; this is future-proofing
   // --------------------------------------------------------------------------
   always_comb begin
     // Default: fetch port drives BootROM
@@ -333,7 +429,6 @@ module soc_addr_decode #(
     fetch_mgr_rsp[FSEL_BOOTROM].r.err   = bootrom_err_i;
 
     // Data port to BootROM: stall (not implemented yet)
-    // When data access to BootROM is needed, replace with proper arbiter
     data_mgr_rsp[SEL_BOOTROM].gnt    = 1'b0;
     data_mgr_rsp[SEL_BOOTROM].rvalid = 1'b0;
     data_mgr_rsp[SEL_BOOTROM].r      = '0;
@@ -344,13 +439,20 @@ module soc_addr_decode #(
   // ISRAM — arbiter between fetch demux [FSEL_ISRAM] and data demux [SEL_ISRAM]
   // Priority: data wins (writes must not be blocked; fetch stalls are acceptable)
   // Write port gated by ctrl_isram_lock_i
+  // Fetch port gated by fw_verified_i (Req 4) — until firmware signature
+  // is verified, instruction fetch from ISRAM returns a bus error even
+  // though the words are physically present in the array. This is a
+  // hardware backstop: even if bootloader software has a bug and jumps
+  // to ISRAM early, the core cannot actually execute what's there.
   // --------------------------------------------------------------------------
-  // Simple round-robin or priority arbiter needed here since both fetch and
-  // data can request ISRAM simultaneously.
-  // Using fixed priority: data > fetch for now (simple, revisit if fetch
-  // starvation becomes an issue in simulation)
-
   logic isram_data_active, isram_fetch_active;
+  logic isram_fetch_blocked_q; // registered so blocked-fetch rvalid timing
+                                // matches the normal 1-cycle SRAM latency
+
+  always_ff @(posedge clk_i or negedge rst_ni) begin
+    if (!rst_ni) isram_fetch_blocked_q <= 1'b0;
+    else         isram_fetch_blocked_q <= isram_fetch_active & ~fw_verified_i;
+  end
 
   always_comb begin
     isram_data_active  = data_mgr_req[SEL_ISRAM].req;
@@ -377,30 +479,48 @@ module soc_addr_decode #(
       // Data port drives ISRAM — apply write lock
       isram_req_o   = 1'b1;
       isram_addr_o  = data_mgr_req[SEL_ISRAM].a.addr;
-      // Gate write: if locked, convert write to read (returns error)
-      isram_we_o    = data_mgr_req[SEL_ISRAM].a.we & ~ctrl_isram_lock_i;
+      // Gate write: blocked if (a) bootloader has set the sticky write
+      // lock, OR (b) the core is currently halted in debug mode. (b) is
+      // unconditional — it applies even during boot phase, before the
+      // lock bit is set, so a debugger-driven store (via an abstract
+      // command or program-buffer execution on the halted core) can
+      // never inject/modify ISRAM contents, ever.
+      isram_we_o    = data_mgr_req[SEL_ISRAM].a.we
+                       & ~ctrl_isram_lock_i
+                       & ~dbg_mode_i;
       isram_be_o    = data_mgr_req[SEL_ISRAM].a.be;
       isram_wdata_o = data_mgr_req[SEL_ISRAM].a.wdata;
 
       data_mgr_rsp[SEL_ISRAM].gnt              = isram_gnt_i;
       data_mgr_rsp[SEL_ISRAM].rvalid           = isram_rvalid_i;
       data_mgr_rsp[SEL_ISRAM].r.rdata          = isram_rdata_i;
-      // If write was attempted while locked, return error
+      // If write was attempted while locked or while in debug mode, error
       data_mgr_rsp[SEL_ISRAM].r.err            =
-        isram_err_i | (data_mgr_req[SEL_ISRAM].a.we & ctrl_isram_lock_i);
+        isram_err_i | (data_mgr_req[SEL_ISRAM].a.we
+                        & (ctrl_isram_lock_i | dbg_mode_i));
 
     end else if (isram_fetch_active) begin
-      // Fetch port drives ISRAM — always read
-      isram_req_o   = 1'b1;
-      isram_addr_o  = fetch_mgr_req[FSEL_ISRAM].a.addr;
-      isram_we_o    = 1'b0;
-      isram_be_o    = 4'hF;
-      isram_wdata_o = '0;
+      if (fw_verified_i) begin
+        // Firmware verified — fetch from ISRAM proceeds normally.
+        isram_req_o   = 1'b1;
+        isram_addr_o  = fetch_mgr_req[FSEL_ISRAM].a.addr;
+        isram_we_o    = 1'b0;
+        isram_be_o    = 4'hF;
+        isram_wdata_o = '0;
 
-      fetch_mgr_rsp[FSEL_ISRAM].gnt    = isram_gnt_i;
-      fetch_mgr_rsp[FSEL_ISRAM].rvalid = isram_rvalid_i;
-      fetch_mgr_rsp[FSEL_ISRAM].r.rdata = isram_rdata_i;
-      fetch_mgr_rsp[FSEL_ISRAM].r.err   = isram_err_i;
+        fetch_mgr_rsp[FSEL_ISRAM].gnt    = isram_gnt_i;
+        fetch_mgr_rsp[FSEL_ISRAM].rvalid = isram_rvalid_i;
+        fetch_mgr_rsp[FSEL_ISRAM].r.rdata = isram_rdata_i;
+        fetch_mgr_rsp[FSEL_ISRAM].r.err   = isram_err_i;
+      end else begin
+        // Firmware not yet verified — block fetch entirely. Do not even
+        // issue the request to the physical SRAM; return a bus error to
+        // Ibex with the same 1-cycle latency as a normal access.
+        fetch_mgr_rsp[FSEL_ISRAM].gnt     = 1'b1;
+        fetch_mgr_rsp[FSEL_ISRAM].rvalid  = isram_fetch_blocked_q;
+        fetch_mgr_rsp[FSEL_ISRAM].r.rdata = 32'hDEAD_BEEF;
+        fetch_mgr_rsp[FSEL_ISRAM].r.err   = 1'b1;
+      end
     end
   end
 
@@ -422,7 +542,7 @@ module soc_addr_decode #(
   end
 
   // --------------------------------------------------------------------------
-  // Control Registers
+  // Control Registers (PRIVILEGED)
   // --------------------------------------------------------------------------
   assign ctrl_req_o   = data_mgr_req[SEL_CTRL].req;
   assign ctrl_addr_o  = data_mgr_req[SEL_CTRL].a.addr;
@@ -439,7 +559,7 @@ module soc_addr_decode #(
   end
 
   // --------------------------------------------------------------------------
-  // Buffer CSR
+  // Buffer CSR (PRIVILEGED)
   // --------------------------------------------------------------------------
   assign buf_req_o   = data_mgr_req[SEL_BUF].req;
   assign buf_addr_o  = data_mgr_req[SEL_BUF].a.addr;
@@ -456,7 +576,7 @@ module soc_addr_decode #(
   end
 
   // --------------------------------------------------------------------------
-  // SHA + ED25519 CSR
+  // SHA + ED25519 CSR (PRIVILEGED)
   // --------------------------------------------------------------------------
   assign sha_req_o   = data_mgr_req[SEL_SHA].req;
   assign sha_addr_o  = data_mgr_req[SEL_SHA].a.addr;
@@ -491,7 +611,6 @@ module soc_addr_decode #(
 
   // --------------------------------------------------------------------------
   // Debug Module slave port — data demux only
-  // dm_top.slave_* is a simple 1-cycle request/response interface
   // --------------------------------------------------------------------------
   assign dbg_req_o   = data_mgr_req[SEL_DBG].req;
   assign dbg_addr_o  = data_mgr_req[SEL_DBG].a.addr;
@@ -508,10 +627,9 @@ module soc_addr_decode #(
     data_mgr_rsp[SEL_DBG].r.err    = 1'b0;
   end
 
-
   // --------------------------------------------------------------------------
-  // Error responder — unmapped address
-  // Returns gnt immediately, rvalid next cycle, err=1, rdata=0
+  // Error responder — unmapped address OR denied privileged access (Req 1-3)
+  // Returns gnt immediately, rvalid next cycle, err=1, rdata=DEAD_BEEF
   // --------------------------------------------------------------------------
   logic err_rvalid_q;
 

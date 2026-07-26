@@ -37,13 +37,26 @@ module tb_plic_top;
     rst_ni = 1;
   end
 
-  // ---- reg bus interface ----
   plic_reg_if u_if (.clk_i(clk_i), .rst_ni(rst_ni));
 
-  // Pack/unpack interface signals into whatever struct plic_top expects.
-  // Replace `reg_req_t`/`reg_rsp_t` with the actual imported types.
-  reg_req_t plic_req;
-  reg_rsp_t plic_rsp;
+  // Local struct types matching the reg bus plic_top is generic over
+  typedef struct packed {
+    logic        valid;
+    logic        write;
+    logic [31:0] addr;
+    logic [31:0] wdata;
+    logic [3:0]  wstrb;
+  } plic_reg_req_t;
+
+  typedef struct packed {
+    logic        ready;
+    logic [31:0] rdata;
+    logic        error;
+  } plic_reg_rsp_t;
+
+  plic_reg_req_t plic_req;
+  plic_reg_rsp_t plic_rsp;
+  logic [0:0]    eip_targets; // N_TARGET=1
 
   assign plic_req.valid = u_if.valid;
   assign plic_req.write = u_if.write;
@@ -55,20 +68,23 @@ module tb_plic_top;
   assign u_if.rdata = plic_rsp.rdata;
   assign u_if.error = plic_rsp.error;
 
+  assign irq_external = eip_targets[0];
+
   // ---- DUT ----
   plic_top #(
-    .N_SOURCE (N_SOURCE),
-    .N_TARGET (1),
-    .MAX_PRIO (3)
+    .N_SOURCE  (N_SOURCE),
+    .N_TARGET  (1),
+    .MAX_PRIO  (3),
+    .reg_req_t (plic_reg_req_t),
+    .reg_rsp_t (plic_reg_rsp_t)
   ) u_dut (
     .clk_i,
     .rst_ni,
-    .req_i     (plic_req),
-    .rsp_o     (plic_rsp),
-    .irq_src_i (u_irq_if.irq_src),
-    .irq_o     (irq_external),
-    .irq_id_o  (irq_id_unused),
-    .msip_o    ()
+    .req_i          (plic_req),
+    .resp_o         (plic_rsp),
+    .le_i           ('0),               // all sources level-triggered
+    .irq_sources_i  (u_irq_if.irq_src),
+    .eip_targets_o  (eip_targets)
   );
 
   // ---- TB env ----

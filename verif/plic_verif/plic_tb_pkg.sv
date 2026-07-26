@@ -134,12 +134,12 @@ package plic_tb_pkg;
     function new(virtual plic_irq_if.drv vif);
       this.vif = vif;
     endfunction
-  
+    
     task automatic assert_src(int unsigned id);
-      vif.irq_src[id] = 1'b1;
+      vif.irq_src[id-1] = 1'b1;
     endtask
     task automatic deassert_src(int unsigned id);
-      vif.irq_src[id] = 1'b0;
+      vif.irq_src[id-1] = 1'b0;
     endtask
     task automatic clear_all();
       vif.irq_src = '0;

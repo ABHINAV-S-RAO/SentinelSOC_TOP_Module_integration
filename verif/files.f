@@ -1,4 +1,3 @@
--sv
 +incdir+rtl/core/ibex_core/vendor/lowrisc_ip/dv/sv/dv_utils
 +incdir+rtl/core/ibex_core/vendor/lowrisc_ip/ip/prim/rtl
 +incdir+rtl/core/ibex_core/vendor/lowrisc_ip/ip/prim_generic/rtl
@@ -34,6 +33,12 @@ rtl/Interrupts/plic/plic_regmap.sv
 rtl/Interrupts/plic/rv_plic_gateway.sv
 rtl/Interrupts/plic/rv_plic_target.sv
 rtl/Interrupts/plic/plic_top.sv
+
+# PLIC verification (standalone bench, elaborated via -top tb_plic_top)
++incdir+verif/plic_verif/files
+verif/plic_verif/plic_reg_if.sv
+verif/plic_verif/plic_tb_pkg.sv
+verif/plic_verif/tb_plic_top.sv
 
 rtl/crypto/ed25519/ED25519/ED25519.srcs/sources_1/new/SHA/sha512_pkg.sv
 rtl/crypto/ed25519/ED25519/ED25519.srcs/sources_1/new/ALU/pseudo_mersenne.sv

@@ -1,6 +1,8 @@
 // Copyright 2025
 // SoC Address Decoder
-// Wraps obi_demux for data path (8 slaves) and fetch path (2 slaves: BootROM, ISRAM)
+// Wraps obi_demux for data path (9 slaves: BootROM/ISRAM/DSRAM/CTRL/BUF/
+// SHA/PLIC/APB/DBG + 1 error responder) and fetch path (3 slaves: BootROM,
+// ISRAM, DBG — DBG added for debug-ROM instruction fetch, see arbiter below)
 // Uses ObiDefaultConfig: 32-bit addr/data, 1-bit ID, no integrity, no optional fields
 //
 // =============================================================================
@@ -225,13 +227,27 @@ module soc_addr_decode #(
   input  logic [31:0] apb_rdata_i,
   input  logic        apb_err_i,
 
-  // Debug Target Interface (dm_top slave port — separate JTAG-side access,
-  // NOT gated by the priv model above; out of scope for this pass)
+  // Debug Target Interface (dm_top slave port). Shared by BOTH the data
+  // demux (SEL_DBG — abstract data register / program-buffer-data
+  // access) AND the fetch demux (FSEL_DBG — debug ROM / program-buffer
+  // instruction fetch) via the arbiter below, mirroring the BootROM/
+  // ISRAM arbiters. Both traffic types originate from the same halted
+  // Ibex core executing the execution-based debug protocol, never from
+  // a second independent master (SBA is deliberately disconnected — see
+  // soc_top.sv).
+  //
+  // dbg_gnt_i: ASSUMED PLACEHOLDER — the dm_top.sv shared so far has no
+  // gnt/rvalid on its slave port at all (just slave_rdata_o). This
+  // module assumes a fixed single-cycle latency (gnt=req, rvalid next
+  // cycle), matching soc_sram's convention, until confirmed against the
+  // real dm_top/dm_mem source. If dm_top's slave port is actually
+  // zero-latency combinational, this needs to change to match.
   output logic        dbg_req_o,
   output logic [31:0] dbg_addr_o,
   output logic        dbg_we_o,
   output logic [ 3:0] dbg_be_o,
   output logic [31:0] dbg_wdata_o,
+  input  logic        dbg_gnt_i,
   input  logic        dbg_rvalid_i,
   input  logic [31:0] dbg_rdata_i
 );
@@ -263,11 +279,18 @@ module soc_addr_decode #(
   } data_sel_e;
 
   // --------------------------------------------------------------------------
-  // Slave index encoding for fetch demux (2 slaves)
+  // Slave index encoding for fetch demux (3 slaves)
   // --------------------------------------------------------------------------
-  typedef enum logic [0:0] {
-    FSEL_BOOTROM = 1'd0,
-    FSEL_ISRAM   = 1'd1
+  // FSEL_DBG added: when the core enters debug mode (PC = DmHaltAddr,
+  // e.g. 0x1A11_0800) it FETCHES instructions from dm_top's debug ROM /
+  // program buffer via the normal instr_req_o path — this is not an
+  // optional extra, the execution-based debug protocol requires it (see
+  // soc_top.sv comments on dbg_mode / dm_top). Without this, a fetch to
+  // the debug ROM range silently falls through to FSEL_BOOTROM instead.
+  typedef enum logic [1:0] {
+    FSEL_BOOTROM = 2'd0,
+    FSEL_ISRAM   = 2'd1,
+    FSEL_DBG     = 2'd2
   } fetch_sel_e;
 
   // --------------------------------------------------------------------------
@@ -355,8 +378,9 @@ module soc_addr_decode #(
   fetch_sel_e fetch_sel;
 
   always_comb begin
-    if ((instr_addr_i & ISRAM_MASK) == ISRAM_BASE) fetch_sel = FSEL_ISRAM;
-    else                                            fetch_sel = FSEL_BOOTROM;
+    if      ((instr_addr_i & ISRAM_MASK) == ISRAM_BASE) fetch_sel = FSEL_ISRAM;
+    else if ((instr_addr_i & DBG_MASK)   == DBG_BASE)   fetch_sel = FSEL_DBG;
+    else                                                 fetch_sel = FSEL_BOOTROM;
   end
 
   // --------------------------------------------------------------------------
@@ -385,9 +409,9 @@ module soc_addr_decode #(
   );
 
   // --------------------------------------------------------------------------
-  // Fetch demux — 2 manager ports (BootROM, ISRAM)
+  // Fetch demux — 3 manager ports (BootROM, ISRAM, DBG)
   // --------------------------------------------------------------------------
-  localparam int unsigned FetchNumMgrPorts = 2;
+  localparam int unsigned FetchNumMgrPorts = 3;
 
   soc_obi_req_t [FetchNumMgrPorts-1:0] fetch_mgr_req;
   soc_obi_rsp_t [FetchNumMgrPorts-1:0] fetch_mgr_rsp;
@@ -398,7 +422,7 @@ module soc_addr_decode #(
     .obi_rsp_t   ( soc_obi_rsp_t    ),
     .NumMgrPorts ( FetchNumMgrPorts  ),
     .NumMaxTrans ( NumMaxTrans       ),
-    .select_t    ( logic [0:0]       )
+    .select_t    ( logic [1:0]       )
   ) u_fetch_demux (
     .clk_i,
     .rst_ni,
@@ -593,6 +617,26 @@ module soc_addr_decode #(
   end
 
   // --------------------------------------------------------------------------
+  // PLIC — data demux only, simple passthrough (not privileged: interrupt
+  // controller config isn't verification-critical state, no gating needed)
+  // NOTE: ports/decode case existed already but the response wiring was
+  // missing — plic_req_o/data_mgr_rsp[SEL_PLIC] were undriven. Added here.
+  // --------------------------------------------------------------------------
+  assign plic_req_o   = data_mgr_req[SEL_PLIC].req;
+  assign plic_addr_o  = data_mgr_req[SEL_PLIC].a.addr;
+  assign plic_we_o    = data_mgr_req[SEL_PLIC].a.we;
+  assign plic_be_o    = data_mgr_req[SEL_PLIC].a.be;
+  assign plic_wdata_o = data_mgr_req[SEL_PLIC].a.wdata;
+
+  always_comb begin
+    data_mgr_rsp[SEL_PLIC]         = '0;
+    data_mgr_rsp[SEL_PLIC].gnt     = plic_gnt_i;
+    data_mgr_rsp[SEL_PLIC].rvalid  = plic_rvalid_i;
+    data_mgr_rsp[SEL_PLIC].r.rdata = plic_rdata_i;
+    data_mgr_rsp[SEL_PLIC].r.err   = plic_err_i;
+  end
+
+  // --------------------------------------------------------------------------
   // APB Bridge
   // --------------------------------------------------------------------------
   assign apb_req_o   = data_mgr_req[SEL_APB].req;
@@ -610,21 +654,55 @@ module soc_addr_decode #(
   end
 
   // --------------------------------------------------------------------------
-  // Debug Module slave port — data demux only
+  // Debug Module slave port — arbiter between data demux [SEL_DBG]
+  // (abstract data register access) and fetch demux [FSEL_DBG] (debug
+  // ROM / program buffer instruction fetch). Priority: data wins, same
+  // convention as the ISRAM arbiter — mid-transaction data-register
+  // accesses shouldn't be preempted by the next instruction fetch.
+  // NOT gated by boot_done_i/dbg_mode_i/fw_verified_i: this path is only
+  // ever reachable when the core is already halted in debug mode by
+  // construction (that's what dm_mem is for), so the priv model doesn't
+  // apply here.
   // --------------------------------------------------------------------------
-  assign dbg_req_o   = data_mgr_req[SEL_DBG].req;
-  assign dbg_addr_o  = data_mgr_req[SEL_DBG].a.addr;
-  assign dbg_we_o    = data_mgr_req[SEL_DBG].a.we;
-  assign dbg_be_o    = data_mgr_req[SEL_DBG].a.be;
-  assign dbg_wdata_o = data_mgr_req[SEL_DBG].a.wdata;
+  logic dbg_data_active, dbg_fetch_active;
 
-  // dm_top grants immediately (no backpressure on slave port)
   always_comb begin
-    data_mgr_rsp[SEL_DBG]          = '0;
-    data_mgr_rsp[SEL_DBG].gnt      = data_mgr_req[SEL_DBG].req; // always grant
-    data_mgr_rsp[SEL_DBG].rvalid   = dbg_rvalid_i;
-    data_mgr_rsp[SEL_DBG].r.rdata  = dbg_rdata_i;
-    data_mgr_rsp[SEL_DBG].r.err    = 1'b0;
+    dbg_data_active  = data_mgr_req[SEL_DBG].req;
+    dbg_fetch_active = fetch_mgr_req[FSEL_DBG].req & ~dbg_data_active;
+
+    dbg_req_o   = 1'b0;
+    dbg_addr_o  = '0;
+    dbg_we_o    = 1'b0;
+    dbg_be_o    = '0;
+    dbg_wdata_o = '0;
+
+    data_mgr_rsp[SEL_DBG]   = '0;
+    fetch_mgr_rsp[FSEL_DBG] = '0;
+
+    if (dbg_data_active) begin
+      dbg_req_o   = 1'b1;
+      dbg_addr_o  = data_mgr_req[SEL_DBG].a.addr;
+      dbg_we_o    = data_mgr_req[SEL_DBG].a.we;
+      dbg_be_o    = data_mgr_req[SEL_DBG].a.be;
+      dbg_wdata_o = data_mgr_req[SEL_DBG].a.wdata;
+
+      data_mgr_rsp[SEL_DBG].gnt     = dbg_gnt_i;
+      data_mgr_rsp[SEL_DBG].rvalid  = dbg_rvalid_i;
+      data_mgr_rsp[SEL_DBG].r.rdata = dbg_rdata_i;
+      data_mgr_rsp[SEL_DBG].r.err   = 1'b0;
+
+    end else if (dbg_fetch_active) begin
+      dbg_req_o   = 1'b1;
+      dbg_addr_o  = fetch_mgr_req[FSEL_DBG].a.addr;
+      dbg_we_o    = 1'b0;
+      dbg_be_o    = 4'hF;
+      dbg_wdata_o = '0;
+
+      fetch_mgr_rsp[FSEL_DBG].gnt     = dbg_gnt_i;
+      fetch_mgr_rsp[FSEL_DBG].rvalid  = dbg_rvalid_i;
+      fetch_mgr_rsp[FSEL_DBG].r.rdata = dbg_rdata_i;
+      fetch_mgr_rsp[FSEL_DBG].r.err   = 1'b0;
+    end
   end
 
   // --------------------------------------------------------------------------

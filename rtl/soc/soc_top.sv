@@ -140,8 +140,28 @@ typedef struct packed {
   logic        dbg_we;
   logic [ 3:0] dbg_be;
   logic [31:0] dbg_wdata;
+  logic        dbg_gnt;
   logic        dbg_rvalid;
   logic [31:0] dbg_rdata;
+
+  // PLACEHOLDER: dm_top's slave port (as shared so far) has no gnt
+  // output at all — tied to 1'b1 (always grant) to match the decoder's
+  // fixed-latency assumption. Replace once dm_top's actual timing is
+  // confirmed (see u_dm_top instantiation comment below).
+  assign dbg_gnt = 1'b1;
+
+  // Core-halted-in-debug-mode status, feeds soc_addr_decode.dbg_mode_i
+  // (Req 1-4 CSR/ISRAM-write gating). NOT derived from an Ibex output —
+  // Ibex's only debug port is debug_req_i, per the RISC-V debug spec's
+  // execution-based approach. This must instead come from dm_top's own
+  // internal `halted` signal (currently local to dm_top, between i_dm_mem
+  // and i_dm_csrs) — add `output logic [NrHarts-1:0] halted_o` to
+  // dm_top.sv (trivial: it's already computed, just not exposed) and
+  // connect it here. TODO: wire once that port exists; tied to 1'b0
+  // (fail-closed — no post-boot CSR reads at all) in the meantime.
+  logic        dbg_mode;
+  assign dbg_mode = 1'b0; // TODO: replace with dm_top halted_o once exposed
+
   // Debugger Signals 
   logic        debug_req_raw;
   logic        debug_req_gated;
@@ -512,6 +532,7 @@ soc_addr_decode #(
   .dbg_we_o     ( dbg_we     ),
   .dbg_be_o     ( dbg_be     ),
   .dbg_wdata_o  ( dbg_wdata  ),
+  .dbg_gnt_i    ( dbg_gnt    ),
   .dbg_rvalid_i ( dbg_rvalid ),
   .dbg_rdata_i  ( dbg_rdata  )
 );
@@ -866,17 +887,44 @@ sha_ed25519_obi_wrapper u_sha_ctrl (
   // RISC-V Debug Module (DM)
   // ---------------------------------------------------------------------------
   dm_top #(
-    .NrHarts(1),
-    .BusWidth(32)
+    .NrHarts       ( 1              ),
+    .BusWidth      ( 32             ),
+    // FIX: was left at module default ('h1000), which does not match
+    // DmHaltAddr/DmExceptionAddr (0x1A11_0800/0x1A11_0808) used on the
+    // Ibex side, nor DBG_BASE (0x1A11_0000) in soc_addr_decode. The
+    // standard riscv-dbg HaltAddress/ExceptionAddress offsets (0x800,
+    // 0x808) are relative to DmBaseAddress, so this MUST be 0x1A11_0000
+    // for dm_mem's internal address decode to recognize its own ROM/data
+    // region at all. TODO: confirm exact offsets against dm_pkg.sv once
+    // available — flagging with high confidence based on standard
+    // riscv-dbg convention, not yet verified against your exact source.
+    .DmBaseAddress ( 32'h1A11_0000  )
   ) u_dm_top (
     .clk_i            (clk_i),
     .rst_ni           (rst_ni),
     .testmode_i       (1'b0),
+    .next_dm_addr_i   (32'h0),
     .ndmreset_o       (ndmreset),
+    // FIX: was left unconnected — required input, causes X-propagation
+    // through the ndmreset handshake in i_dm_csrs. Tied to 1'b1 (ack
+    // always asserted) as a placeholder since this SoC doesn't yet have
+    // a dedicated reset controller generating a real ack pulse. Revisit
+    // once/if one exists — a real ack should follow the actual duration
+    // of your non-debug-module reset, not be permanently asserted.
+    .ndmreset_ack_i   (1'b1),
     .dmactive_o       (),
     .debug_req_o      (debug_req_raw),
     .unavailable_i    (1'b0),
-    
+    // FIX: required input, type dm::hartinfo_t — was unconnected.
+    // PLACEHOLDER: zeroed out. This is very likely WRONG — hartinfo
+    // normally carries nscratch/dataaccess/datasize/dataaddr fields that
+    // dm_csrs reports to the debugger and that the debug ROM's abstract
+    // command sequences may rely on. Needs dm_pkg.sv to fill in real
+    // values (the standard riscv-dbg reference default is usually
+    // nscratch=2, dataaccess=1, datasize=dm::DataCount,
+    // dataaddr=dm::DataAddr — confirm against your dm_pkg.sv).
+    .hartinfo_i       ('0),
+
     // DMI Interface
     .dmi_req_i        (dmi_req_data),
     .dmi_req_valid_i  (dmi_req_valid),
@@ -884,9 +932,23 @@ sha_ed25519_obi_wrapper u_sha_ctrl (
     .dmi_resp_o       (dmi_resp_data),
     .dmi_resp_valid_o (dmi_resp_valid),
     .dmi_resp_ready_i (dmi_resp_ready),
-    
-    // Target Memory Interface (Ibex reads from this when halted)
-    // TODO: Connect these to your soc_addr_decode for address 0x1A11_0000
+    .dmi_rst_ni       (rst_ni),
+
+    // Target Memory Interface — routed through soc_addr_decode's
+    // DBG range (0x1A11_0000, see u_addr_decode below). Shared between
+    // fetch-path (debug ROM / program buffer instruction fetch) and
+    // data-path (abstract data registers) via the dbg arbiter in
+    // soc_addr_decode — see that file for details.
+    //
+    // *** OPEN QUESTION — CONFIRM BEFORE RELYING ON THIS ***
+    // .slave_rvalid_o below does not exist on the dm_top.sv you shared
+    // earlier (that port list is only slave_req_i/we_i/addr_i/be_i/
+    // wdata_i -> slave_rdata_o, no gnt, no rvalid). Either you're
+    // building against a different/newer dm_top.sv than what I have, or
+    // this line needs to come out and be replaced with a fixed-latency
+    // model (decoder-side registered rvalid, same pattern as the
+    // SEL_ERR responder). Please confirm which dm_top.sv is actually in
+    // your Bender/FuseSoC sources — I'll adjust the arbiter to match.
     .slave_req_i    ( dbg_req    ),
     .slave_we_i     ( dbg_we     ),
     .slave_addr_i   ( dbg_addr   ),
@@ -894,16 +956,25 @@ sha_ed25519_obi_wrapper u_sha_ctrl (
     .slave_be_i     ( dbg_be     ),
     .slave_rvalid_o ( dbg_rvalid ),
     .slave_rdata_o  ( dbg_rdata  ),
-    
-    // SBA Master Interface (TIED OFF for simple configuration!)
-    .master_req_o     (),
-    .master_add_o     (),
-    .master_we_o      (),
-    .master_wdata_o   (),
-    .master_be_o      (),
-    .master_gnt_i     (1'b0),
-    .master_r_valid_i (1'b0),
-    .master_r_rdata_i (32'h0)
+
+    // SBA Master Interface — deliberately tied off (see earlier
+    // discussion: leaving SBA disabled is the intended security posture
+    // for this SoC, not a stopgap). master_r_err_i/master_r_other_err_i
+    // are required inputs and were previously left unconnected — tied
+    // to 1'b0 here; harmless since the port is otherwise fully disabled
+    // (master_gnt_i=0 means dm_sba never proceeds far enough to sample
+    // these in practice, but leaving them floating is still bad
+    // practice / X-propagation risk).
+    .master_req_o          (),
+    .master_add_o          (),
+    .master_we_o           (),
+    .master_wdata_o        (),
+    .master_be_o           (),
+    .master_gnt_i          (1'b0),
+    .master_r_valid_i      (1'b0),
+    .master_r_err_i        (1'b0),
+    .master_r_other_err_i  (1'b0),
+    .master_r_rdata_i      (32'h0)
   );
 
 endmodule

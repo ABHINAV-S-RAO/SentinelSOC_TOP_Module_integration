@@ -173,7 +173,8 @@ package plic_tb_pkg;
       priority_q[id] = val[2:0];
     endfunction
     function automatic void set_ie(logic [31:0] mask);
-      foreach (ie_q[i]) ie_q[i] = mask[i];
+      foreach (ie_q[i])
+    ie_q[i] = mask[i+1];
     endfunction
     function automatic void set_threshold(logic [31:0] val);
       threshold_q = val;

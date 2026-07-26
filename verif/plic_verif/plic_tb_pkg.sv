@@ -9,8 +9,8 @@ package plic_tb_pkg;
   // ---------------------------------------------------------------------
   localparam int unsigned N_SOURCE       = 12;
   localparam logic [31:0] PLIC_PRIORITY0 = 32'h0C00_0000; // + 4*i, i=0..12
-  localparam logic [31:0] PLIC_IP        = 32'h0C01_0000; // RO
-  localparam logic [31:0] PLIC_IE        = 32'h0C02_0000;
+  localparam logic [31:0] PLIC_IP        = 32'h0C00_1000; // RO
+  localparam logic [31:0] PLIC_IE        = 32'h0C00_2000;
   localparam logic [31:0] PLIC_THRESHOLD = 32'h0C20_0000;
   localparam logic [31:0] PLIC_CC        = 32'h0C20_0004;
 

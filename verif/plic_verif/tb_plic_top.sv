@@ -115,9 +115,9 @@ module tb_plic_top;
   task automatic phase0_plumbing();
     logic [31:0] rd;
     $display("\n===== PHASE 0: plumbing =====");
-    reg_drv.write_priority(0, 32'h3);
-    model.set_priority(0, 32'h3);
-    reg_drv.read_priority(0, rd);
+    reg_drv.write_priority(1, 32'h3);
+    model.set_priority(1, 32'h3);
+    reg_drv.read_priority(1, rd);
     scb.check32("phase0.priority0_readback", rd, 32'h3);
   endtask
 

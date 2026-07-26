@@ -204,15 +204,6 @@ module tb_plic_top;
     found = model.compute_expected(wid, wprio);
     scb.check("phase3.asserted_above_threshold", irq_external, found);
 // ---- debug instrumentation, remove after root-causing ----
-always @(posedge clk_i) begin
-  if (rst_ni)
-    $display("[DBG] t=%0t irq_src=%b  gw.ip=%b  u_dut.ip=%b  claim=%b  ia=%b",
-              $time, u_irq_if.irq_src,
-              u_dut.i_rv_plic_gateway.ip,
-              u_dut.ip,
-              u_dut.i_rv_plic_gateway.claim,
-              u_dut.i_rv_plic_gateway.ia);
-end
     drive_source(2, 0);
     reg_drv.write_threshold(32'h0); model.set_threshold(32'h0);
     reg_drv.write_ie(32'h0);        model.set_ie(32'h0);

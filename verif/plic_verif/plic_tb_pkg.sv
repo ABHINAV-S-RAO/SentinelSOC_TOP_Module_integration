@@ -129,24 +129,20 @@ package plic_tb_pkg;
   // plan's single-source / multi-source directed tests.
   // ---------------------------------------------------------------------
   class irq_source_driver;
-    virtual interface plic_reg_if.drv dummy; // placeholder, unused
-    // Bound externally to the DUT's irq_src_i vector via a virtual ref.
-    // Using a plain ref array avoids needing a second interface for a
-    // simple combinational vector.
-    ref logic [N_SOURCE-1:0] irq_src;
-
-    function new(ref logic [N_SOURCE-1:0] irq_src);
-      this.irq_src = irq_src;
+    virtual plic_irq_if.drv vif;
+  
+    function new(virtual plic_irq_if.drv vif);
+      this.vif = vif;
     endfunction
-
+  
     task automatic assert_src(int unsigned id);
-      irq_src[id] = 1'b1;
+      vif.irq_src[id] = 1'b1;
     endtask
     task automatic deassert_src(int unsigned id);
-      irq_src[id] = 1'b0;
+      vif.irq_src[id] = 1'b0;
     endtask
     task automatic clear_all();
-      irq_src = '0;
+      vif.irq_src = '0;
     endtask
   endclass
 

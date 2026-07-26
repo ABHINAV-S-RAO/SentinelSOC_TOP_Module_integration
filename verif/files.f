@@ -35,8 +35,9 @@ rtl/Interrupts/plic/rv_plic_target.sv
 rtl/Interrupts/plic/plic_top.sv
 
 # PLIC verification (standalone bench, elaborated via -top tb_plic_top)
-+incdir+verif/plic_verif/files
++incdir+verif/plic_verif
 verif/plic_verif/plic_reg_if.sv
+verif/plic_verif/plic_irq_if.sv
 verif/plic_verif/plic_tb_pkg.sv
 verif/plic_verif/tb_plic_top.sv
 

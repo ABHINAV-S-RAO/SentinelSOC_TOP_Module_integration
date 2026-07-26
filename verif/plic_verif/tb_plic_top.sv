@@ -22,7 +22,7 @@ module tb_plic_top;
   logic clk_i;
   logic rst_ni;
 
-  logic [N_SOURCE-1:0] irq_src;
+  plic_irq_if #(.N_SOURCE(N_SOURCE)) u_irq_if (.clk_i(clk_i));
   logic                irq_external;
   logic [31:0]         irq_id_unused;
 
@@ -32,7 +32,7 @@ module tb_plic_top;
 
   initial begin
     rst_ni = 0;
-    irq_src = '0;
+    u_irq_if.irq_src = '0;
     repeat (5) @(posedge clk_i);
     rst_ni = 1;
   end
@@ -65,7 +65,7 @@ module tb_plic_top;
     .rst_ni,
     .req_i     (plic_req),
     .rsp_o     (plic_rsp),
-    .irq_src_i (irq_src),
+    .irq_src_i (u_irq_if.irq_src),
     .irq_o     (irq_external),
     .irq_id_o  (irq_id_unused),
     .msip_o    ()
@@ -79,7 +79,7 @@ module tb_plic_top;
 
   initial begin
     reg_drv = new(u_if.drv);
-    src_drv = new(irq_src);
+    src_drv = new(u_irq_if.drv);
     model   = new();
     scb     = new(model);
   end
@@ -88,12 +88,11 @@ module tb_plic_top;
   // Helper: assert a source and let its IP bit settle, updating model
   // ---------------------------------------------------------------------
   task automatic drive_source(int unsigned id, bit level);
-    src_drv.assert_src(id); // no-op if level==0, corrected below
-    if (level) irq_src[id] = 1'b1; else irq_src[id] = 1'b0;
+    if (level) src_drv.assert_src(id);
+    else       src_drv.deassert_src(id);
     model.set_src_level(id, level);
     @(posedge clk_i);
   endtask
-
   // ---------------------------------------------------------------------
   // Phase 0: plumbing sanity
   // ---------------------------------------------------------------------

@@ -144,23 +144,30 @@ typedef struct packed {
   logic        dbg_rvalid;
   logic [31:0] dbg_rdata;
 
-  // PLACEHOLDER: dm_top's slave port (as shared so far) has no gnt
-  // output at all — tied to 1'b1 (always grant) to match the decoder's
-  // fixed-latency assumption. Replace once dm_top's actual timing is
-  // confirmed (see u_dm_top instantiation comment below).
+  // CONFIRMED (read dm_top.sv/dm_mem.sv directly): the slave port has no
+  // gnt or rvalid at all — just slave_req_i/we_i/addr_i/be_i/wdata_i ->
+  // slave_rdata_o. dm_mem's read path (rdata_q/fwd_rom_q/word_enable32_q,
+  // all registered every cycle off req_i, no stall logic anywhere) is a
+  // fixed single-cycle-latency, always-accepted memory. So:
+  //   - dbg_gnt = 1'b1 is correct as-is, not a placeholder to replace.
+  //   - dbg_rvalid must be generated locally as dbg_req delayed by one
+  //     cycle (dm_top has no rvalid port to source it from).
   assign dbg_gnt = 1'b1;
 
+  logic dbg_rvalid_q;
+  always_ff @(posedge clk_i or negedge rst_ni) begin
+    if (!rst_ni) dbg_rvalid_q <= 1'b0;
+    else         dbg_rvalid_q <= dbg_req;
+  end
+  assign dbg_rvalid = dbg_rvalid_q;
+
   // Core-halted-in-debug-mode status, feeds soc_addr_decode.dbg_mode_i
-  // (Req 1-4 CSR/ISRAM-write gating). NOT derived from an Ibex output —
-  // Ibex's only debug port is debug_req_i, per the RISC-V debug spec's
-  // execution-based approach. This must instead come from dm_top's own
-  // internal `halted` signal (currently local to dm_top, between i_dm_mem
-  // and i_dm_csrs) — add `output logic [NrHarts-1:0] halted_o` to
-  // dm_top.sv (trivial: it's already computed, just not exposed) and
-  // connect it here. TODO: wire once that port exists; tied to 1'b0
-  // (fail-closed — no post-boot CSR reads at all) in the meantime.
+  // (Req 1-4 CSR/ISRAM-write gating). Sourced from dm_top's new halted_o
+  // port (added directly to dm_top.sv, wired from dm_mem's pre-existing
+  // internal halted signal — see dm_top.sv for the one-line addition).
+  logic        dm_halted;
   logic        dbg_mode;
-  assign dbg_mode = 1'b0; // TODO: replace with dm_top halted_o once exposed
+  assign dbg_mode = dm_halted; // NrHarts=1, so this is hart 0's halted bit
 
   // Debugger Signals 
   logic        debug_req_raw;
@@ -173,6 +180,12 @@ typedef struct packed {
   logic [40:0] dmi_req_data;
   logic        dmi_resp_valid, dmi_resp_ready;
   logic [33:0] dmi_resp_data;
+  // Glitch-free reset pulsed by dmi_jtag for one clk_i cycle on POR,
+  // TestLogicReset, or a dmihardreset DTMCS write. Must feed dm_top's
+  // dmi_rst_ni so a JTAG-side reset actually clears the DM's DMI-facing
+  // state — previously unconnected, with dm_top.dmi_rst_ni tied to the
+  // chip reset instead (see both instantiations below).
+  logic        dmi_rst_n;
 
   // Security Gating: Tie to 0 for development. 
   // Later, tie to SHA valid signal to block debug on boot.
@@ -307,8 +320,14 @@ typedef struct packed {
     .BranchPredictor  ( 1'b0          ),
     .DbgTriggerEn     ( 1'b0          ),
     .SecureIbex       ( 1'b0          ),
-    .DmHaltAddr       ( 32'h1A110800  ), // standard DM halt addr — update with riscv_dbg base
-    .DmExceptionAddr  ( 32'h1A110808  )
+    .DmHaltAddr       ( 32'h1A110800  ), // = DmBaseAddress + dm::HaltAddress (0x800)
+    // CONFIRMED against dm_pkg.sv: HaltAddress=0x800, ResumeAddress=
+    // HaltAddress+8=0x808, ExceptionAddress=HaltAddress+16=0x810. This was
+    // previously wired to 0x808 (ResumeAddress) instead of 0x810
+    // (ExceptionAddress) — an exception taken during a program-buffer/
+    // abstract-command sequence would have jumped into the Resume entry
+    // point instead of the Exception handler.
+    .DmExceptionAddr  ( 32'h1A110810  )
   ) u_ibex_top (
     .clk_i                      ( clk_i            ),
     .rst_ni                     ( rst_ni            ),
@@ -865,6 +884,7 @@ sha_ed25519_obi_wrapper u_sha_ctrl (
     .clk_i            (clk_i),
     .rst_ni           (rst_ni),
     .testmode_i       (1'b0),
+    .dmi_rst_no       (dmi_rst_n),
     
     // JTAG pins
     .tck_i            (jtag_tck_i),
@@ -889,15 +909,10 @@ sha_ed25519_obi_wrapper u_sha_ctrl (
   dm_top #(
     .NrHarts       ( 1              ),
     .BusWidth      ( 32             ),
-    // FIX: was left at module default ('h1000), which does not match
-    // DmHaltAddr/DmExceptionAddr (0x1A11_0800/0x1A11_0808) used on the
-    // Ibex side, nor DBG_BASE (0x1A11_0000) in soc_addr_decode. The
-    // standard riscv-dbg HaltAddress/ExceptionAddress offsets (0x800,
-    // 0x808) are relative to DmBaseAddress, so this MUST be 0x1A11_0000
-    // for dm_mem's internal address decode to recognize its own ROM/data
-    // region at all. TODO: confirm exact offsets against dm_pkg.sv once
-    // available — flagging with high confidence based on standard
-    // riscv-dbg convention, not yet verified against your exact source.
+    // CONFIRMED against dm_pkg.sv: HaltAddress=0x800, ResumeAddress=0x808,
+    // ExceptionAddress=0x810, all relative to DmBaseAddress — so this must
+    // be 0x1A11_0000 to match DBG_BASE in soc_addr_decode and
+    // DmHaltAddr/DmExceptionAddr on the Ibex side above.
     .DmBaseAddress ( 32'h1A11_0000  )
   ) u_dm_top (
     .clk_i            (clk_i),
@@ -914,16 +929,21 @@ sha_ed25519_obi_wrapper u_sha_ctrl (
     .ndmreset_ack_i   (1'b1),
     .dmactive_o       (),
     .debug_req_o      (debug_req_raw),
+    // New port added to dm_top.sv: per-hart halted status, sourced from
+    // dm_mem's pre-existing internal halted signal. Feeds dbg_mode above.
+    .halted_o         (dm_halted),
     .unavailable_i    (1'b0),
-    // FIX: required input, type dm::hartinfo_t — was unconnected.
-    // PLACEHOLDER: zeroed out. This is very likely WRONG — hartinfo
-    // normally carries nscratch/dataaccess/datasize/dataaddr fields that
-    // dm_csrs reports to the debugger and that the debug ROM's abstract
-    // command sequences may rely on. Needs dm_pkg.sv to fill in real
-    // values (the standard riscv-dbg reference default is usually
-    // nscratch=2, dataaccess=1, datasize=dm::DataCount,
-    // dataaddr=dm::DataAddr — confirm against your dm_pkg.sv).
-    .hartinfo_i       ('0),
+    // CONFIRMED against dm_pkg.sv/dm_mem.sv: dm_mem itself doesn't consume
+    // hartinfo_i for the abstract-command flow (HasSndScratch is derived
+    // locally from DmBaseAddress != 0), so this only matters for what
+    // OpenOCD reads back via the Hartinfo CSR. Values below match the
+    // HasSndScratch=1 config actually in use (DmBaseAddress=0x1A110000):
+    // nscratch=2 (dscratch0/dscratch1 both used), dataaccess=1 (data
+    // registers are memory-mapped, not CSR-shadowed), datasize=
+    // dm::DataCount, dataaddr=dm::DataAddr.
+    .hartinfo_i       ('{nscratch: 4'd2, dataaccess: 1'b1,
+                          datasize: dm::DataCount, dataaddr: dm::DataAddr,
+                          default: '0}),
 
     // DMI Interface
     .dmi_req_i        (dmi_req_data),
@@ -932,7 +952,7 @@ sha_ed25519_obi_wrapper u_sha_ctrl (
     .dmi_resp_o       (dmi_resp_data),
     .dmi_resp_valid_o (dmi_resp_valid),
     .dmi_resp_ready_i (dmi_resp_ready),
-    .dmi_rst_ni       (rst_ni),
+    .dmi_rst_ni       (dmi_rst_n),
 
     // Target Memory Interface — routed through soc_addr_decode's
     // DBG range (0x1A11_0000, see u_addr_decode below). Shared between
@@ -940,21 +960,16 @@ sha_ed25519_obi_wrapper u_sha_ctrl (
     // data-path (abstract data registers) via the dbg arbiter in
     // soc_addr_decode — see that file for details.
     //
-    // *** OPEN QUESTION — CONFIRM BEFORE RELYING ON THIS ***
-    // .slave_rvalid_o below does not exist on the dm_top.sv you shared
-    // earlier (that port list is only slave_req_i/we_i/addr_i/be_i/
-    // wdata_i -> slave_rdata_o, no gnt, no rvalid). Either you're
-    // building against a different/newer dm_top.sv than what I have, or
-    // this line needs to come out and be replaced with a fixed-latency
-    // model (decoder-side registered rvalid, same pattern as the
-    // SEL_ERR responder). Please confirm which dm_top.sv is actually in
-    // your Bender/FuseSoC sources — I'll adjust the arbiter to match.
+    // CONFIRMED: dm_top's slave port has no gnt/rvalid at all (just
+    // slave_req_i/we_i/addr_i/be_i/wdata_i -> slave_rdata_o). dbg_rvalid
+    // is generated locally above (dbg_req delayed one cycle, matching
+    // dm_mem's fixed single-cycle read latency); dbg_gnt is tied to 1
+    // above for the same reason.
     .slave_req_i    ( dbg_req    ),
     .slave_we_i     ( dbg_we     ),
     .slave_addr_i   ( dbg_addr   ),
     .slave_wdata_i  ( dbg_wdata  ),
     .slave_be_i     ( dbg_be     ),
-    .slave_rvalid_o ( dbg_rvalid ),
     .slave_rdata_o  ( dbg_rdata  ),
 
     // SBA Master Interface — deliberately tied off (see earlier

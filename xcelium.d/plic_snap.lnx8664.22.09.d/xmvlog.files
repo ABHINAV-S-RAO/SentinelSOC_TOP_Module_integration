@@ -1,0 +1,12 @@
+//
+// File created by:  xrun
+// Do not modify this file
+//
+/home/ibexcore/project/SentinelSOC_TOP_Module_integration/rtl/Interrupts/plic/plic_regmap.sv
+/home/ibexcore/project/SentinelSOC_TOP_Module_integration/rtl/Interrupts/plic/rv_plic_gateway.sv
+/home/ibexcore/project/SentinelSOC_TOP_Module_integration/rtl/Interrupts/plic/rv_plic_target.sv
+/home/ibexcore/project/SentinelSOC_TOP_Module_integration/rtl/Interrupts/plic/plic_top.sv
+/home/ibexcore/project/SentinelSOC_TOP_Module_integration/verif/plic_verif/plic_reg_if.sv
+/home/ibexcore/project/SentinelSOC_TOP_Module_integration/verif/plic_verif/plic_irq_if.sv
+/home/ibexcore/project/SentinelSOC_TOP_Module_integration/verif/plic_verif/plic_tb_pkg.sv
+/home/ibexcore/project/SentinelSOC_TOP_Module_integration/verif/plic_verif/tb_plic_top.sv

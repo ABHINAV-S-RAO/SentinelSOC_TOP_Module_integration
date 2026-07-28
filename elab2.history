@@ -1,0 +1,33 @@
+s1(17Jun2026:15:39:01):  xrun -define DIFT -f verif/files.f -top ibex_core_tb -access +rwc -notimingchecks -timescale 1ns/1ps -elaborate -log verif/elab.log 
+s2(17Jun2026:15:39:30):  xrun -define DIFT -f verif/files.f -top ibex_core_tb -access +rwc -notimingchecks -timescale 1ns/1ps -log verif/sim.log 
+s3(17Jun2026:16:07:35):  xrun -define DIFT -f verif/files.f -top ibex_core_tb -access +rwc -notimingchecks -timescale 1ns/1ps -elaborate -log verif/elab.log 
+s4(17Jun2026:16:08:02):  xrun -define DIFT -f verif/files.f -top ibex_core_tb -access +rwc -notimingchecks -timescale 1ns/1ps -elaborate -log verif/elab.log 
+s5(17Jun2026:16:09:37):  xrun -define DIFT -f verif/files.f -top ibex_core_tb -access +rwc -notimingchecks -timescale 1ns/1ps -elaborate -log verif/elab.log 
+s6(17Jun2026:16:09:44):  xrun -define DIFT -f verif/files.f -top ibex_core_tb -access +rwc -notimingchecks -timescale 1ns/1ps -log verif/sim.log 
+s7(17Jun2026:16:13:44):  xrun -define DIFT -define dift_tb.shm -f verif/files.f -top ibex_core_tb -access +rwc -notimingchecks -timescale 1ns/1ps -log verif/sim.log 
+s8(17Jun2026:16:15:03):  xrun -define DIFT -define SHM_DUMP -f verif/files.f -top ibex_core_tb -access +rwc -notimingchecks -timescale 1ns/1ps -log verif/sim.log 
+s9(25Jun2026:18:00:39):  xrun -define DIFT -f verif/files.f -top ibex_core_tb -access +rwc -notimingchecks -timescale 1ns/1ps -input probe.tcl -log verif/sim_wave_t25.log 
+s10(27Jun2026:21:38:04):  xrun -define DIFT -f verif/files.f -top ibex_core_tb -access +rwc -notimingchecks -timescale 1ns/1ps -elaborate -log verif/elab.log 
+s11(27Jun2026:21:38:39):  xrun -define DIFT -f verif/files.f -top ibex_core_tb -access +rwc -notimingchecks -timescale 1ns/1ps -log verif/sim.log 
+s12(27Jun2026:21:52:06):  xrun -define DIFT -f verif/files.f -top ibex_core_tb -access +rwc -notimingchecks -timescale 1ns/1ps -log verif/sim.log 
+s13(28Jul2026:12:09:12):  xrun -64bit -sv -compile -f verif/debugger/files.f -l compile.log 
+s14(28Jul2026:12:14:24):  xrun -64bit -sv -compile -f verif/debugger/files.f -l compile.log 
+s15(28Jul2026:12:15:43):  xrun -64bit -sv -compile -f verif/debugger/files.f -l compile.log 
+s16(28Jul2026:12:17:56):  xrun -64bit -sv -compile -f verif/debugger/files.f -l compile.log 
+s17(28Jul2026:12:18:22):  xrun -64bit -sv -compile -f verif/debugger/files.f -l compile.log 
+s18(28Jul2026:12:18:38):  xrun -64bit -sv -elaborate -access +rwc -top tb_dm_ibex_top -l elab.log 
+s19(28Jul2026:12:19:22):  xrun -64bit -sv -compile -f verif/debugger/files.f -l compile.log 
+s20(28Jul2026:12:19:27):  xrun -64bit -sv -elaborate -access +rwc -top tb_dm_ibex_top -l elab.log 
+s21(28Jul2026:12:33:06):  xrun -64bit -sv -compile -f verif/debugger/files.f -l compile.log 
+s22(28Jul2026:12:33:13):  xrun -64bit -sv -elaborate -access +rwc -top tb_dm_ibex_top -l elab.log 
+s23(28Jul2026:12:35:36):  xrun -64bit -sv -compile -f verif/debugger/files.f -l compile.log 
+s24(28Jul2026:12:35:39):  xrun -64bit -sv -elaborate -access +rwc -top tb_dm_ibex_top -l elab.log 
+s25(28Jul2026:12:56:46):  xrun -64bit -sv -compile -f verif/debugger/files.f -l compile.log 
+s26(28Jul2026:13:04:58):  xrun -64bit -sv -compile -f verif/debugger/files.f -l compile.log 
+s27(28Jul2026:13:06:39):  xrun -64bit -sv -elaborate -access +rwc -top tb_dm_ibex_top -l elab.log 
+s28(28Jul2026:13:11:29):  xrun -64bit -sv -elaborate -access +rwc -top tb_dm_ibex_top -l elab.log 
+s29(28Jul2026:13:12:21):  xrun -64bit -sv -compile -f verif/debugger/files.f -l compile2.log 
+s30(28Jul2026:13:18:09):  xrun -64bit -sv -compile -f verif/debugger/files.f -l compile3.log 
+s31(28Jul2026:13:31:37):  xrun -64bit -sv -compile -f verif/debugger/files.f -l compile3.log 
+s32(28Jul2026:13:33:36):  xrun -64bit -sv -compile -f verif/debugger/files.f -l compile4.log 
+s33(28Jul2026:13:34:37):  xrun -64bit -sv -elaborate -access +rwc -top tb_dm_ibex_top -l elab2.log 

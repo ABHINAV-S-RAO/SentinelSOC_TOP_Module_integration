@@ -1,0 +1,20 @@
+//
+// File created by:  xrun
+// Do not modify this file
+//
+-elaborate
+-define
+DIFT
+-f
+verif/files.f
+-top
+tb_plic_top
+-access
++rwc
+-notimingchecks
+-timescale
+1ns/1ps
+-snapshot
+plic_snap
+-log
+verif/plic_elab.log

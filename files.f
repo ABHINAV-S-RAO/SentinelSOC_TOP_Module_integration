@@ -7,37 +7,26 @@
 
 # Bender deps
 -f verif/bender_files.f
-rtl/core/ibex_core/vendor/lowrisc_ip/ip/prim/rtl/prim_secded_pkg.sv
+
 rtl/core/ibex_core/rtl/ibex_pkg.sv
 rtl/core/ibex_core/rtl/ibex_tracer_pkg.sv
 
 rtl/core/ibex_core/vendor/lowrisc_ip/ip/prim_generic/rtl/prim_clock_gating.sv
 
 # DIFT modules
-# NOTE: left in place, unchanged, since this filelist compiles them
-# regardless of whether soc_top instantiates the DIFT variant of the core.
-# They cost nothing at compile time and this is otherwise your known-good
-# ibex-dift-verif list. If ibex_core.f pulls in a DIFT-specific ibex_core
-# wrapper (rather than plain vendor ibex_core), and that wrapper isn't the
-# one soc_top.sv is written against, that's the one thing worth confirming
-# separately from this filelist -- it's an RTL-selection question, not a
-# filelist-ordering one.
 rtl/core/dift/ibex_dift_logic.sv
 rtl/core/dift/ibex_dift_mem.sv
 rtl/core/dift/ibex_dift_tmu.sv
 rtl/core/dift/ibex_register_file_latch_tag.sv
-rtl/core/ibex_core/vendor/lowrisc_ip/ip/prim_generic/rtl/prim_ram_1p_pkg.sv
+
 # ibex native compile order
 -f rtl/core/ibex_core/rtl/ibex_core.f
-rtl/core/ibex_core/rtl/ibex_icache.sv
-rtl/core/ibex_core/rtl/ibex_top.sv
-
 
 rtl/peripheral/apb_uart/io_generic_fifo.sv
 rtl/peripheral/apb_uart/uart_rx.sv
 rtl/peripheral/apb_uart/uart_tx.sv
 rtl/peripheral/apb_uart/uart_interrupt.sv
-# DUPLICATE of apb_uart_sv.sv, same module name, not instantiated anywhere -- rtl/peripheral/apb_uart/apb_uart.sv
+rtl/peripheral/apb_uart/apb_uart.sv
 rtl/peripheral/apb_uart/apb_uart_sv.sv
 
 rtl/Interrupts/plic/plic_regmap.sv
@@ -71,18 +60,16 @@ rtl/crypto/ed25519/ED25519/ED25519.srcs/sources_1/new/top_ed25519.sv
 rtl/crypto/ed25519/ED25519/ED25519.srcs/sources_1/new/top_most.sv
 rtl/crypto/ed25519/sha_ed25519_obi_wrapper.sv
 
-
-rtl/crypto/top_most.sv
-rtl/crypto/otp.sv
 rtl/soc/soc_bootrom.sv
 rtl/soc/soc_sram.sv
 
 # --- NEW: riscv-dbg debug module + JTAG DTM ---
-# dm_pkg.sv MUST compile before every other dm_*/dmi_* file below (they all
-# `import dm::*` or reference dm:: types directly) and before soc_top.sv
-# (which references dm::DataCount / dm::DataAddr in its hartinfo_i hookup).
-# Paths below assume you drop the 12 files I gave you into rtl/riscv-dbg/src/ --
-# adjust the directory to wherever you actually place them.
+# Confirmed real paths from `tree -L 4`: rtl/riscv-dbg/src/*.sv
+# Confirmed via grep that riscv-dbg is NOT already pulled in through
+# verif/bender_files.f -- so it must be listed explicitly here.
+# dm_pkg.sv MUST come first (every other file below imports dm::).
+# dmi_bscane_tap.sv / dmi_test.sv intentionally excluded -- soc_top drives
+# dmi_jtag directly off real JTAG pins, not the Xilinx BSCANE2 wrapper.
 rtl/riscv-dbg/src/dm_pkg.sv
 rtl/riscv-dbg/src/dm_mem.sv
 rtl/riscv-dbg/src/dm_csrs.sv
@@ -93,32 +80,28 @@ rtl/riscv-dbg/src/dmi_cdc.sv
 rtl/riscv-dbg/src/dmi_jtag_tap.sv
 rtl/riscv-dbg/src/dmi_jtag.sv
 rtl/riscv-dbg/src/dmi_intf.sv
-# dmi_bscane_tap.sv / dmi_test.sv NOT needed here -- soc_top drives
-# dmi_jtag directly off real JTAG pins, not the Xilinx BSCANE2 wrapper.
-# Leave them out unless something else in your repo instantiates them.
 
-# NOTE on dependencies inside dmi_jtag_tap.sv: it instantiates
-# tc_clk_inverter / tc_clk_mux2 (common_cells tech_cells_generic). Confirm
-# these are actually pulled in by verif/bender_files.f above -- if your
-# bender manifest doesn't list `tech_cells_generic` as a dependency (only
-# `common_cells` proper), compilation will fail on these two modules and
-# you'll need to add that package explicitly.
+# NOTE: dmi_jtag_tap.sv instantiates tc_clk_inverter/tc_clk_mux2
+# (common_cells tech_cells_generic). Since riscv-dbg's own Bender.yml
+# likely declares tech_cells_generic as ITS dependency, and riscv-dbg
+# itself isn't being pulled in via Bender here, that dependency won't be
+# auto-resolved either. If compile fails on these two modules, add
+# tech_cells_generic's tc_clk_inverter.sv/tc_clk_mux2.sv explicitly, right
+# before this block.
 
-.bender/git/checkouts/obi-75858655e8b256db/src/obi_demux.sv
 rtl/soc/soc_addr_decode.sv
 rtl/soc/soc_ctrl_regs.sv
 rtl/soc/soc_buffer.sv
 
 # --- REMOVED for this run ---
 # verif/uart_verif/stubs/dbg_uart_test_stub.sv
-# This was almost certainly the placeholder that stood in for the real
-# debug module before dm_top/dmi_jtag existed (matches the "JTAG debug
-# stub -- TODO: instantiate riscv_dbg" comment that used to sit in
-# soc_top.sv). Now that soc_top.sv instantiates the real dmi_jtag/dm_top,
-# check what this stub actually defines -- if it declares modules with the
-# same names (or a fake dm_top/dmi_jtag), compiling it alongside the real
-# RTL will throw duplicate-module-definition errors in Xcelium. Safest to
-# leave it out of this filelist entirely unless you confirm it's unrelated.
+# Matches the old "JTAG debug stub -- TODO: instantiate riscv_dbg" comment
+# that used to sit in soc_top.sv. Now that soc_top.sv instantiates the real
+# dmi_jtag/dm_top, check what this stub actually defines -- if it declares
+# modules with the same names, compiling it alongside the real RTL will
+# throw duplicate-module-definition errors in Xcelium. Run:
+#   grep -n "^module" verif/uart_verif/stubs/dbg_uart_test_stub.sv
+# to confirm before re-enabling this line.
 
 rtl/soc/soc_top.sv
 

@@ -2,12 +2,10 @@
 // File created by:  xrun
 // Do not modify this file
 //
--64bit
--sv
--elaborate
--access
+
+tb_plic_top
+-ACCESS
 +rwc
--top
-tb_dm_ibex_top
--l
-elab2.log
+-NOTIMINGCHECKS
+-timescale
+1ns/1ps

@@ -2,8 +2,6 @@
 // File created by:  xrun
 // Do not modify this file
 //
--DEFINE
-DIFT
 -sv
 -INCDIR
 rtl/core/ibex_core/vendor/lowrisc_ip/dv/sv/dv_utils
@@ -17,3 +15,5 @@ rtl/core/ibex_core/vendor/lowrisc_ip/ip/prim_generic/rtl
 .bender/git/checkouts/apb-1b178314edfb6925/include
 -INCDIR
 .bender/git/checkouts/obi-75858655e8b256db/include
+-INCDIR
+verif/debugger

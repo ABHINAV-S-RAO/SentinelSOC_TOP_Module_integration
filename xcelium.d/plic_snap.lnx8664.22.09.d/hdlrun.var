@@ -1,3 +1,4 @@
+define NCRUN_NAME plic_snap
 DEFINE LANG_MAP (\
 	.v => verilog,\
 	.vh => verilog,\
@@ -86,3 +87,5 @@ define VIEW_MAP ( $VIEW_MAP \
 , .svms => svms \
 , .SVMS => SVMS \
 )
+define SNAPSHOT plic_snap
+define SNAPSHOT plic_snap

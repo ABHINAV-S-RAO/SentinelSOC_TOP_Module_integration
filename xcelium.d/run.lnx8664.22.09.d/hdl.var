@@ -1,8 +1,3 @@
-define XMSIMRC	( /home/install/XCELIUM2209/tools/xcelium/files/xmsimrc, ~/.xmsimrc )
-define AMSRC	( /home/install/XCELIUM2209/tools/xcelium/files/amsrc, ~/.amsrc )
 include ./hdlrun.var
-define SNAPSHOT worklib.tc_sram_impl:sv
 DEFINE RUNMODEDEFAULT 1
 DEFINE LIB_MAP ( + => worklib )
-define ELAB_SNAPSHOT
-define SNAPSHOT worklib.ibex_core_tb:sv

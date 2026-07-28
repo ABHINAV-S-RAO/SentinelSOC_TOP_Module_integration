@@ -1,0 +1,32 @@
+//
+// File created by:  xrun
+// Do not modify this file
+//
+-XLMODE
+./xcelium.d/plic_snap.lnx8664.22.09.d
+-RUNMODE
+-DEFINE
+DIFT
+-INCDIR
+verif/plic_verif
+rtl/Interrupts/plic/plic_regmap.sv
+rtl/Interrupts/plic/rv_plic_gateway.sv
+rtl/Interrupts/plic/rv_plic_target.sv
+rtl/Interrupts/plic/plic_top.sv
+verif/plic_verif/plic_reg_if.sv
+verif/plic_verif/plic_irq_if.sv
+verif/plic_verif/plic_tb_pkg.sv
+verif/plic_verif/tb_plic_top.sv
+-SNAPSHOT
+plic_snap
+-CDSLIB
+./xcelium.d/plic_snap.lnx8664.22.09.d/cdsrun.lib
+-HDLVAR
+./xcelium.d/plic_snap.lnx8664.22.09.d/hdlrun.var
+-no_analogsolver
+-MESSAGES
+-UPDATE
+-XLLIBSTORE
+./xcelium.d/plic_snap.lnx8664.22.09.d/xllibs
+-ALLOWUNBOUND
+-hastop

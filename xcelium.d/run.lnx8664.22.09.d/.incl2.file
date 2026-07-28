@@ -12,3 +12,9 @@ rtl/core/ibex_core/vendor/lowrisc_ip/ip/prim/rtl/prim_flop_macros.sv
 /home/ibexcore/project/SentinelSOC_TOP_Module_integration/rtl/core/ibex_core/vendor/lowrisc_ip/ip/prim/rtl/prim_flop_macros.sv
 rtl/core/ibex_core/vendor/lowrisc_ip/dv/sv/dv_utils/dv_fcov_macros.svh
 /home/ibexcore/project/SentinelSOC_TOP_Module_integration/rtl/core/ibex_core/vendor/lowrisc_ip/dv/sv/dv_utils/dv_fcov_macros.svh
+.bender/git/checkouts/obi-75858655e8b256db/include/obi/typedef.svh
+/home/ibexcore/project/SentinelSOC_TOP_Module_integration/.bender/git/checkouts/obi-75858655e8b256db/include/obi/typedef.svh
+.bender/git/checkouts/obi-75858655e8b256db/include/obi/assign.svh
+/home/ibexcore/project/SentinelSOC_TOP_Module_integration/.bender/git/checkouts/obi-75858655e8b256db/include/obi/assign.svh
+.bender/git/checkouts/apb-1b178314edfb6925/include/apb/typedef.svh
+/home/ibexcore/project/SentinelSOC_TOP_Module_integration/.bender/git/checkouts/apb-1b178314edfb6925/include/apb/typedef.svh

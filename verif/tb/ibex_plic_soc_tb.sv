@@ -51,8 +51,8 @@ module ibex_plic_soc_tb;
   ibex_mubi_t  core_busy;
 
   // DIFT tag ports — tied off / observed, not under test in this harness
-  logic [6:0] data_wdata_tag;   // confirm actual width against ibex_core.sv:184 if not 7 bits
-  logic [6:0] data_rdata_tag;
+  logic data_wdata_tag;   // confirm actual width against ibex_core.sv:184 if not 7 bits
+  logic data_rdata_tag;
   logic       dift_exception;
 
   assign data_rdata_tag = '0;   // no incoming taint on this harness's memory model
@@ -383,19 +383,6 @@ module ibex_plic_soc_tb;
         repeat(500) @(posedge clk);
       end
     join
-
-    logic [31:0] mcause_at_trap_q;
-  logic        trap_seen_q;
-
-    always_ff @(posedge clk or negedge rst_n) begin
-      if (!rst_n) begin
-        mcause_at_trap_q <= 32'h0;
-        trap_seen_q      <= 1'b0;
-      end else if (!trap_seen_q && dut.pc_id >= HANDLER_IDX*4 && dut.pc_id < (HANDLER_IDX+64)*4) begin
-        mcause_at_trap_q <= dut.cs_registers_i.csr_mcause_i;
-        trap_seen_q      <= 1'b1;
-      end
-    end
     
     if (u_isram.mem[0] == 32'd1)
       pass_t("PLIC SoC-routed IRQ: correct source claimed via real addr decode");
@@ -414,6 +401,19 @@ module ibex_plic_soc_tb;
       fail_t($sformatf("mcause incorrect at trap entry: got 0x%h, expected 0x8000000B",mcause_at_trap_q));
   endtask
 
+    logic [31:0] mcause_at_trap_q;
+    logic        trap_seen_q;
+
+    always_ff @(posedge clk or negedge rst_n) begin
+      if (!rst_n) begin
+        mcause_at_trap_q <= 32'h0;
+        trap_seen_q      <= 1'b0;
+      end else if (!trap_seen_q && dut.pc_id >= HANDLER_IDX*4 && dut.pc_id < (HANDLER_IDX+64)*4) begin
+        mcause_at_trap_q <= dut.cs_registers_i.csr_mcause_i;
+        trap_seen_q      <= 1'b1;
+      end
+    end
+
   initial begin
     pass_count = 0; fail_count = 0;
     for (int i = 0; i < 1024; i++) u_bootrom.mem[i] = 32'h0000_0013; // NOP fill
@@ -428,6 +428,7 @@ module ibex_plic_soc_tb;
     $finish;
   end
 
+ 
   // debug trace — remove once confirmed working
   always @(posedge clk) begin
     if (rst_n)

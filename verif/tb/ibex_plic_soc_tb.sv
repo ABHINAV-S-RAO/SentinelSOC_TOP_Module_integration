@@ -2,7 +2,7 @@
 // ibex_plic_soc_tb.sv
 // Ibex + soc_addr_decode + PLIC integration bench (real SoC routing path).
 // CTRL/BUF/SHA/APB/DBG tied to error-responder defaults — not under test here.
-// No DIFT (compile without -define DIFT).
+// Requires -define DIFT — this core build does not support a no-DIFT config.
 // =============================================================================
 `timescale 1ns/1ps
 
@@ -50,6 +50,13 @@ module ibex_plic_soc_tb;
   logic        alert_minor, alert_major_int, alert_major_bus;
   ibex_mubi_t  core_busy;
 
+  // DIFT tag ports — tied off / observed, not under test in this harness
+  logic [6:0] data_wdata_tag;   // confirm actual width against ibex_core.sv:184 if not 7 bits
+  logic [6:0] data_rdata_tag;
+  logic       dift_exception;
+
+  assign data_rdata_tag = '0;   // no incoming taint on this harness's memory model
+
   assign irq_software = 1'b0;
   assign irq_timer    = 1'b0;
   assign irq_nm       = 1'b0;
@@ -89,6 +96,9 @@ module ibex_plic_soc_tb;
     .data_rvalid_i(data_rvalid), .data_we_o(data_we), .data_be_o(data_be),
     .data_addr_o(data_addr), .data_wdata_o(data_wdata),
     .data_rdata_i(data_rdata), .data_err_i(data_err),
+    .data_wdata_tag_o(data_wdata_tag),
+    .data_rdata_tag_i(data_rdata_tag),
+    .dift_exception_o(dift_exception),
 
     .dummy_instr_id_o(dummy_instr_id), .dummy_instr_wb_o(dummy_instr_wb),
     .rf_raddr_a_o(rf_raddr_a), .rf_raddr_b_o(rf_raddr_b),
@@ -374,6 +384,19 @@ module ibex_plic_soc_tb;
       end
     join
 
+    logic [31:0] mcause_at_trap_q;
+  logic        trap_seen_q;
+
+    always_ff @(posedge clk or negedge rst_n) begin
+      if (!rst_n) begin
+        mcause_at_trap_q <= 32'h0;
+        trap_seen_q      <= 1'b0;
+      end else if (!trap_seen_q && dut.pc_id >= HANDLER_IDX*4 && dut.pc_id < (HANDLER_IDX+64)*4) begin
+        mcause_at_trap_q <= dut.cs_registers_i.csr_mcause_i;
+        trap_seen_q      <= 1'b1;
+      end
+    end
+    
     if (u_isram.mem[0] == 32'd1)
       pass_t("PLIC SoC-routed IRQ: correct source claimed via real addr decode");
     else
@@ -384,6 +407,11 @@ module ibex_plic_soc_tb;
       pass_t("Core resumed normal execution after mret (loop counter advancing)");
     else
       fail_t($sformatf("Core did not resume cleanly: x16=%0d", reg_file[16]));
+
+    if (mcause_at_trap_q == 32'h8000_000B)
+      pass_t("mcause correctly reflects machine external interrupt on trap entry");
+    else
+      fail_t($sformatf("mcause incorrect at trap entry: got 0x%h, expected 0x8000000B",mcause_at_trap_q));
   endtask
 
   initial begin
@@ -403,9 +431,9 @@ module ibex_plic_soc_tb;
   // debug trace — remove once confirmed working
   always @(posedge clk) begin
     if (rst_n)
-      $display("[DBG] t=%0t pc=%h mcause=%h irq_ext=%b plic_req=%b plic_addr=%h plic_we=%b",
+      $display("[DBG] t=%0t pc=%h mcause=%h irq_ext=%b plic_req=%b plic_addr=%h plic_we=%b dift_exc=%b",
                 $time, dut.pc_id, dut.cs_registers_i.csr_mcause_i, irq_external,
-                plic_req, plic_addr, plic_we);
+                plic_req, plic_addr, plic_we, dift_exception);
   end
 
 endmodule

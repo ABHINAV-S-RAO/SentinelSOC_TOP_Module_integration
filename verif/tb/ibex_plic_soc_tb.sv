@@ -431,9 +431,9 @@ module ibex_plic_soc_tb;
   // debug trace — remove once confirmed working
   always @(posedge clk) begin
     if (rst_n)
-      $display("[DBG] t=%0t pc=%h mcause=%h irq_ext=%b plic_req=%b plic_addr=%h plic_we=%b dift_exc=%b",
-                $time, dut.pc_id, dut.cs_registers_i.csr_mcause_i, irq_external,
-                plic_req, plic_addr, plic_we, dift_exception);
+        $display("[DBG] t=%0t pc=%h instr=%h mcause=%h irq_ext=%b plic_req=%b plic_addr=%h plic_we=%b dift_exc=%b",
+                  $time, dut.pc_id, dut.instr_rdata_id, dut.cs_registers_i.csr_mcause_i, irq_external,
+                  plic_req, plic_addr, plic_we, dift_exception);
   end
 
 endmodule

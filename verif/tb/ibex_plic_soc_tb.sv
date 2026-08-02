@@ -343,8 +343,10 @@ module ibex_plic_soc_tb;
       mcause_at_trap_q <= 32'h0;
       trap_seen_q      <= 1'b0;
     end else if (!trap_seen_q && dut.pc_id >= HANDLER_IDX*4 && dut.pc_id < (HANDLER_IDX+64)*4) begin
-      mcause_at_trap_q <= dut.cs_registers_i.csr_mcause_i;
-      trap_seen_q      <= 1'b1;
+        mcause_at_trap_q <= {dut.cs_registers_i.mcause_q.irq_ext | dut.cs_registers_i.mcause_q.irq_int,
+                             dut.cs_registers_i.mcause_q.irq_int ? {26{1'b1}} : 26'b0,
+                             dut.cs_registers_i.mcause_q.lower_cause[4:0]};
+        trap_seen_q      <= 1'b1;
     end
   end
 
@@ -432,8 +434,8 @@ module ibex_plic_soc_tb;
   // debug trace — remove once confirmed working
 always @(posedge clk) begin
     if (rst_n)
-        $display("[DBG] t=%0t pc=%h instr=%h mcause=%h mstatus_mie=%b mie_meie=%b mepc=%h irq_ext=%b plic_req=%b plic_addr=%h plic_we=%b dift_exc=%b data_req=%b data_gnt=%b data_rvalid=%b data_addr=%h data_we=%b isram_req=%b isram_gnt=%b isram_rvalid=%b lsu_resp_valid=%b lsu_req=%b lsu_req_done=%b id_in_ready=%b ex_valid=%b instr_valid_id=%b",
-          $time, dut.pc_id, dut.instr_rdata_id, dut.cs_registers_i.csr_mcause_i,
+        $display("[DBG] t=%0t pc=%h instr=%h data_wdata=%h mcause=%h mstatus_mie=%b mie_meie=%b mepc=%h irq_ext=%b plic_req=%b plic_addr=%h plic_we=%b dift_exc=%b data_req=%b data_gnt=%b data_rvalid=%b data_addr=%h data_we=%b isram_req=%b isram_gnt=%b isram_rvalid=%b lsu_resp_valid=%b lsu_req=%b lsu_req_done=%b id_in_ready=%b ex_valid=%b instr_valid_id=%b",
+          $time, dut.pc_id, dut.instr_rdata_id, data_wdata, dut.cs_registers_i.csr_mcause_i,
           dut.cs_registers_i.mstatus_q.mie,
           dut.cs_registers_i.mie_q.irq_external,
           dut.cs_registers_i.mepc_q,

@@ -403,6 +403,8 @@ module ibex_plic_soc_tb;
       begin
         repeat(80) @(posedge clk);
         irq_src[0] = 1'b1;   // physical wire 0 = register ID 1
+	repeat(20) @(posedge clk);   // long enough for claim+complete
+	irq_src[0] = 1'b0;
       end
       begin
         repeat(500) @(posedge clk);

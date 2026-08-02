@@ -234,11 +234,12 @@ module ibex_plic_soc_tb;
   assign plic_reg_req.wdata = plic_wdata;
   assign plic_reg_req.wstrb = plic_be;
 
-  always_ff @(posedge clk or negedge rst_n)
-    if (!rst_n) plic_rvalid <= 1'b0;
-    else        plic_rvalid <= plic_req & plic_gnt;
-
-  assign plic_rdata = plic_reg_rsp.rdata;
+  logic [31:0] plic_rdata_q;
+  always_ff @(posedge clk or negedge rst_n) begin
+    if (!rst_n)                    plic_rdata_q <= 32'h0;
+    else if (plic_req & plic_gnt)  plic_rdata_q <= plic_reg_rsp.rdata;
+  end
+  assign plic_rdata = plic_rdata_q;   // instead of the continuous assign
   assign plic_err   = plic_reg_rsp.error;
 
   plic_top #(
@@ -342,10 +343,12 @@ module ibex_plic_soc_tb;
     if (!rst_n) begin
       mcause_at_trap_q <= 32'h0;
       trap_seen_q      <= 1'b0;
-    end else if (!trap_seen_q && dut.pc_id >= HANDLER_IDX*4 && dut.pc_id < (HANDLER_IDX+64)*4) begin
-        mcause_at_trap_q <= {dut.cs_registers_i.mcause_q.irq_ext | dut.cs_registers_i.mcause_q.irq_int,
-                             dut.cs_registers_i.mcause_q.irq_int ? {26{1'b1}} : 26'b0,
-                             dut.cs_registers_i.mcause_q.lower_cause[4:0]};
+    end else if (!trap_seen_q &&
+                 dut.cs_registers_i.csr_save_cause_i &&
+                 dut.cs_registers_i.csr_mcause_i.irq_ext) begin
+        mcause_at_trap_q <= {dut.cs_registers_i.csr_mcause_i.irq_ext | dut.cs_registers_i.csr_mcause_i.irq_int,
+                             dut.cs_registers_i.csr_mcause_i.irq_int ? {26{1'b1}} : 26'b0,
+                             dut.cs_registers_i.csr_mcause_i.lower_cause[4:0]};
         trap_seen_q      <= 1'b1;
     end
   end

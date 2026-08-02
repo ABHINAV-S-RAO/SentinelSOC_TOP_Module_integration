@@ -319,6 +319,7 @@ module ibex_plic_soc_tb;
     emit(f_sw(5'd31, 5'd30, 12'h0));          // complete
     emit(MRET);
     for (int i = pc_wr; i < HANDLER_IDX + 64; i++) u_bootrom.mem[i] = 32'h0000_0013; // NOP
+    u_bootrom.mem[HANDLER_IDX + 11] = f_beq(5'd0, 5'd0, -13'sd44);
   endtask
 
   // ---- reset ----
@@ -429,13 +430,17 @@ module ibex_plic_soc_tb;
 
  
   // debug trace — remove once confirmed working
-  always @(posedge clk) begin
+always @(posedge clk) begin
     if (rst_n)
-        $display("[DBG] t=%0t pc=%h instr=%h mcause=%h irq_ext=%b plic_req=%b plic_addr=%h plic_we=%b dift_exc=%b data_req=%b data_gnt=%b data_rvalid=%b data_addr=%h data_we=%b isram_req=%b isram_gnt=%b isram_rvalid=%b lsu_resp_valid=%b lsu_req=%b lsu_req_done=%b id_in_ready=%b ex_valid=%b instr_valid_id=%b",
-          $time, dut.pc_id, dut.instr_rdata_id, dut.cs_registers_i.csr_mcause_i, irq_external,
+        $display("[DBG] t=%0t pc=%h instr=%h mcause=%h mstatus_mie=%b mie_meie=%b mepc=%h irq_ext=%b plic_req=%b plic_addr=%h plic_we=%b dift_exc=%b data_req=%b data_gnt=%b data_rvalid=%b data_addr=%h data_we=%b isram_req=%b isram_gnt=%b isram_rvalid=%b lsu_resp_valid=%b lsu_req=%b lsu_req_done=%b id_in_ready=%b ex_valid=%b instr_valid_id=%b",
+          $time, dut.pc_id, dut.instr_rdata_id, dut.cs_registers_i.csr_mcause_i,
+          dut.cs_registers_i.mstatus_q.mie,
+          dut.cs_registers_i.mie_q.irq_external,
+          dut.cs_registers_i.mepc_q,
+          irq_external,
           plic_req, plic_addr, plic_we, dift_exception,
           data_req, data_gnt, data_rvalid, data_addr, data_we,
           isram_req, isram_gnt, isram_rvalid, dut.lsu_resp_valid, dut.lsu_req, dut.lsu_req_done, dut.id_in_ready, dut.ex_valid, dut.instr_valid_id);
-  end
+end
 
 endmodule

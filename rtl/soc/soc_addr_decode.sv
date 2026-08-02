@@ -460,93 +460,99 @@ module soc_addr_decode #(
   end
 
   // --------------------------------------------------------------------------
-  // ISRAM — arbiter between fetch demux [FSEL_ISRAM] and data demux [SEL_ISRAM]
-  // Priority: data wins (writes must not be blocked; fetch stalls are acceptable)
-  // Write port gated by ctrl_isram_lock_i
-  // Fetch port gated by fw_verified_i (Req 4) — until firmware signature
-  // is verified, instruction fetch from ISRAM returns a bus error even
-  // though the words are physically present in the array. This is a
-  // hardware backstop: even if bootloader software has a bug and jumps
-  // to ISRAM early, the core cannot actually execute what's there.
-  // --------------------------------------------------------------------------
-  logic isram_data_active, isram_fetch_active;
-  logic isram_fetch_blocked_q; // registered so blocked-fetch rvalid timing
-                                // matches the normal 1-cycle SRAM latency
+// ISRAM — arbiter between fetch demux [FSEL_ISRAM] and data demux [SEL_ISRAM]
+// Priority: data wins (writes must not be blocked; fetch stalls are acceptable)
+// Write port gated by ctrl_isram_lock_i
+// Fetch port gated by fw_verified_i (Req 4)
+// --------------------------------------------------------------------------
+logic isram_data_active, isram_fetch_active;
+logic isram_fetch_blocked_q;
 
-  always_ff @(posedge clk_i or negedge rst_ni) begin
-    if (!rst_ni) isram_fetch_blocked_q <= 1'b0;
-    else         isram_fetch_blocked_q <= isram_fetch_active & ~fw_verified_i;
+// NEW: remembers which port's request is the one currently in flight,
+// so the response (which arrives after req has already dropped) gets
+// routed back to the correct port instead of being silently dropped.
+logic isram_resp_is_data_q;
+
+always_ff @(posedge clk_i or negedge rst_ni) begin
+  if (!rst_ni) isram_fetch_blocked_q <= 1'b0;
+  else         isram_fetch_blocked_q <= isram_fetch_active & ~fw_verified_i;
+end
+
+always_ff @(posedge clk_i or negedge rst_ni) begin
+  if (!rst_ni) begin
+    isram_resp_is_data_q <= 1'b0;
+  end else if (isram_req_o && isram_gnt_i) begin
+    // A transaction was just accepted this cycle — latch which port it
+    // came from so the eventual isram_rvalid_i pulse routes correctly.
+    isram_resp_is_data_q <= isram_data_active;
   end
+end
 
-  always_comb begin
-    isram_data_active  = data_mgr_req[SEL_ISRAM].req;
-    isram_fetch_active = fetch_mgr_req[FSEL_ISRAM].req & ~isram_data_active;
+always_comb begin
+  isram_data_active  = data_mgr_req[SEL_ISRAM].req;
+  isram_fetch_active = fetch_mgr_req[FSEL_ISRAM].req & ~isram_data_active;
 
-    // Default outputs
-    isram_req_o   = 1'b0;
-    isram_addr_o  = '0;
-    isram_we_o    = 1'b0;
-    isram_be_o    = '0;
-    isram_wdata_o = '0;
+  // Default outputs
+  isram_req_o   = 1'b0;
+  isram_addr_o  = '0;
+  isram_we_o    = 1'b0;
+  isram_be_o    = '0;
+  isram_wdata_o = '0;
 
-    // Data response defaults
-    data_mgr_rsp[SEL_ISRAM].gnt    = 1'b0;
-    data_mgr_rsp[SEL_ISRAM].rvalid = 1'b0;
-    data_mgr_rsp[SEL_ISRAM].r      = '0;
+  // Data response defaults
+  data_mgr_rsp[SEL_ISRAM].gnt    = 1'b0;
+  data_mgr_rsp[SEL_ISRAM].rvalid = 1'b0;
+  data_mgr_rsp[SEL_ISRAM].r      = '0;
 
-    // Fetch response defaults
-    fetch_mgr_rsp[FSEL_ISRAM].gnt    = 1'b0;
-    fetch_mgr_rsp[FSEL_ISRAM].rvalid = 1'b0;
-    fetch_mgr_rsp[FSEL_ISRAM].r      = '0;
+  // Fetch response defaults
+  fetch_mgr_rsp[FSEL_ISRAM].gnt    = 1'b0;
+  fetch_mgr_rsp[FSEL_ISRAM].rvalid = 1'b0;
+  fetch_mgr_rsp[FSEL_ISRAM].r      = '0;
 
-    if (isram_data_active) begin
-      // Data port drives ISRAM — apply write lock
+  if (isram_data_active) begin
+    // Data port drives ISRAM — apply write lock
+    isram_req_o   = 1'b1;
+    isram_addr_o  = data_mgr_req[SEL_ISRAM].a.addr;
+    isram_we_o    = data_mgr_req[SEL_ISRAM].a.we
+                     & ~ctrl_isram_lock_i
+                     & ~dbg_mode_i;
+    isram_be_o    = data_mgr_req[SEL_ISRAM].a.be;
+    isram_wdata_o = data_mgr_req[SEL_ISRAM].a.wdata;
+
+    data_mgr_rsp[SEL_ISRAM].gnt = isram_gnt_i;
+    // err can still be flagged live off the current request's we/lock state
+    data_mgr_rsp[SEL_ISRAM].r.err =
+      isram_err_i | (data_mgr_req[SEL_ISRAM].a.we
+                      & (ctrl_isram_lock_i | dbg_mode_i));
+  end else if (isram_fetch_active) begin
+    if (fw_verified_i) begin
       isram_req_o   = 1'b1;
-      isram_addr_o  = data_mgr_req[SEL_ISRAM].a.addr;
-      // Gate write: blocked if (a) bootloader has set the sticky write
-      // lock, OR (b) the core is currently halted in debug mode. (b) is
-      // unconditional — it applies even during boot phase, before the
-      // lock bit is set, so a debugger-driven store (via an abstract
-      // command or program-buffer execution on the halted core) can
-      // never inject/modify ISRAM contents, ever.
-      isram_we_o    = data_mgr_req[SEL_ISRAM].a.we
-                       & ~ctrl_isram_lock_i
-                       & ~dbg_mode_i;
-      isram_be_o    = data_mgr_req[SEL_ISRAM].a.be;
-      isram_wdata_o = data_mgr_req[SEL_ISRAM].a.wdata;
+      isram_addr_o  = fetch_mgr_req[FSEL_ISRAM].a.addr;
+      isram_we_o    = 1'b0;
+      isram_be_o    = 4'hF;
+      isram_wdata_o = '0;
 
-      data_mgr_rsp[SEL_ISRAM].gnt              = isram_gnt_i;
-      data_mgr_rsp[SEL_ISRAM].rvalid           = isram_rvalid_i;
-      data_mgr_rsp[SEL_ISRAM].r.rdata          = isram_rdata_i;
-      // If write was attempted while locked or while in debug mode, error
-      data_mgr_rsp[SEL_ISRAM].r.err            =
-        isram_err_i | (data_mgr_req[SEL_ISRAM].a.we
-                        & (ctrl_isram_lock_i | dbg_mode_i));
-
-    end else if (isram_fetch_active) begin
-      if (fw_verified_i) begin
-        // Firmware verified — fetch from ISRAM proceeds normally.
-        isram_req_o   = 1'b1;
-        isram_addr_o  = fetch_mgr_req[FSEL_ISRAM].a.addr;
-        isram_we_o    = 1'b0;
-        isram_be_o    = 4'hF;
-        isram_wdata_o = '0;
-
-        fetch_mgr_rsp[FSEL_ISRAM].gnt    = isram_gnt_i;
-        fetch_mgr_rsp[FSEL_ISRAM].rvalid = isram_rvalid_i;
-        fetch_mgr_rsp[FSEL_ISRAM].r.rdata = isram_rdata_i;
-        fetch_mgr_rsp[FSEL_ISRAM].r.err   = isram_err_i;
-      end else begin
-        // Firmware not yet verified — block fetch entirely. Do not even
-        // issue the request to the physical SRAM; return a bus error to
-        // Ibex with the same 1-cycle latency as a normal access.
-        fetch_mgr_rsp[FSEL_ISRAM].gnt     = 1'b1;
-        fetch_mgr_rsp[FSEL_ISRAM].rvalid  = isram_fetch_blocked_q;
-        fetch_mgr_rsp[FSEL_ISRAM].r.rdata = 32'hDEAD_BEEF;
-        fetch_mgr_rsp[FSEL_ISRAM].r.err   = 1'b1;
-      end
+      fetch_mgr_rsp[FSEL_ISRAM].gnt = isram_gnt_i;
+    end else begin
+      fetch_mgr_rsp[FSEL_ISRAM].gnt     = 1'b1;
+      fetch_mgr_rsp[FSEL_ISRAM].rvalid  = isram_fetch_blocked_q;
+      fetch_mgr_rsp[FSEL_ISRAM].r.rdata = 32'hDEAD_BEEF;
+      fetch_mgr_rsp[FSEL_ISRAM].r.err   = 1'b1;
     end
   end
+
+  // NEW: route the response using the LATCHED owner, not live req state.
+  // This fires regardless of what isram_data_active/isram_fetch_active
+  // happen to be on the response cycle.
+  if (isram_resp_is_data_q) begin
+    data_mgr_rsp[SEL_ISRAM].rvalid  = isram_rvalid_i;
+    data_mgr_rsp[SEL_ISRAM].r.rdata = isram_rdata_i;
+  end else begin
+    fetch_mgr_rsp[FSEL_ISRAM].rvalid  = isram_rvalid_i;
+    fetch_mgr_rsp[FSEL_ISRAM].r.rdata = isram_rdata_i;
+    fetch_mgr_rsp[FSEL_ISRAM].r.err   = isram_err_i;
+  end
+end
 
   // --------------------------------------------------------------------------
   // DSRAM — data demux only, no fetch access

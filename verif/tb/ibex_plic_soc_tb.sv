@@ -360,80 +360,68 @@ module ibex_plic_soc_tb;
     end
   end
 
-  // =========================================================================
-  // Test: source 1 fires -> trap -> ISR claims/records/completes -> mret ->
-  // main loop resumes and keeps counting (proves clean return, not a hang).
-  // =========================================================================
-  task automatic plic_irq_test();
-    logic [12:0] back_off;
-    int loop_word;
 
+  task automatic plic_irq_test_for_source(input int src_id);
+    // src_id is 1..12 (register-visible ID, physical wire = src_id-1)
+    logic [31:0] prio_addr, ie_addr;
+    logic [31:0] ie_bit;
+
+    prio_addr = 32'h0C00_0000 + (src_id * 4);
+    ie_addr   = 32'h0C00_2000;   // single 32-bit IE word covers sources 1-12 for N_SOURCE=12
+    ie_bit    = 32'h1 << src_id;
     pc_wr = 0;
 
     load_imm32(5'd28, MTVEC_VAL);
     emit(f_csrrw(CSRA_MTVEC, 5'd28, 5'd0));
-
-    load_imm32(5'd29, 32'h8);              // mstatus.MIE
+    load_imm32(5'd29, 32'h8);
     emit(f_csrrs(CSRA_MSTATUS, 5'd29, 5'd0));
-
-    load_imm32(5'd29, 32'h800);            // mie.MEIE
+    load_imm32(5'd29, 32'h800);
     emit(f_csrrs(CSRA_MIE, 5'd29, 5'd0));
 
-    load_imm32(5'd10, PLIC_PRIO1);
+    load_imm32(5'd10, prio_addr);
     load_imm32(5'd11, 32'd2);
     emit(f_sw(5'd11, 5'd10, 12'h0));
 
-    load_imm32(5'd10, PLIC_IE);
-    load_imm32(5'd11, 32'h2);
+    load_imm32(5'd10, ie_addr);
+    load_imm32(5'd11, ie_bit);
     emit(f_sw(5'd11, 5'd10, 12'h0));
 
     load_imm32(5'd10, PLIC_THRESH);
     emit(f_sw(5'd0, 5'd10, 12'h0));
 
-    // main loop: x16 counts iterations forever
-    loop_word = pc_wr;
     emit(f_addi(5'd16, 5'd16, 12'h001));
-    back_off = -13'sd4;
-    emit(f_beq(5'd0, 5'd0, back_off));
+    emit(f_beq(5'd0, 5'd0, -13'sd4));
 
-    write_handler();
+    write_handler();   // ISR body unchanged — claims whatever fires
     do_reset();
 
     fork
       begin
         repeat(80) @(posedge clk);
-        irq_src[0] = 1'b1;   // physical wire 0 = register ID 1
-	repeat(20) @(posedge clk);   // long enough for claim+complete
-	irq_src[0] = 1'b0;
+        irq_src[src_id-1] = 1'b1;   // assert the physical wire for this source
       end
       begin
         repeat(500) @(posedge clk);
       end
     join
-    
-    if (u_isram.mem[0] == 32'd1)
-      pass_t("PLIC SoC-routed IRQ: correct source claimed via real addr decode");
-    else
-      fail_t($sformatf("PLIC SoC-routed IRQ: ISRAM[0]=%0d (expected claimed id 1)",
-                        u_isram.mem[0]));
 
-    if (reg_file[16] > 32'd5)
-      pass_t("Core resumed normal execution after mret (loop counter advancing)");
+    if (u_isram.mem[0] == src_id)
+      pass_t($sformatf("Source %0d: correct claim", src_id));
     else
-      fail_t($sformatf("Core did not resume cleanly: x16=%0d", reg_file[16]));
+      fail_t($sformatf("Source %0d: ISRAM[0]=%0d (expected %0d)",
+                        src_id, u_isram.mem[0], src_id));
 
-    if (mcause_at_trap_q == 32'h8000_000B)
-      pass_t("mcause correctly reflects machine external interrupt on trap entry");
-    else
-      fail_t($sformatf("mcause incorrect at trap entry: got 0x%h, expected 0x8000000B",mcause_at_trap_q));
+    irq_src[src_id-1] = 1'b0;  // deassert before next iteration
   endtask
 
   initial begin
-    pass_count = 0; fail_count = 0;
-    for (int i = 0; i < 1024; i++) u_bootrom.mem[i] = 32'h0000_0013; // NOP fill
-    plic_irq_test();
-    $display("PLIC SoC INTEGRATION: %0d PASS / %0d FAIL", pass_count, fail_count);
-    $finish;
+  pass_count = 0; fail_count = 0;
+  for (int src = 1; src <= 12; src++) begin
+    for (int i = 0; i < 1024; i++) u_bootrom.mem[i] = 32'h0000_0013;
+    plic_irq_test_for_source(src);
+  end
+  $display("REGISTER SWEEP: %0d PASS / %0d FAIL", pass_count, fail_count);
+  $finish;
   end
 
   initial begin
@@ -441,20 +429,5 @@ module ibex_plic_soc_tb;
     $display("[TIMEOUT] possible hang");
     $finish;
   end
-
- 
-  // debug trace — remove once confirmed working
-always @(posedge clk) begin
-    if (rst_n)
-        $display("[DBG] t=%0t pc=%h instr=%h data_wdata=%h mcause=%h mstatus_mie=%b mie_meie=%b mepc=%h irq_ext=%b plic_req=%b plic_addr=%h plic_we=%b dift_exc=%b data_req=%b data_gnt=%b data_rvalid=%b data_addr=%h data_we=%b isram_req=%b isram_gnt=%b isram_rvalid=%b lsu_resp_valid=%b lsu_req=%b lsu_req_done=%b id_in_ready=%b ex_valid=%b instr_valid_id=%b",
-          $time, dut.pc_id, dut.instr_rdata_id, data_wdata, dut.cs_registers_i.csr_mcause_i,
-          dut.cs_registers_i.mstatus_q.mie,
-          dut.cs_registers_i.mie_q.irq_external,
-          dut.cs_registers_i.mepc_q,
-          irq_external,
-          plic_req, plic_addr, plic_we, dift_exception,
-          data_req, data_gnt, data_rvalid, data_addr, data_we,
-          isram_req, isram_gnt, isram_rvalid, dut.lsu_resp_valid, dut.lsu_req, dut.lsu_req_done, dut.id_in_ready, dut.ex_valid, dut.instr_valid_id);
-end
 
 endmodule

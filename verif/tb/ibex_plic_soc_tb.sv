@@ -240,6 +240,7 @@ module ibex_plic_soc_tb;
     else if (plic_req & plic_gnt)  plic_rdata_q <= plic_reg_rsp.rdata;
   end
   assign plic_rdata = plic_rdata_q;   // instead of the continuous assign
+
   assign plic_err   = plic_reg_rsp.error;
 
   logic plic_rvalid_q;
@@ -248,6 +249,13 @@ module ibex_plic_soc_tb;
     else        plic_rvalid_q <= plic_req & plic_gnt;
   end
   assign plic_rvalid = plic_rvalid_q;
+
+  logic plic_err_q;
+  always_ff @(posedge clk or negedge rst_n) begin
+    if (!rst_n)                    plic_err_q <= 1'b0;
+    else if (plic_req & plic_gnt)  plic_err_q <= plic_reg_rsp.error;
+  end
+  assign plic_err = plic_err_q;
 
   plic_top #(
     .N_SOURCE(12), .N_TARGET(1), .MAX_PRIO(3),
@@ -517,6 +525,11 @@ endtask
     emit(f_lw(5'd25, 5'd10, 12'h0));
     load_imm32(5'd10, ISRAM_BASE + 32'h8);
     emit(f_sw(5'd25, 5'd10, 12'h0));   // ISRAM[2] = threshold readback
+
+    load_imm32(5'd10, prio_addr);
+    emit(f_lw(5'd24, 5'd10, 12'h0));
+    load_imm32(5'd10, ISRAM_BASE + 32'hC);
+    emit(f_sw(5'd24, 5'd10, 12'h0));   // ISRAM[3] = priority readback, sanity check
 
     emit(f_addi(5'd16, 5'd16, 12'h001));
     emit(f_beq(5'd0, 5'd0, -13'sd4));

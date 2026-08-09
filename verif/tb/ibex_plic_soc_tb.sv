@@ -317,18 +317,21 @@ module ibex_plic_soc_tb;
   endtask
 
   // ---- ISR: claim, store claimed id into ISRAM[0], complete, mret ----
-  task automatic write_handler();
+task automatic write_handler();
     automatic int h = HANDLER_IDX;
     pc_wr = h;
     load_imm32(5'd30, PLIC_CC);
     emit(f_lw(5'd31, 5'd30, 12'h0));          // claim
     load_imm32(5'd29, ISRAM_BASE);
-    emit(f_sw(5'd31, 5'd29, 12'h0));          // record claimed id
+    emit(f_sw(5'd31, 5'd29, 12'h0));          // ISRAM[0] = claimed id
+    emit(f_lw(5'd26, 5'd29, 12'h004));        // ISRAM[1] = trap-count word (offset +4)
+    emit(f_addi(5'd26, 5'd26, 12'h001));
+    emit(f_sw(5'd26, 5'd29, 12'h004));        // ISRAM[1]++
     emit(f_sw(5'd31, 5'd30, 12'h0));          // complete
     emit(MRET);
     for (int i = pc_wr; i < HANDLER_IDX + 64; i++) u_bootrom.mem[i] = 32'h0000_0013; // NOP
     u_bootrom.mem[HANDLER_IDX + 11] = f_beq(5'd0, 5'd0, -13'sd44);
-  endtask
+endtask
 
   // ---- reset ----
   task automatic do_reset();
@@ -510,6 +513,11 @@ module ibex_plic_soc_tb;
     load_imm32(5'd11, threshold);
     emit(f_sw(5'd11, 5'd10, 12'h0));
 
+    load_imm32(5'd10, PLIC_THRESH);
+    emit(f_lw(5'd25, 5'd10, 12'h0));
+    load_imm32(5'd10, ISRAM_BASE + 32'h8);
+    emit(f_sw(5'd25, 5'd10, 12'h0));   // ISRAM[2] = threshold readback
+
     emit(f_addi(5'd16, 5'd16, 12'h001));
     emit(f_beq(5'd0, 5'd0, -13'sd4));
 
@@ -525,6 +533,10 @@ module ibex_plic_soc_tb;
         repeat(500) @(posedge clk);
       end
     join
+
+    if (u_isram.mem[2] !== threshold)
+      $display("  [DEBUG] threshold readback MISMATCH: wrote %0d, read back %0d",
+                threshold, u_isram.mem[2]);
 
     if (expect_delivery) begin
       if (u_isram.mem[0] == src_id)
@@ -635,21 +647,20 @@ module ibex_plic_soc_tb;
     do_reset();
 
     fork
-      begin
-        repeat(20) @(posedge clk);
-        irq_src[src_id-1] = 1'b1;   // asserted while IE still 0, before spin exits
-      end
-      begin
-        repeat(500) @(posedge clk);
-      end
-    join
-
+     begin
+       repeat(20) @(posedge clk);
+       irq_src[src_id-1] = 1'b1;   // asserted while IE still 0, before spin exits
+     end
+     begin
+       repeat(1200) @(posedge clk);   // was 500 — ~150 spin instructions alone need
+                                       // ~450+ cycles on top of setup+handler overhead
+     end
+    join  
     if (u_isram.mem[0] == src_id)
       pass_t($sformatf("IE-enable-after-pending: src%0d delivered after late enable", src_id));
     else
       fail_t($sformatf("IE-enable-after-pending: src%0d ISRAM[0]=%0d (expected %0d)",
-                        src_id, u_isram.mem[0], src_id));
-
+                        src_id, u_isram.mem[0], src_id)); 
     irq_src[src_id-1] = 1'b0;
   endtask
 
@@ -760,30 +771,26 @@ module ibex_plic_soc_tb;
     write_handler();  // records into ISRAM[0]; complete happens inside handler
     do_reset();
 
+    u_isram.mem[1] = 32'h0;   // reset trap-count scratch word for this test
+
     fork
       begin
         repeat(80) @(posedge clk);
-        irq_src[src_id-1] = 1'b1;   // asserted and NEVER deasserted (level-triggered)
+        irq_src[src_id-1] = 1'b1;   // asserted and NEVER deasserted
       end
       begin
-        repeat(900) @(posedge clk);  // long enough for two full trap cycles
+        repeat(900) @(posedge clk);
       end
     join
 
-    // x16 should have incremented at least twice-worth of trap cycles' gaps,
-    // and mepc-based single scratch write only proves one claim. To confirm
-    // re-pend, check core resumed and looped again (x16 still incrementing
-    // means no hang) AND that claim happened more than once is inferred by
-    // reg_file[16] continuing to grow after the second window.
-    if (reg_file[16] > 32'd3)
-      pass_t($sformatf("Level-repend: src%0d core survived multiple trap cycles (x16=%0d)",
-                        src_id, reg_file[16]));
+    if (u_isram.mem[1] >= 32'd2)
+      pass_t($sformatf("Level-repend: src%0d serviced %0d times", src_id, u_isram.mem[1]));
     else
-      fail_t($sformatf("Level-repend: src%0d core stalled/hung (x16=%0d)", src_id, reg_file[16]));
+      fail_t($sformatf("Level-repend: src%0d only serviced %0d times in window", src_id, u_isram.mem[1]));
 
     irq_src[src_id-1] = 1'b0;
+    repeat(20) @(posedge clk);   // let any in-flight service finish before the next test
   endtask
-
   // ---- Complete with an out-of-range ID must not crash or corrupt state ----
   task automatic plic_invalid_complete_test();
     pc_wr = 0;
@@ -865,7 +872,7 @@ module ibex_plic_soc_tb;
     $display("TOTAL: %0d PASS / %0d FAIL", pass_count, fail_count);
     $finish;
   end
-  
+
   initial begin
     #200_000;
     $display("[TIMEOUT] possible hang");

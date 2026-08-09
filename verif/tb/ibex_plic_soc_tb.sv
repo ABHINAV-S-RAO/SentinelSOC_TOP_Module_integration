@@ -241,7 +241,12 @@ module ibex_plic_soc_tb;
   end
   assign plic_rdata = plic_rdata_q;   // instead of the continuous assign
 
-  assign plic_err   = plic_reg_rsp.error;
+  logic plic_err_q;
+  always_ff @(posedge clk or negedge rst_n) begin
+    if (!rst_n)                    plic_err_q <= 1'b0;
+    else if (plic_req & plic_gnt)  plic_err_q <= plic_reg_rsp.error;
+  end
+  assign plic_err = plic_err_q;
 
   logic plic_rvalid_q;
   always_ff @(posedge clk or negedge rst_n) begin
@@ -250,12 +255,6 @@ module ibex_plic_soc_tb;
   end
   assign plic_rvalid = plic_rvalid_q;
 
-  logic plic_err_q;
-  always_ff @(posedge clk or negedge rst_n) begin
-    if (!rst_n)                    plic_err_q <= 1'b0;
-    else if (plic_req & plic_gnt)  plic_err_q <= plic_reg_rsp.error;
-  end
-  assign plic_err = plic_err_q;
 
   plic_top #(
     .N_SOURCE(12), .N_TARGET(1), .MAX_PRIO(3),

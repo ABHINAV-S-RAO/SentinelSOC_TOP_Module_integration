@@ -414,14 +414,93 @@ module ibex_plic_soc_tb;
     irq_src[src_id-1] = 1'b0;  // deassert before next iteration
   endtask
 
+  task automatic plic_priority_arbitration_test(
+    input int src_a, input int prio_a,
+    input int src_b, input int prio_b,
+    input int expected_winner
+);
+    logic [31:0] prio_addr_a, prio_addr_b, ie_addr;
+    logic [31:0] ie_bits;
+
+    prio_addr_a = 32'h0C00_0000 + (src_a * 4);
+    prio_addr_b = 32'h0C00_0000 + (src_b * 4);
+    ie_addr     = 32'h0C00_2000;
+    ie_bits     = (32'h1 << src_a) | (32'h1 << src_b);
+    pc_wr = 0;
+
+    load_imm32(5'd28, MTVEC_VAL);
+    emit(f_csrrw(CSRA_MTVEC, 5'd28, 5'd0));
+    load_imm32(5'd29, 32'h8);
+    emit(f_csrrs(CSRA_MSTATUS, 5'd29, 5'd0));
+    load_imm32(5'd29, 32'h800);
+    emit(f_csrrs(CSRA_MIE, 5'd29, 5'd0));
+
+    load_imm32(5'd10, prio_addr_a);
+    load_imm32(5'd11, prio_a);
+    emit(f_sw(5'd11, 5'd10, 12'h0));
+
+    load_imm32(5'd10, prio_addr_b);
+    load_imm32(5'd11, prio_b);
+    emit(f_sw(5'd11, 5'd10, 12'h0));
+
+    load_imm32(5'd10, ie_addr);
+    load_imm32(5'd11, ie_bits);
+    emit(f_sw(5'd11, 5'd10, 12'h0));
+
+    load_imm32(5'd10, PLIC_THRESH);
+    emit(f_sw(5'd0, 5'd10, 12'h0));
+
+    emit(f_addi(5'd16, 5'd16, 12'h001));
+    emit(f_beq(5'd0, 5'd0, -13'sd4));
+
+    write_handler();
+    do_reset();
+
+    fork
+      begin
+        repeat(80) @(posedge clk);
+        irq_src[src_a-1] = 1'b1;
+        irq_src[src_b-1] = 1'b1;   // both asserted same cycle
+      end
+      begin
+        repeat(500) @(posedge clk);
+      end
+    join
+
+    if (u_isram.mem[0] == expected_winner)
+      pass_t($sformatf("Arbitration: src%0d(p%0d) vs src%0d(p%0d) -> winner=%0d",
+                        src_a, prio_a, src_b, prio_b, u_isram.mem[0]));
+    else
+      fail_t($sformatf("Arbitration: src%0d(p%0d) vs src%0d(p%0d) -> got %0d, expected %0d",
+                        src_a, prio_a, src_b, prio_b, u_isram.mem[0], expected_winner));
+
+    irq_src[src_a-1] = 1'b0;
+    irq_src[src_b-1] = 1'b0;
+  endtask
+
   initial begin
-  pass_count = 0; fail_count = 0;
-  for (int src = 1; src <= 12; src++) begin
+    pass_count = 0; fail_count = 0;
+  
+    // --- Register sweep ---
+    for (int src = 1; src <= 12; src++) begin
+      for (int i = 0; i < 1024; i++) u_bootrom.mem[i] = 32'h0000_0013;
+      plic_irq_test_for_source(src);
+    end
+    $display("REGISTER SWEEP: %0d PASS / %0d FAIL", pass_count, fail_count);
+  
+    // --- Priority arbitration ---
     for (int i = 0; i < 1024; i++) u_bootrom.mem[i] = 32'h0000_0013;
-    plic_irq_test_for_source(src);
-  end
-  $display("REGISTER SWEEP: %0d PASS / %0d FAIL", pass_count, fail_count);
-  $finish;
+    plic_priority_arbitration_test(2, 1, 5, 3, 5);
+  
+    for (int i = 0; i < 1024; i++) u_bootrom.mem[i] = 32'h0000_0013;
+    plic_priority_arbitration_test(9, 3, 3, 1, 9);
+  
+    for (int i = 0; i < 1024; i++) u_bootrom.mem[i] = 32'h0000_0013;
+    plic_priority_arbitration_test(7, 2, 3, 2, 3);
+  
+    $display("ARBITRATION: %0d PASS / %0d FAIL", pass_count, fail_count);
+    $display("TOTAL: %0d PASS / %0d FAIL", pass_count, fail_count);
+    $finish;
   end
 
   initial begin

@@ -1,6 +1,3 @@
-[submodule "rtl/core/ibex_core"]
-	path = rtl/core/ibex_core
-	url = https://github.com/shridharb11/ibex.git
 [submodule "rtl/peripheral/apb_spi_master"]
 	path = rtl/peripheral/apb_spi_master
 	url = https://github.com/pulp-platform/apb_spi_master.git

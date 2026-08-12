@@ -531,17 +531,18 @@ initial begin : tb_main
     end
 
     // =========================================================================
-    // CAT E — Debug-injected data tainted via ibex_dift_mem
+    // CAT E — Debug-injected data tainted via dift_obi_ctrl + tag shadow RAM
     // =========================================================================
     // Abstract command "write GPR x10":
     //   DM puts 0xDEADBEEF into data0 (at DM_BASE+0x380 = 0x1A110380)
     //   DM inserts LW x10, 0(xN) into abstract command area
-    //   Core executes that load → data_addr_i = DM_BASE+0x380 hits DM window
-    //   ibex_dift_mem: load_from_dm_mem=1 → data_rdata_tag_o forced to 1
+    //   Core executes that load → data_addr in soc_top hits DM window
+    //   soc_top tag shadow RAM: is_data_sram=0 → tag_rdata forced to 1 (tainted)
+    //   dift_obi_ctrl returns tag=1 → ibex_core LSU sees tainted rdata_tag
     //   LSU: lsu_rdata_tag_o=1 → register file writes tag=1 to x10
     //   Any subsequent TCR-gated use of x10 will see a tainted tag
     // =========================================================================
-    $display("\n─── CAT E: Debug-injected data tainted via ibex_dift_mem ────────");
+    $display("\n─── CAT E: Debug-injected data tainted via dift_obi_ctrl ─────────");
 
     // E1: Halt
     dm_halt_hart0();
@@ -559,22 +560,21 @@ initial begin : tb_main
         `CHECK_EQ("E3 injected value readable from x10", v, 32'hDEAD_BEEF)
     end
 
-    // E4: data_addr_i seen by ibex_dift_mem during the abstract-cmd load
-    //     must have been inside the DM window.  We check load_from_dm_mem
-    //     was asserted at some point during the abstract command execution.
+    // E4: data_addr seen by soc_top during the abstract-cmd load must have
+    //     been outside the DSRAM window (is_data_sram=0), making tag_rdata=1.
     //     Since dm_write_gpr already returned (abstract cmd complete),
-    //     we verify by forcing the address and checking the combinational flag.
+    //     we verify by forcing data_addr and checking is_data_sram combinationally.
     begin
         force dut.data_addr = DM_DATAADDR;
         #1;
-        `CHECK_EQ("E4 load_from_dm_mem=1 for DM DataAddr (combinational)",
+        `CHECK_EQ("E4 is_data_sram=0 (tainted) for DM DataAddr (combinational)",
                    probe_load_from_dm, 1'b1)
         release dut.data_addr;
     end
 
-    // E5: data_rdata_tag_o must be 1 when address is in DM window
+    // E5: tag_rdata must be 1 when is_data_sram_q=0 (outside DSRAM → tainted)
     begin
-        // Test combinational boundary via probe E4, and register behavior here
+        // Force is_data_sram_q=0 to simulate a non-DSRAM (e.g. DM) address
         force dut.is_data_sram_q = 1'b0;
         #1;
         `CHECK_EQ("E5 tag_rdata=1 (tainted) for DM window address",
@@ -582,8 +582,8 @@ initial begin : tb_main
         release dut.is_data_sram_q;
     end
 
-    // E6: data_rdata_tag_o must pass through shadow RAM normally outside DM window
-    //     Force addr to DSRAM base — shadow RAM should return 0 (clean word 0)
+    // E6: tag_rdata must come from shadow RAM when is_data_sram_q=1 (DSRAM address)
+    //     Force is_data_sram_q=1 — word 0 of shadow RAM was never tainted → expect 0
     begin
         force dut.is_data_sram_q = 1'b1;
         #1;

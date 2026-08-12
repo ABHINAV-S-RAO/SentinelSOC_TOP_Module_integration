@@ -9,14 +9,35 @@
   `define RVFI
 `endif
 
-`include "prim_assert.sv"
-`include "dv_fcov_macros.svh"
+//`include "prim_assert.sv"
+//`include "dv_fcov_macros.svh"
 
 /**
  * Top level module of the ibex RISC-V core
  *
+ * DIFT additions follow the Columbia D-RI5CY methodology:
+ *   "Design and Implementation of a Dynamic Information Flow Tracking
+ *    Architecture to Secure a RISC-V Core for IoT Applications"
+ *    Palmiero et al., HPEC 2018.
+ *
  * All DIFT additions are guarded by `ifdef DIFT.
- * The original core architecture is 100% preserved when DIFT is not defined.
+ * The original Ibex architecture is 100% preserved when DIFT is not defined.
+ *
+ * Columbia-to-Ibex mapping (2-stage pipeline):
+ *   Columbia stage:          Ibex component:
+ *   ---------------          ----------------
+ *   IF                       ibex_if_stage
+ *   ID                       ibex_id_stage  (controller + decoder inside)
+ *   EX                       ibex_ex_block
+ *   LSU                      ibex_load_store_unit
+ *   WB                       ibex_wb_stage
+ *   CS Registers             ibex_cs_registers  (TPR/TCR added)
+ *   Tag Register File        ibex_register_file_ff_tag  (instantiated internally)
+ *   Tag Memory               External shadow RAM (driven via data_rdata_tag_i /
+ *                                                  data_wdata_tag_o ports)
+ *   Core-level TMU modules   ibex_dift_tmu, riscv_load_check,
+ *                            riscv_load_propagation, riscv_mode_tag,
+ *                            riscv_enable_tag  (instantiated in ibex_core)
  */
 module ibex_core import ibex_pkg::*; #(
   parameter bit                     PMPEnable                   = 1'b0,
@@ -174,10 +195,10 @@ module ibex_core import ibex_pkg::*; #(
   output ibex_mubi_t                   core_busy_o
 
   // *** DIFT *** Tag memory interface and security exception output
-  // The tag shadow RAM is parallel to the data RAM.
+  // The tag shadow RAM lives alongside the data RAM (external to ibex_core).
   // ibex_core drives data_wdata_tag_o and reads data_rdata_tag_i in parallel
-  // uses the normal data memory bus 
-  // tag memory model (1 bit per word )
+  // with the normal data memory bus — matching Columbia's 4-extra-bits-per-word
+  // tag memory model (1 bit per byte, but implemented as 1 bit per word here).
 `ifdef DIFT
   ,
   input  logic                         data_rdata_tag_i,  // Tag bit read from shadow RAM
@@ -382,13 +403,14 @@ module ibex_core import ibex_pkg::*; #(
   logic        illegal_insn_id, unused_illegal_insn_id;
 
   // ---------------------------------------------------------------------------
-  // * DIFT Internal signal declarations
+  // *** DIFT *** Internal signal declarations
   //
+  // All signals follow the Columbia D-RI5CY tag-propagation data-flow:
   //   CSR (TPR/TCR) → ID (policy decode + operand-tag mux) → EX (propagate)
   //                                                        → LSU (tag mem)
   //                                                        → WB  (tag RF write)
   //
-  // Core-level modules:
+  // Core-level modules (Columbia riscv_core.sv style):
   //   ibex_dift_tmu          – decodes TCR per-instruction check bits
   //   riscv_mode_tag         – decodes TPR ALU propagation mode
   //   riscv_enable_tag       – decodes TPR store-enable bits
@@ -397,8 +419,8 @@ module ibex_core import ibex_pkg::*; #(
   // ---------------------------------------------------------------------------
 `ifdef DIFT
   // Policy CSRs – driven by ibex_cs_registers outputs
-  logic [31:0] tpr_csr;             // Tag Propagation Register (17 bits)
-  logic [31:0] tcr_csr;             // Tag Check Register       (22 bits)
+  logic [31:0] tpr_csr;             // Tag Propagation Register (17 active bits in Columbia)
+  logic [31:0] tcr_csr;             // Tag Check Register       (22 active bits in Columbia)
 
   // IF → ID instruction tag (tag of the PC currently in the ID stage)
   logic        pc_if_tag;
@@ -417,8 +439,8 @@ module ibex_core import ibex_pkg::*; #(
 
   // EX block tag outputs
   logic        rf_wdata_ex_tag;      // Result tag fed back to ID for forwarding
-  logic        regfile_wdata_tag;    // Result tag to WB
-  logic        rf_we_tag_ex_out;     // WE tag to WB
+  logic        regfile_wdata_tag;    // Result tag flowing to WB
+  logic        rf_we_tag_ex_out;     // WE tag flowing to WB
   logic        lsu_wdata_tag_lsu;    // Store-data tag forwarded to LSU
 
   // LSU tag signals
@@ -430,7 +452,7 @@ module ibex_core import ibex_pkg::*; #(
   logic        rf_we_tag_wb;         // Write-enable for tag register file
   logic        rf_wdata_fwd_tag_wb;  // Forwarded tag from WB to ID (hazard resolution)
 
-  //TMU decode outputs 
+  // Core-level TMU decode outputs (Columbia riscv_core.sv style)
   logic        dift_s1_check;        // TCR: check source-1 tag
   logic        dift_s2_check;        // TCR: check source-2 tag
   logic        dift_dest_check;      // TCR: check destination tag
@@ -441,12 +463,12 @@ module ibex_core import ibex_pkg::*; #(
   logic        memory_set_tmu;       // Mode decoder: memory-set special case
   logic        is_store_post_tmu;    // Mode decoder: post-increment store
 
-  // Load check / propagation (uses WB-stage signals)
+  // Load check / propagation (Columbia core-level, uses WB-stage signals)
   logic        load_exception;       // Raised when load violates TCR policy
   logic        rf_we_tag_load;       // Tag value for the load destination register
   logic        rf_tag_we_load;       // Enable writing rf_we_tag_load to tag RF
   logic        ex_exception;         // EX-stage taint violation from ibex_dift_logic
-  logic        pc_exception;         // PC tag violation in EX
+  logic        pc_exception;         // PC tag violation (new add)
 `endif
 
   //////////////////////
@@ -475,8 +497,12 @@ module ibex_core import ibex_pkg::*; #(
   end
 
   // ===========================================================================
+  // *** DIFT *** Core-level tag policy modules
+  //   Mirroring Columbia riscv_core.sv which instantiates the TMU modules at
+  //   the top level (using instr_rdata_id = the ID-stage instruction word).
+  // ===========================================================================
 `ifdef DIFT
-  // decoding per-instruction TAG CHECK bits from TCR
+  // 1. Decode per-instruction TAG CHECK bits from TCR
   ibex_dift_tmu u_ibex_dift_tmu (
     .instr_rdata_i ( instr_rdata_id  ),
     .tcr_i         ( tcr_csr         ),
@@ -486,19 +512,19 @@ module ibex_core import ibex_pkg::*; #(
     .execute_pc_o  ( dift_pc_check   )
   );
 
-  //checking if a LOAD operation violates the security policy based on TCR
-  // usigng wb signals = runs when rf_we_wb_o is asserted
+  // 2. Check if a LOAD operation violates the security policy (TCR-based)
+  //    Uses WB-stage signals: runs when rf_we_wb_o is asserted (load data retiring).
   riscv_load_check u_ibex_load_check (
-    .regfile_wdata_wb_i_tag ( lsu_rdata_tag    ),  // tag of loaded word (from tag RAM)
+    .regfile_wdata_wb_i_tag ( lsu_rdata_tag    ),  // tag of loaded word (from shadow RAM)
     .rs1_i_tag              ( rf_rdata_a_tag   ),  // tag of base-address register
     .regfile_dest_tag       ( rf_wdata_tag_wb  ),  // tag to be written to destination
     .tcr_i                  ( tcr_csr          ),
-    .regfile_we_wb_i        ( rf_we_lsu         ),  // WB write enable 
+    .regfile_we_wb_i        ( rf_we_lsu         ),  // WB write enable (load retiring)
     .exception_o            ( load_exception   )
   );
 
-  // computing destination tag for LOAD based on TPR and source tags
-  // output rf_we_tag_load is the computed tag value for the loaded register.
+  // 3. Compute destination tag for LOAD (TPR-based propagation)
+  //    Output rf_we_tag_load is the computed tag VALUE for the loaded register.
   riscv_load_propagation u_ibex_load_propagation (
     .regfile_wdata_wb_i_tag ( lsu_rdata_tag    ),  // tag of loaded word
     .rs1_i_tag              ( rf_rdata_a_tag   ),  // tag of base-address register
@@ -508,7 +534,7 @@ module ibex_core import ibex_pkg::*; #(
     .regfile_enable_tag     ( rf_tag_we_load   )
   );
 
-  // decoding ALU tag propagation MODE from TPR
+  // 4. Decode ALU tag propagation MODE from TPR
   riscv_mode_tag u_ibex_mode_tag (
     .instr_rdata_i       ( instr_rdata_id    ),
     .tpr_i               ( tpr_csr           ),
@@ -518,7 +544,7 @@ module ibex_core import ibex_pkg::*; #(
     .memory_set_o        ( memory_set_tmu    )
   );
 
-  //decode store enable bits from TPR
+  // 5. Decode store TAG ENABLE bits from TPR
   riscv_enable_tag u_ibex_enable_tag (
     .instr_rdata_i ( instr_rdata_id ),
     .tpr_i         ( tpr_csr        ),
@@ -530,7 +556,7 @@ module ibex_core import ibex_pkg::*; #(
   // Suppress unused-signal warnings for TMU outputs consumed inside sub-modules
   logic unused_dift_tmu;
   assign unused_dift_tmu = rf_tag_we_tmu ^ is_store_tmu ^ memory_set_tmu ^ is_store_post_tmu;
-  assign pc_exception = instr_valid_id & dift_pc_check & pc_id_tag;                           //PC tag violation : new add
+  assign pc_exception = instr_valid_id & dift_pc_check & pc_id_tag; //PC tag violation : new add
   assign dift_exception_o = load_exception | lsu_tag_err | ex_exception | pc_exception;
 `endif
 
@@ -634,11 +660,16 @@ module ibex_core import ibex_pkg::*; #(
     .pc_mismatch_alert_o(pc_mismatch_alert),
     .if_busy_o          (if_busy)
 
-    // DIFT PC tag tracking through the IF stage
+    // *** DIFT *** PC tag tracking through the IF stage
+    // branch_target_ex_i_tag: tag of the branch/jump target PC computed in EX
+    //   → IF pipeline register latches this so pc_if_o_tag tracks whether
+    //     the current PC is tainted (Columbia §IV-B "Jump Mode").
+    // pc_if_o_tag: tag of the PC currently being fetched, becomes the
+    //   instruction tag (instr_tag_i) for the instruction in the ID stage.
 `ifdef DIFT
     ,
-    .branch_target_ex_i_tag (pc_set_tag), //tag of the branch/jump target PC computed in EX
-    .pc_if_o_tag            (pc_if_tag), //tag of the PC currently being fetched, becomes the instruction tag (instr_tag_i) for the instruction in the ID stage.
+    .branch_target_ex_i_tag (pc_set_tag),
+    .pc_if_o_tag            (pc_if_tag),
     .pc_id_o_tag            (pc_id_tag)
 `endif
   );
@@ -817,7 +848,7 @@ module ibex_core import ibex_pkg::*; #(
     .perf_div_wait_o  (perf_div_wait),
     .instr_id_done_o  (instr_id_done)
 
-    // DIFT ID stage tag wiring
+    // *** DIFT *** ID stage tag wiring
     // Inputs: register tags (direct + forwarded), policy CSRs, instruction PC tag
     // Outputs: resolved operand tags pipelined to EX, branch/jump PC tag to IF
 `ifdef DIFT
@@ -825,13 +856,13 @@ module ibex_core import ibex_pkg::*; #(
     // Forwarded tags from EX and WB for operand hazard resolution
     .rf_wdata_ex_tag_i   (rf_wdata_ex_tag),       // EX result tag (forwarding)
     .rf_wdata_wb_tag_i   (rf_wdata_fwd_tag_wb),   // WB result tag (forwarding)
-    // Register file tag reads (same addresses as RF)
+    // Register file tag reads (same addresses as integer RF)
     .rf_rdata_a_tag_i    (rf_rdata_a_tag),
     .rf_rdata_b_tag_i    (rf_rdata_b_tag),
     // Policy registers from CSR file (programmed by startup routine)
     .tpr_i               (tpr_csr),
     .tcr_i               (tcr_csr),
-    // Instruction tag = tag of the PC in the ID stage
+    // Instruction tag = tag of the PC in the ID stage (Columbia §IV-A)
     .instr_tag_i         (pc_id_tag),
     // Resolved operand tags latched into EX pipeline registers by id_stage
     .alu_op_a_tag_ex_o   (alu_op_a_tag_ex),
@@ -845,7 +876,7 @@ module ibex_core import ibex_pkg::*; #(
     .dift_s2_check_i     (dift_s2_check),
     .dift_dest_check_i   (dift_dest_check),
     .is_load_i           (instr_rdata_id[6:0] == OPCODE_LOAD),
-    .ex_tag_err_i        (ex_exception | pc_exception)  //PC VIOLATION 
+    .ex_tag_err_i        (ex_exception | pc_exception)  //PC VIOLATION : NEW ADD
 `endif
   );
 
@@ -895,7 +926,7 @@ module ibex_core import ibex_pkg::*; #(
 
     .ex_valid_o(ex_valid)
 
-    //DIFT EX block tag wiring
+    // *** DIFT *** EX block tag wiring
     // Inputs: resolved operand tags from ID pipeline registers
     // Outputs: computed result tag (forwarding + WB path), store-data tag to LSU
     // ibex_dift_logic (inside ex_block) applies alu_tag_mode propagation rule.
@@ -971,10 +1002,12 @@ module ibex_core import ibex_pkg::*; #(
     .perf_load_o (perf_load),
     .perf_store_o(perf_store)
 
-    // DIFT LSU tag wiring
-    // Connects to the external tag RAM.
+    // *** DIFT *** LSU tag wiring
+    // Connects to the external tag shadow RAM.
     // data_wdata_tag_o / data_rdata_tag_i mirror data_wdata_o / data_rdata_i
+    // exactly but carry 1-bit tags (1 bit per word, matching ibex_dift_mem).
     // lsu_tag_err_o is raised when a tainted address is used for a load/store
+    // (Columbia TCR LOADSTORE_CHECK_DA bit).
 `ifdef DIFT
     ,
     .data_wdata_tag_o  (data_wdata_tag_o),    // tag to shadow RAM
@@ -1035,8 +1068,9 @@ module ibex_core import ibex_pkg::*; #(
 
     .instr_done_wb_o(instr_done_wb)
 
-    // DIFT WB stage tag wiring
-    // The WB stage selects between the EX result tag (ALU/mult) and the LSU data tag, then drives the tag register file write port.
+    // *** DIFT *** WB stage tag wiring
+    // The WB stage selects between the EX result tag (ALU/mult) and the LSU
+    // loaded-data tag, then drives the tag register file write port.
     // rf_wdata_fwd_tag_wb_o provides the forwarded tag to ID for hazard resolution.
 `ifdef DIFT
     ,
@@ -1045,7 +1079,7 @@ module ibex_core import ibex_pkg::*; #(
     .rf_we_tag_id_i        (rf_we_tag_ex_out),    // EX write-enable tag
     // From LSU: loaded data tag
     .rf_wdata_tag_lsu_i    (rf_we_tag_load),       // loaded-word tag
-    .rf_we_tag_lsu_i       (rf_tag_we_load),       // LSU write enable (same as data)
+    .rf_we_tag_lsu_i       (rf_tag_we_load),           // LSU write enable (same as data)
     // To tag register file
     .rf_wdata_tag_wb_o     (rf_wdata_tag_wb),     // final tag to write
     .rf_we_tag_wb_o        (rf_we_tag_wb),        // tag RF write enable
@@ -1126,12 +1160,18 @@ module ibex_core import ibex_pkg::*; #(
   end
 
   // ===========================================================================
-  // DIFT Tag register file
+  // *** DIFT *** Tag register file
+  //
+  // Columbia §IV-A: "We augmented the general-purpose registers … with a
+  // one-bit tag (marked as T)."
+  //
   // One tag bit per register, implemented as a shadow register file using
-  // identical read/write addresses to the integer RF.  Instantiated internally. No ECC
+  // identical read/write addresses to the integer RF.  Instantiated internally
+  // (the tag RF has no ECC and no external interface) — mirroring Columbia's
+  // self-contained riscv_core approach.
   // ===========================================================================
 `ifdef DIFT
-  ibex_register_file_latch_tag #(
+  ibex_register_file_fpga_tag #(
     .RV32E            (RV32E),
     .DataWidth        (1),          // 1-bit tag per register
     .DummyInstructions(DummyInstructions),
@@ -1267,9 +1307,11 @@ module ibex_core import ibex_pkg::*; #(
     .csr_op_en_i (csr_op_en),
     .csr_rdata_o (csr_rdata),
 
-    //DIFT TPR and TCR outputs
-    // programmed at startup by a runtime routine, mapped as 32-bit CSR
-    // registers at addresses CSR_TPR=0x7C3 and CSR_TCR=0x7C2 (in ibex_pkg.sv).
+    // *** DIFT *** TPR and TCR outputs
+    // Columbia §IV-B/C: TPR (17-bit) and TCR (22-bit) are machine-mode CSRs
+    // programmed at startup by a runtime routine. Here mapped as 32-bit CSR
+    // registers at addresses CSR_TPR=0x7C3 and CSR_TCR=0x7C2 (ibex_pkg.sv).
+    // tpr_csr and tcr_csr drive all DIFT logic throughout the pipeline.
 `ifdef DIFT
     .tpr_o (tpr_csr),
     .tcr_o (tcr_csr),
@@ -1346,14 +1388,23 @@ module ibex_core import ibex_pkg::*; #(
   `ASSERT_KNOWN_IF(IbexCsrWdataIntKnown, cs_registers_i.csr_wdata_int, csr_op_en)
 
   // ===========================================================================
-  // DIFT Security exception output
+  // *** DIFT *** Security exception output
+  //
+  // Columbia §IV-C: "if the processor detects that a spurious data item is
+  // used in an unsafe manner, it raises a security exception."
+  //
   // Sources of DIFT exceptions in this implementation:
   //   load_exception : raised by riscv_load_check when a load violates TCR
   //                    (tainted address or tainted source used as load address)
   //   lsu_tag_err    : raised by ibex_load_store_unit when the memory address
   //                    itself is tainted and LOADSTORE_CHECK_DA bit is set
   // ===========================================================================
-
+/*`ifdef DIFT
+  // Suppress lint: lsu_rdata_tag is produced by LSU for potential future use;
+  // riscv_load_propagation uses data_rdata_tag_i directly at core level.
+  logic unused_lsu_rdata_tag;
+  assign unused_lsu_rdata_tag = lsu_rdata_tag;
+`endif */
 
   if (PMPEnable) begin : g_pmp
     logic [31:0]           pc_if_inc;
@@ -1403,6 +1454,7 @@ module ibex_core import ibex_pkg::*; #(
   end
 
 `ifdef RVFI
+  //  No DIFT changes are needed inside the RVFI section.)
     // When writeback stage is present RVFI information is emitted when instruction is finished in
   // third stage but some information must be captured whilst the instruction is in the second
   // stage. Without writeback stage RVFI information is all emitted when instruction retires in
@@ -2196,4 +2248,7 @@ module ibex_core import ibex_pkg::*; #(
   end
 `endif
 
+
+
 endmodule
+

@@ -1,12 +1,14 @@
 ////////////////////////////////////////////////////////////////////////////////
-// Combined Tag Management Units for DIFT Implementation                      //
-//                                                                            //
-// This file contains:                                                        //
-// 1. riscv_check_tag: Reads TCR and decodes signals for EX stage.            //
-// 2. riscv_load_check: Raises exceptions based on LOAD tag policies.         //
-// 3. riscv_load_propagation: Computes destination tags for LOAD operations.  //
-// 4. riscv_mode_tag: Decodes TPR MODE fields for EX stage.                   //
-// 5. riscv_enable_tag: Decodes TPR ENABLE fields for ID stage.               //
+// Combined Tag Management Units for RI5CY Project                           //
+// Original Engineer: Christian Palmiero - cp3025@columbia.edu               //
+// Language: SystemVerilog                                                   //
+//                                                                           //
+// This file contains:                                                       //
+// 1. riscv_check_tag: Reads TCR and decodes signals for EX stage.           //
+// 2. riscv_load_check: Raises exceptions based on LOAD tag policies.        //
+// 3. riscv_load_propagation: Computes destination tags for LOAD operations. //
+// 4. riscv_mode_tag: Decodes TPR MODE fields for EX stage.                  //
+// 5. riscv_enable_tag: Decodes TPR ENABLE fields for ID stage.              //
 ////////////////////////////////////////////////////////////////////////////////
 
 `timescale 1ns/1ps

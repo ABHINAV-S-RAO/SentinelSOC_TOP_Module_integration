@@ -68,7 +68,7 @@ module ibex_ex_block #(
     input  logic                      check_d_i,         // TCR dest check
     input  logic                      is_load_i,         // suppress check for loads
     output logic                      ex_tag_err_o,        // ALU-level taint violation
-    input  logic                      instr_tag_i,      // Tag of the instruction itself 
+    input  logic                      instr_tag_i,      // Tag of the instruction itself (for control flow)
 
     // Outputs to WB/LSU/ID
     output logic  rf_wdata_ex_tag_o,    // Feedback to ID Forwarding

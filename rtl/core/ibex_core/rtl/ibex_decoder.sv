@@ -17,7 +17,8 @@ module ibex_decoder #(
   parameter bit RV32E               = 0,
   parameter ibex_pkg::rv32m_e RV32M = ibex_pkg::RV32MFast,
   parameter ibex_pkg::rv32b_e RV32B = ibex_pkg::RV32BNone,
-  parameter bit BranchTargetALU     = 0
+  parameter bit BranchTargetALU     = 0,
+  parameter bit CSR_EN              = 1'b1 //added to test modelsim csr writes.
 ) (
   input  logic                 clk_i,
   input  logic                 rst_ni,
@@ -139,7 +140,9 @@ module ibex_decoder #(
   assign imm_u_type_o = { instr[31:12], 12'b0 };
   assign imm_j_type_o = { {12{instr[31]}}, instr[19:12], instr[20], instr[30:21], 1'b0 };
 
-  assign csr_addr_o = csr_num_e'(instr[31:20]);
+  //assign csr_addr_o = csr_num_e'(instr[31:20]);
+  //For XSim compatibility
+  assign csr_addr_o = csr_num_e'({instr[31:20]});
 
   // immediate for CSR manipulation (zero extended)
   assign zimm_rs1_type_o = { 27'b0, instr_rs1 }; // rs1

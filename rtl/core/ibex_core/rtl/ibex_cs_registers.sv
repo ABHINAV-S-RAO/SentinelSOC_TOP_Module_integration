@@ -252,12 +252,12 @@ module ibex_cs_registers import ibex_pkg::*; #(
   logic [31:0] mstack_epc_q, mstack_epc_d;
   exc_cause_t  mstack_cause_q, mstack_cause_d;
 
-  //TPR and TCR for DIFT. local registers
+  //TPR and TCR for DIFT
   `ifdef DIFT
     logic [31:0] tpr_q;
-    logic        tpr_en;  //enable tpr
+    logic        tpr_en;
     logic [31:0] tcr_q;
-    logic        tcr_en;  //enable tcr
+    logic        tcr_en;
   `endif
 
   // PMP Signals
@@ -563,12 +563,14 @@ module ibex_cs_registers import ibex_pkg::*; #(
       //TPR and TCR for DIFT
     `ifdef DIFT
       CSR_TPR: begin
-         csr_rdata_int = tpr_q;
-         illegal_csr   = 1'b0; // TPR is always implemented when DIFT is enabled
+         //modification for debugger to not read TPR and TCR
+         csr_rdata_int = debug_mode_i ? 32'h0 : tpr_q; // [ORIGINAL] was: csr_rdata_int = tpr_q;
+         illegal_csr   =  debug_mode_i; // [ORIGINAL] was: illegal_csr   = 1'b0;  TPR always implemented when DIFT is enabled
       end
       CSR_TCR: begin
-         csr_rdata_int = tcr_q;
-         illegal_csr   = 1'b0; // TCR is always implemented when DIFT is enabled
+        //modification for debugger to not read TPR and TCR
+         csr_rdata_int = debug_mode_i ? 32'h0 : tcr_q; // [ORIGINAL] was: csr_rdata_int = tcr_q;
+         illegal_csr   =  debug_mode_i; // [ORIGINAL] was: illegal_csr   = 1'b0;  TCR always implemented when DIFT is enabled
       end
     `endif
 
@@ -740,11 +742,11 @@ module ibex_cs_registers import ibex_pkg::*; #(
         end
        `ifdef DIFT 
         CSR_TPR: begin
-            tpr_en = 1'b1;
+            tpr_en = csr_we_int & ~debug_mode_i;   // [ORIGINAL was: tpr_en = 1'b1]
         end
 
         CSR_TCR: begin
-            tcr_en = 1'b1;
+            tcr_en = csr_we_int & ~debug_mode_i;   // [ORIGINAL was: tcr_en = 1'b1]
         end
         `endif
         default:;

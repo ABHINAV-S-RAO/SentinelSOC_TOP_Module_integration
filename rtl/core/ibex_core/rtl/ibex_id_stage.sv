@@ -703,10 +703,10 @@ module ibex_id_stage #(
 
 `ifdef DIFT
     ,
-    .lsu_tag_err_i         (1'b0),              // not used to flush in ID stage
-    .ex_tag_err_i          (ex_tag_err_i),     // from EX stage, used to flush on tag errors that are detected too late to prevent the instruction from entering EX (e.g. memory tag errors)
+    .lsu_tag_err_i         (1'b0),
+    .ex_tag_err_i          (ex_tag_err_i),
     .tag_err_o             (),
-    .tcr_execute_pc_check_i(tcr_i[EXECUTE_PC]) //checks if execute_pc bit enabled in TCR
+    .tcr_execute_pc_check_i(tcr_i[EXECUTE_PC])
 `endif
   );
 
@@ -902,6 +902,8 @@ module ibex_id_stage #(
   // AFTER:
 always_ff @(posedge clk_i or negedge rst_ni) begin : id_pipeline_reg
   if (!rst_ni) begin
+    id_fsm_q <= FIRST_CYCLE;
+  end else if (instr_valid_clear_o) begin
     id_fsm_q <= FIRST_CYCLE;
   end else if (instr_executing) begin
     id_fsm_q <= id_fsm_d;

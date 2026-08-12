@@ -127,7 +127,7 @@ module ibex_if_stage import ibex_pkg::*; #(
   `ifdef DIFT
     ,
     input logic                       branch_target_ex_i_tag,   //tainting from EX stage for branch target
-    output logic                      pc_if_o_tag,              //current PC tag being fetched
+    output logic                      pc_if_o_tag,               //current PC tag being fetched
     output logic                      pc_id_o_tag               // tag of the PC currently in ID stage
   `endif
 );
@@ -234,7 +234,7 @@ module ibex_if_stage import ibex_pkg::*; #(
   end
 
   `ifdef DIFT
-    //tagfetch address selection mux for tag propagation in DIFT
+    //shadow fetch address selection mux for tag propagation in DIFT
     logic fetch_addr_n_tag;
 
     always_comb begin : fetch_addr_tag_mux
@@ -415,8 +415,8 @@ module ibex_if_stage import ibex_pkg::*; #(
     // implies. This then causes problems for linking against C++ testbench code that expected them.
     // As a slightly ugly hack, let's define the DPI functions here (the real versions are defined
     // in prim_util_get_scramble_params.svh)
-    export "DPI-C" function simutil_get_scramble_key;
-    export "DPI-C" function simutil_get_scramble_nonce;
+    //export "DPI-C" function simutil_get_scramble_key;
+    //export "DPI-C" function simutil_get_scramble_nonce;
     function automatic int simutil_get_scramble_key(output bit [127:0] val);
       return 0;
     endfunction

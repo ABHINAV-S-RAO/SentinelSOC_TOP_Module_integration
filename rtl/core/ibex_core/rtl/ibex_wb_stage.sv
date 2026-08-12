@@ -112,7 +112,7 @@ module ibex_wb_stage #(
     // is done
     assign wb_valid_d = (en_wb_i & ready_wb_o) | (wb_valid_q & ~wb_done);
 
-    // Writeback for non load/store instructions always completes in a cycle =instantaneous wb
+    // Writeback for non load/store instructions always completes in a cycle (so instantly done)
     // Writeback for load/store must wait for response to be received by the LSU
     // Signal only relevant if wb_valid_q set
     assign wb_done = (wb_instr_type_q == WB_INSTR_OTHER) | lsu_resp_valid_i;

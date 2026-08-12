@@ -185,6 +185,8 @@ module ibex_controller #(
   // aggregating all taint exceptions
   assign tag_err   = lsu_tag_err_i | ex_tag_err_i;
   assign tag_err_o = tag_err;
+  logic tag_err_d;
+  logic tag_err_q;
 `else
   assign tag_err   = 1'b0;
 `endif
@@ -248,7 +250,10 @@ module ibex_controller #(
   // All terms in this expression are qualified by instr_valid_i
   //assign exc_req_d = (ecall_insn | ebrk_insn | illegal_insn_d | instr_fetch_err) & (ctrl_fsm_cs != FLUSH);
   `ifdef DIFT
-    assign exc_req_d = (ecall_insn | ebrk_insn | illegal_insn_d | instr_fetch_err | tag_err) & (ctrl_fsm_cs != FLUSH);
+  //    assign exc_req_d = (ecall_insn | ebrk_insn | illegal_insn_d | instr_fetch_err | tag_err) & (ctrl_fsm_cs != FLUSH);
+  //     assign exc_req_d = (ecall_insn | ebrk_insn | illegal_insn_d | instr_fetch_err | (tag_err & instr_valid_i)) & (ctrl_fsm_cs != FLUSH);
+    assign tag_err_d = (tag_err & instr_valid_i) & (ctrl_fsm_cs != FLUSH);
+    assign exc_req_d = (ecall_insn | ebrk_insn | illegal_insn_d | instr_fetch_err | tag_err_d) & (ctrl_fsm_cs != FLUSH);
   `else
     assign exc_req_d = (ecall_insn | ebrk_insn | illegal_insn_d | instr_fetch_err) & (ctrl_fsm_cs != FLUSH);
   `endif
@@ -311,7 +316,9 @@ module ibex_controller #(
         ebrk_insn_prio = 1'b1;
       //end
       `ifdef DIFT
-      end else if (tag_err & instr_valid_i) begin
+      //end else if (tag_err & instr_valid_i) begin
+   
+      end else if (tag_err_q) begin
         tag_err_prio = 1'b1;
       `endif
       end
@@ -350,7 +357,7 @@ module ibex_controller #(
         load_err_prio  = 1'b1;
       //end
       `ifdef DIFT
-      end else if (tag_err & instr_valid_i) begin
+      end else if (tag_err_q) begin
         tag_err_prio = 1'b1;
       `endif
     end
@@ -973,6 +980,9 @@ module ibex_controller #(
       store_err_q             <= 1'b0;
       exc_req_q               <= 1'b0;
       illegal_insn_q          <= 1'b0;
+      `ifdef DIFT
+      tag_err_q               <= 1'b0;
+      `endif
     end else begin
       ctrl_fsm_cs             <= ctrl_fsm_ns;
       nmi_mode_q              <= nmi_mode_d;
@@ -983,6 +993,9 @@ module ibex_controller #(
       store_err_q             <= store_err_d;
       exc_req_q               <= exc_req_d;
       illegal_insn_q          <= illegal_insn_d;
+      `ifdef DIFT
+      tag_err_q               <= tag_err_d;
+      `endif
     end
   end
 

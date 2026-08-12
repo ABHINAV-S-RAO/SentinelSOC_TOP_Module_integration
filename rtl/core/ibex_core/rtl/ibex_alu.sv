@@ -94,7 +94,7 @@ module ibex_alu #(
   // prepare operand b
   assign operand_b_neg = {operand_b_i,1'b0} ^ {33{1'b1}};
   always_comb begin
-    unique case (1'b1)
+    case (1'b1)
       multdiv_sel_i:     adder_in_b = multdiv_operand_b_i;
       adder_op_b_negate: adder_in_b = operand_b_neg;
       default:           adder_in_b = {operand_b_i, 1'b0};

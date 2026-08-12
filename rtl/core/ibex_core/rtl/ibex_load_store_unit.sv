@@ -122,7 +122,7 @@
     assign data_offset = data_addr[1:0];
 
     `ifdef DIFT
-      assign data_wdata_tag_o = lsu_wdata_tag_i;  // store tag is the tag of the data being written
+      assign data_wdata_tag_o = lsu_wdata_tag_i;
     `endif
 
     ///////////////////
@@ -208,7 +208,7 @@
         rdata_q <= data_rdata_i[31:8];
       end
     end
-    // capture the tag for the first part of a misaligned load, if needed
+
     `ifdef DIFT
       logic tag_q;
       always_ff @(posedge clk_i or negedge rst_ni) begin
@@ -533,7 +533,7 @@
     // Added (data_we_q & lsu_wdata_tag_i) to force an exception on tainted stores
     assign data_or_pmp_err = lsu_err_q | data_bus_err_i | pmp_err_q
     `ifdef DIFT
-       | lsu_tag_err_o    // Taint violation on load or store
+       | lsu_tag_err_o
     `endif
        ;
     assign lsu_resp_valid_o   = (data_rvalid_i | pmp_err_q) & (ls_fsm_cs == IDLE);
@@ -552,7 +552,7 @@
     assign data_be_o     = data_be;
 
     `ifdef DIFT
-      // Violation if taint is present AND policy says check loads
+      // Violation if (Taint is present) AND (Policy says check loads)
       // Must be valid when data_rvalid_i is high
       assign lsu_tag_err_o = data_rvalid_i && lsu_rdata_tag_o && tcr_load_check_i;
     `endif

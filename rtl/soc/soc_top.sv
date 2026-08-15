@@ -1048,10 +1048,10 @@ soc_addr_decode #(
   // ---------------------------------------------------------------------------
   
   dm::hartinfo_t [0:0] hartinfo_arr;  
-+    assign hartinfo_arr[0] = '{nscratch: 4'd2, dataaccess: 1'b1,
-+                            datasize: dm::DataCount, dataaddr: dm::DataAddr,
-+                            default: '0};
-
+    assign hartinfo_arr[0] = '{nscratch: 4'd2, dataaccess: 1'b1,
+                             datasize: dm::DataCount, dataaddr: dm::DataAddr,
+                             default: '0};
+ 
   dm_top #(
     .NrHarts       ( 1              ),
     .BusWidth      ( 32             ),

@@ -117,7 +117,32 @@ int pass_count = 0;
 int fail_count = 0;
 
 // ─── Hierarchy aliases — adjust if your wrapper names differ ─────────────────
+`define CHECK_EQ(label, got, expected) \
+    if ((got) !== (expected)) begin \
+        $error("[FAIL] %s: got=%0h expected=%0h", label, got, expected); \
+        fail_count++; \
+    end else begin \
+        $display("[PASS] %s", label); \
+        pass_count++; \
+    end
 
+`define CHECK_TRUE(label, cond) \
+    if (!(cond)) begin \
+        $error("[FAIL] %s", label); \
+        fail_count++; \
+    end else begin \
+        $display("[PASS] %s", label); \
+        pass_count++; \
+    end
+
+`define CHECK_NE(label, got, bad) \
+    if ((got) === (bad)) begin \
+        $error("[FAIL] %s: got=%0h (should differ from %0h)", label, got, bad); \
+        fail_count++; \
+    end else begin \
+        $display("[PASS] %s", label); \
+        pass_count++; \
+    end
 // ibex_core internal signals
 // ibex_top is the DUT-level instance; ibex_core lives one level inside it.
 `define CORE  dut.u_ibex_top.u_ibex_core

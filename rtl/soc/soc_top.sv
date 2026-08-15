@@ -299,6 +299,30 @@ typedef struct packed {
   logic        irq_sha;          // crypto done / error
 
   // ---------------------------------------------------------------------------
+  // DIFT additions — intermediate wires between ibex_top and soc_addr_decode
+  // ibex_top drives core_*, dift_obi_ctrl consumes them and drives instr_*/data_*
+  // ---------------------------------------------------------------------------
+  logic        irq_dift; // DIFT violation IRQ → PLIC irq_sources[7]
+
+  logic        core_instr_req, core_instr_gnt, core_instr_rvalid, core_instr_err;
+  logic [31:0] core_instr_addr, core_instr_rdata;
+
+  logic        core_data_req, core_data_gnt, core_data_rvalid, core_data_we, core_data_err;
+  logic [ 3:0] core_data_be;
+  logic [31:0] core_data_addr, core_data_wdata, core_data_rdata;
+
+  // Tag shadow RAM interface (driven by dift_obi_ctrl)
+  logic        tag_req_core, tag_we;
+  logic [29:0] tag_addr;
+  logic        tag_wdata, tag_rdata;
+
+`ifdef DIFT
+  logic data_rdata_tag;
+  logic data_wdata_tag;
+  logic dift_exception;
+`endif
+
+  // ---------------------------------------------------------------------------
   // Tie-offs for unused Ibex inputs
   // ---------------------------------------------------------------------------
   assign instr_rdata_intg = 7'h0;
@@ -341,27 +365,27 @@ typedef struct packed {
     .hart_id_i                  ( HART_ID           ),
     .boot_addr_i                ( BOOT_ADDR         ),
 
-    // Instruction interface
-    .instr_req_o                ( instr_req         ),
-    .instr_gnt_i                ( instr_gnt         ),
-    .instr_rvalid_i             ( instr_rvalid      ),
-    .instr_addr_o               ( instr_addr        ),
-    .instr_rdata_i              ( instr_rdata       ),
+    // Instruction interface — routed via dift_obi_ctrl (DIFT bus intercept)
+    .instr_req_o                ( core_instr_req    ),
+    .instr_gnt_i                ( core_instr_gnt    ),
+    .instr_rvalid_i             ( core_instr_rvalid ),
+    .instr_addr_o               ( core_instr_addr   ),
+    .instr_rdata_i              ( core_instr_rdata  ),
     .instr_rdata_intg_i         ( instr_rdata_intg  ),
-    .instr_err_i                ( instr_err         ),
+    .instr_err_i                ( core_instr_err    ),
 
-    // Data interface
-    .data_req_o                 ( data_req          ),
-    .data_gnt_i                 ( data_gnt          ),
-    .data_rvalid_i              ( data_rvalid       ),
-    .data_we_o                  ( data_we           ),
-    .data_be_o                  ( data_be           ),
-    .data_addr_o                ( data_addr         ),
-    .data_wdata_o               ( data_wdata        ),
+    // Data interface — routed via dift_obi_ctrl (DIFT bus intercept)
+    .data_req_o                 ( core_data_req     ),
+    .data_gnt_i                 ( core_data_gnt     ),
+    .data_rvalid_i              ( core_data_rvalid  ),
+    .data_we_o                  ( core_data_we      ),
+    .data_be_o                  ( core_data_be      ),
+    .data_addr_o                ( core_data_addr    ),
+    .data_wdata_o               ( core_data_wdata   ),
     .data_wdata_intg_o          ( data_wdata_intg   ),
-    .data_rdata_i               ( data_rdata        ),
+    .data_rdata_i               ( core_data_rdata   ),
     .data_rdata_intg_i          ( data_rdata_intg   ),
-    .data_err_i                 ( data_err          ),
+    .data_err_i                 ( core_data_err     ),
 
     // Interrupts
     .irq_software_i             ( irq_software      ),
@@ -401,7 +425,133 @@ typedef struct packed {
     .data_wdata_intg_shadow_o   (                   ),
     .instr_req_shadow_o         (                   ),
     .instr_addr_shadow_o        (                   )
+`ifdef DIFT
+  ,
+    .data_rdata_tag_i           ( data_rdata_tag    ),
+    .data_wdata_tag_o           ( data_wdata_tag    ),
+    .dift_exception_o           ( dift_exception    )
+`endif
   );
+
+  // ---------------------------------------------------------------------------
+  // DIFT — dift_obi_ctrl: bus intercept between ibex_top and soc_addr_decode
+  //
+  // ibex_top does not expose data_rdata_tag_i / data_wdata_tag_o /
+  // dift_exception_o (ibex_core-only ports). dift_obi_ctrl intercepts every
+  // data transaction, maintains the tag shadow RAM, and passes ibex_core's
+  // dift_exception_o through as irq_dift → PLIC irq_sources[7].
+  //   core_data_wdata_tag_i → 1'b0 : no core-side taint injection
+  //   dift_exception_i      → 1'b0 : ctrl detects violations bus-side
+  // ---------------------------------------------------------------------------
+  dift_obi_ctrl #(
+    .ObiCfg (obi_pkg::ObiDefaultConfig)
+  ) u_dift_obi_ctrl (
+    .clk_i  (clk_i),
+    .rst_ni (rst_ni),
+
+    // Instruction bus from ibex_top
+    .core_instr_req_i    (core_instr_req),
+    .core_instr_gnt_o    (core_instr_gnt),
+    .core_instr_rvalid_o (core_instr_rvalid),
+    .core_instr_addr_i   (core_instr_addr),
+    .core_instr_rdata_o  (core_instr_rdata),
+    .core_instr_err_o    (core_instr_err),
+
+    // Data bus from ibex_top
+    .core_data_req_i     (core_data_req),
+    .core_data_gnt_o     (core_data_gnt),
+    .core_data_rvalid_o  (core_data_rvalid),
+    .core_data_we_i      (core_data_we),
+    .core_data_be_i      (core_data_be),
+    .core_data_addr_i    (core_data_addr),
+    .core_data_wdata_i   (core_data_wdata),
+    .core_data_rdata_o   (core_data_rdata),
+    .core_data_err_o     (core_data_err),
+
+    // DIFT tag sideband
+`ifdef DIFT
+    .core_data_wdata_tag_i (data_wdata_tag),
+    .core_data_rdata_tag_o (data_rdata_tag),
+    .dift_exception_i      (dift_exception),
+`else
+    .core_data_wdata_tag_i (1'b0),
+    .core_data_rdata_tag_o (),
+    .dift_exception_i      (1'b0),
+`endif
+
+    // Instruction port → soc_addr_decode (drives existing instr_* signals)
+    .instr_obi_req_o    (instr_req),
+    .instr_obi_addr_o   (instr_addr),
+    .instr_obi_we_o     (),
+    .instr_obi_be_o     (),
+    .instr_obi_wdata_o  (),
+    .instr_obi_aid_o    (),
+    .instr_obi_gnt_i    (instr_gnt),
+    .instr_obi_rvalid_i (instr_rvalid),
+    .instr_obi_rdata_i  (instr_rdata),
+    .instr_obi_rid_i    (1'b0),
+    .instr_obi_err_i    (instr_err),
+
+    // Data port → soc_addr_decode (drives existing data_* signals)
+    .data_obi_req_o    (data_req),
+    .data_obi_addr_o   (data_addr),
+    .data_obi_we_o     (data_we),
+    .data_obi_be_o     (data_be),
+    .data_obi_wdata_o  (data_wdata),
+    .data_obi_aid_o    (),
+    .data_obi_gnt_i    (data_gnt),
+    .data_obi_rvalid_i (data_rvalid),
+    .data_obi_rdata_i  (data_rdata),
+    .data_obi_rid_i    (1'b0),
+    .data_obi_err_i    (data_err),
+
+    // Shadow tag RAM interface
+    .tag_req_o   (tag_req_core),
+    .tag_we_o    (tag_we),
+    .tag_addr_o  (tag_addr),
+    .tag_wdata_o (tag_wdata),
+    .tag_rdata_i (tag_rdata),
+    .tag_gnt_i   (1'b1),
+
+    // Exception passthrough → PLIC (irq_dift)
+    .dift_exception_o (irq_dift)
+  );
+
+  // ---------------------------------------------------------------------------
+  // DIFT Tag Shadow RAM (compiled only when `DIFT is defined)
+  // Mirrors DSRAM word-for-word. tag_rdata = 0 (clean) in non-DIFT builds.
+  // ---------------------------------------------------------------------------
+`ifdef DIFT
+  localparam int unsigned TAG_AW = $clog2(DSRAM_SIZE_WORDS);
+
+  logic tag_mem [DSRAM_SIZE_WORDS];
+  logic [TAG_AW-1:0] tag_rd_addr_q;
+  logic              is_data_sram_q;
+
+  logic is_data_sram;
+  assign is_data_sram = (data_addr >= 32'h0002_0000) &&
+                        (data_addr < (32'h0002_0000 + (DSRAM_SIZE_WORDS * 4)));
+
+  always_ff @(posedge clk_i or negedge rst_ni) begin
+    if (!rst_ni) begin
+      tag_rd_addr_q  <= '0;
+      is_data_sram_q <= 1'b0;
+    end else if (tag_req_core) begin
+      tag_rd_addr_q  <= tag_addr[TAG_AW-1:0];
+      is_data_sram_q <= is_data_sram;
+    end
+  end
+
+  always_ff @(posedge clk_i) begin
+    if (tag_req_core && tag_we)
+      tag_mem[tag_addr[TAG_AW-1:0]] <= tag_wdata;
+  end
+
+  // Out-of-DSRAM addresses return 1 (tainted — safe default)
+  assign tag_rdata = is_data_sram_q ? tag_mem[tag_rd_addr_q] : 1'b1;
+`else
+  assign tag_rdata = 1'b0;
+`endif
 
   // ---------------------------------------------------------------------------
   // Address decoder + fetch demux
@@ -848,7 +998,7 @@ soc_addr_decode #(
     .req_i(plic_reg_req),
     .resp_o(plic_reg_rsp),
     .le_i(12'h0), // all level-triggered
-    .irq_sources_i({5'h0, irq_sha, irq_buf, irq_timer_periph, irq_gpio, irq_qspi, irq_spi, irq_uart} ),
+    .irq_sources_i({4'h0, irq_dift, irq_sha, irq_buf, irq_timer_periph, irq_gpio, irq_qspi, irq_spi, irq_uart} ),
     .eip_targets_o(irq_external)  // Ibex irq_external_i
   );
 

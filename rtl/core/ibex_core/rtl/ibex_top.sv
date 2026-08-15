@@ -182,6 +182,14 @@ module ibex_top import ibex_pkg::*; #(
   // Shadow core instruction interface outputs
   output logic                                                        instr_req_shadow_o,
   output logic [31:0]                                                 instr_addr_shadow_o
+
+`ifdef DIFT
+  ,
+  // DIFT tag memory + exception pass-through (ibex_core ↔ soc_top)
+  input  logic                                                        data_rdata_tag_i,
+  output logic                                                        data_wdata_tag_o,
+  output logic                                                        dift_exception_o
+`endif
 );
 
   localparam bit          Lockstep              = SecureIbex;
@@ -453,6 +461,13 @@ module ibex_top import ibex_pkg::*; #(
     .alert_major_internal_o(core_alert_major_internal),
     .alert_major_bus_o     (core_alert_major_bus),
     .core_busy_o           (core_busy_d)
+
+`ifdef DIFT
+    ,
+    .data_rdata_tag_i  (data_rdata_tag_i),
+    .data_wdata_tag_o  (data_wdata_tag_o),
+    .dift_exception_o  (dift_exception_o)
+`endif
   );
 
   /////////////////////////////////

@@ -1,12 +1,6 @@
 [submodule "rtl/peripheral/apb_spi_master"]
 	path = rtl/peripheral/apb_spi_master
 	url = https://github.com/pulp-platform/apb_spi_master.git
-[submodule "rtl/crypto/ed25519"]
-	path = rtl/crypto/ed25519
-	url = https://github.com/shridharb11/ED25519-ASIC-Implementation.git
 [submodule "rtl/peripheral/apb_uart"]
 	path = rtl/peripheral/apb_uart
 	url = https://github.com/pulp-platform/apb_uart_sv.git
-[submodule "rtl/riscv-dbg"]
-	path = rtl/riscv-dbg
-	url = https://github.com/pulp-platform/riscv-dbg.git

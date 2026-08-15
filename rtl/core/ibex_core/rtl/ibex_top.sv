@@ -45,7 +45,7 @@ module ibex_top import ibex_pkg::*; #(
   parameter int unsigned            DmBaseAddr                   = 32'h1A110000,
   parameter int unsigned            DmAddrMask                   = 32'h00000FFF,
   parameter int unsigned            DmHaltAddr                   = 32'h1A110800,
-  parameter int unsigned            DmExceptionAddr              = 32'h1A110808,
+  parameter int unsigned            DmExceptionAddr              = 32'h1A110810,
   // Default seed and nonce for scrambling
   parameter logic [SCRAMBLE_KEY_W-1:0]   RndCnstIbexKey          = RndCnstIbexKeyDefault,
   parameter logic [SCRAMBLE_NONCE_W-1:0] RndCnstIbexNonce        = RndCnstIbexNonceDefault,

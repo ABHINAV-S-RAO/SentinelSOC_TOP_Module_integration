@@ -1192,27 +1192,6 @@ module ibex_core import ibex_pkg::*; #(
     .wdata_a_i        (rf_wdata_tag_wb),
     .we_a_i           (rf_we_tag_wb)
   );
-`endif#(
-    .RV32E            (RV32E),
-    .DataWidth        (1),          // 1-bit tag per register
-    .DummyInstructions(DummyInstructions),
-    .WordZeroVal      (1'b0)        // tags initialised to 0 (authentic) at reset
-  ) tag_register_file_i (
-    .clk_i            (clk_i),
-    .rst_ni           (rst_ni),
-    .test_en_i        (1'b0),
-    .dummy_instr_id_i (dummy_instr_id),
-    .dummy_instr_wb_i (dummy_instr_wb),
-    // Read addresses — identical to integer RF so tags are always co-read
-    .raddr_a_i        (rf_raddr_a),
-    .rdata_a_o        (rf_rdata_a_tag),
-    .raddr_b_i        (rf_raddr_b),
-    .rdata_b_o        (rf_rdata_b_tag),
-    // Write address — identical to integer RF; tag written with result tag from WB
-    .waddr_a_i        (rf_waddr_wb),
-    .wdata_a_i        (rf_wdata_tag_wb),
-    .we_a_i           (rf_we_tag_wb)
-  );
 `endif
 
   ///////////////////////

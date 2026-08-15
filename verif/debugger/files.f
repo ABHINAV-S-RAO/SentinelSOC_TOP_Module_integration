@@ -1,3 +1,4 @@
++define+DIFT
 +incdir+rtl/core/ibex_core/vendor/lowrisc_ip/dv/sv/dv_utils
 +incdir+rtl/core/ibex_core/vendor/lowrisc_ip/ip/prim/rtl
 +incdir+rtl/core/ibex_core/vendor/lowrisc_ip/ip/prim_generic/rtl
@@ -26,6 +27,7 @@ rtl/core/dift/ibex_dift_logic.sv
 rtl/core/dift/ibex_dift_mem.sv
 rtl/core/dift/ibex_dift_tmu.sv
 rtl/core/dift/ibex_register_file_latch_tag.sv
+
 rtl/core/ibex_core/vendor/lowrisc_ip/ip/prim_generic/rtl/prim_ram_1p_pkg.sv
 # ibex native compile order
 -f rtl/core/ibex_core/rtl/ibex_core.f
@@ -104,6 +106,10 @@ rtl/riscv-dbg/src/dmi_intf.sv
 # `common_cells` proper), compilation will fail on these two modules and
 # you'll need to add that package explicitly.
 
+rtl/obi_wrapper/dift_obi/dift_obi_pkg.sv
+rtl/obi_wrapper/dift_obi/dift_tag_sram_shim.sv
+rtl/obi_wrapper/dift_obi/dift_obi_ctrl.sv
+
 .bender/git/checkouts/obi-75858655e8b256db/src/obi_demux.sv
 rtl/soc/soc_addr_decode.sv
 rtl/soc/soc_ctrl_regs.sv
@@ -125,7 +131,7 @@ rtl/soc/soc_top.sv
 # --- NEW: debug-module regression testbench (replaces tb_top.sv for this run) ---
 +incdir+verif/debugger
 verif/debugger/jtag_if.sv
-verif/debugger/tb_dm_ibex_top.sv
+verif/debugger/tb_dift_debug_integration.sv
 
 # --- REMOVED for this run ---
 # +incdir+verif/uart_verif/files

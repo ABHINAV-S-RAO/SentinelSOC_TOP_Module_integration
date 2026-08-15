@@ -334,7 +334,6 @@ module ibex_top import ibex_pkg::*; #(
     .BranchTargetALU      (BranchTargetALU),
     .ICache               (ICache),
     .ICacheECC            (ICacheECC),
-    .ICacheTweakInfection (ICacheTweakInfection),
     .BusSizeECC           (BusSizeECC),
     .TagSizeECC           (TagSizeECC),
     .LineSizeECC          (LineSizeECC),

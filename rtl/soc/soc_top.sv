@@ -1046,6 +1046,12 @@ soc_addr_decode #(
   // ---------------------------------------------------------------------------
   // RISC-V Debug Module (DM)
   // ---------------------------------------------------------------------------
+  
+  dm::hartinfo_t [0:0] hartinfo_arr;  
++    assign hartinfo_arr[0] = '{nscratch: 4'd2, dataaccess: 1'b1,
++                            datasize: dm::DataCount, dataaddr: dm::DataAddr,
++                            default: '0};
+
   dm_top #(
     .NrHarts       ( 1              ),
     .BusWidth      ( 32             ),
@@ -1081,9 +1087,7 @@ soc_addr_decode #(
     // nscratch=2 (dscratch0/dscratch1 both used), dataaccess=1 (data
     // registers are memory-mapped, not CSR-shadowed), datasize=
     // dm::DataCount, dataaddr=dm::DataAddr.
-    .hartinfo_i       ('{nscratch: 4'd2, dataaccess: 1'b1,
-                          datasize: dm::DataCount, dataaddr: dm::DataAddr,
-                          default: '0}),
+    .hartinfo_i       (hartinfo_arr),
 
     // DMI Interface
     .dmi_req_i        (dmi_req_data),

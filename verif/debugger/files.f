@@ -86,6 +86,7 @@ rtl/soc/soc_sram.sv
 # (which references dm::DataCount / dm::DataAddr in its hartinfo_i hookup).
 # Paths below assume you drop the 12 files I gave you into rtl/riscv-dbg/src/ --
 # adjust the directory to wherever you actually place them.
+rtl/riscv-dbg/debug_rom/debug_rom.sv
 rtl/riscv-dbg/src/dm_pkg.sv
 rtl/riscv-dbg/src/dm_mem.sv
 rtl/riscv-dbg/src/dm_csrs.sv

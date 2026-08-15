@@ -29,6 +29,7 @@ rtl/core/dift/ibex_dift_tmu.sv
 rtl/core/dift/ibex_register_file_latch_tag.sv
 
 rtl/core/ibex_core/vendor/lowrisc_ip/ip/prim_generic/rtl/prim_ram_1p_pkg.sv
+rtl/core/ibex_core/vendor/lowrisc_ip/ip/prim_generic/rtl/prim_buf.sv
 # ibex native compile order
 -f rtl/core/ibex_core/rtl/ibex_core.f
 rtl/core/ibex_core/rtl/ibex_icache.sv

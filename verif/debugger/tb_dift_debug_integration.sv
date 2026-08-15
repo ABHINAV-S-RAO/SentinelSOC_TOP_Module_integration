@@ -382,6 +382,14 @@ initial begin : tb_main
 
     hard_reset();
     $display("\n=== RESET COMPLETE ===\n");
+    //--- NEW: halt the core immediately, before it can fetch from
+    //     empty memory and fall into an illegal-instruction trap loop.
+    //     CAT A/B (reset sanity, JTAG structural) don't need the core
+    //     running, so it's safe to park it here first.
+    dm_activate();
+    dm_halt_hart0();
+    if (!probe_dm_halted)
+        $display("WARNING: core did not halt immediately post-reset — check haltreq path");
 
     // =========================================================================
     // CAT A — Reset / power-on sanity
@@ -468,8 +476,7 @@ initial begin : tb_main
     // =========================================================================
     $display("\n─── CAT C: Debug entry / exit ───────────────────────────────────");
 
-    // C1: Activate DM (dmactive=1)
-    dm_activate();
+    // C1: DM already active (activated pre-CAT-A) — just verify
     wait_cyc(10);
     begin
         logic [31:0] st;
@@ -478,10 +485,13 @@ initial begin : tb_main
     end
 
     // C2: Halt hart0
-    dm_halt_hart0();
-    wait_cyc(20);
+    //dm_halt_hart0();
+    //wait_cyc(20);
+    //`CHECK_EQ("C2 dm_halted asserted", probe_dm_halted, 1'b1)
+    
+    
+    // C2: core already halted pre-CAT-A — just verify
     `CHECK_EQ("C2 dm_halted asserted", probe_dm_halted, 1'b1)
-
     // C3: Core sees debug_mode_i=1 while halted
     `CHECK_EQ("C3 debug_mode_i=1 inside cs_registers", probe_debug_mode, 1'b1)
 

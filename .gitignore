@@ -1,20 +1,30 @@
+# Simulation & Waveform Outputs
 verif/sim/
 *.vcd
 *.fst
 *.log
 *.wlf
+*.shm/
+.simvision/
 
+# Cadence Xcelium specific
+xcelium.d/
+*.history
+xrun.key
+
+# Synthesis & Build
 syn/work/
 syn/*.rpt
 syn/*.ddc
+.bender/
 
+# Firmware / Software Binaries
 sw/**/*.elf
 sw/**/*.bin
 sw/**/*.hex
 sw/**/*.o
 sw/**/*.map
 
+# Editor / Temp files
 .vscode/
 *.swp
-
-.bender/

@@ -1,3 +1,0 @@
-include ./hdlrun.var
-DEFINE RUNMODEDEFAULT 1
-DEFINE LIB_MAP ( + => worklib )

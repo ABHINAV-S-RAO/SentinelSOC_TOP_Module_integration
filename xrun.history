@@ -1,2 +1,0 @@
-s1(17Jun2026:00:19:37):  xrun -define DIFT -f verif/files.f 
-s2(17Jun2026:00:28:35):  xrun -f bender_files.f ./verif/tb/ibex_core_tb.sv 

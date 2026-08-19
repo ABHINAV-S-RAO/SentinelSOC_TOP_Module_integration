@@ -901,7 +901,6 @@ module ibex_core import ibex_pkg::*; #(
 
     .bt_a_operand_i(bt_a_operand),
     .bt_b_operand_i(bt_b_operand),
-    .instr_tag_i     (pc_id_tag),
 
     .multdiv_operator_i   (multdiv_operator_ex),
     .mult_en_i            (mult_en_ex),
@@ -932,6 +931,7 @@ module ibex_core import ibex_pkg::*; #(
     // ibex_dift_logic (inside ex_block) applies alu_tag_mode propagation rule.
 `ifdef DIFT
     ,
+    .instr_tag_i     (pc_id_tag),
     .alu_op_a_tag_i      (alu_op_a_tag_ex),     // operand A tag (from ID FF)
     .alu_op_b_tag_i      (alu_op_b_tag_ex),     // operand B tag (from ID FF)
     .rf_we_tag_i         (rf_we_tag_id),         // RF write-enable tag

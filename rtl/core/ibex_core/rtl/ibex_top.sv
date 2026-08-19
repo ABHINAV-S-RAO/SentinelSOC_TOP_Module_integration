@@ -188,7 +188,8 @@ module ibex_top import ibex_pkg::*; #(
   // DIFT tag memory + exception pass-through (ibex_core ↔ soc_top)
   input  logic                                                        data_rdata_tag_i,
   output logic                                                        data_wdata_tag_o,
-  output logic                                                        dift_exception_o
+  output logic                                                        dift_exception_o,
+  input  logic                                                        dift_en_i         // 1=DIFT active, 0=fully bypassed
 `endif
 );
 
@@ -465,7 +466,8 @@ module ibex_top import ibex_pkg::*; #(
     ,
     .data_rdata_tag_i  (data_rdata_tag_i),
     .data_wdata_tag_o  (data_wdata_tag_o),
-    .dift_exception_o  (dift_exception_o)
+    .dift_exception_o  (dift_exception_o),
+    .dift_en_i         (dift_en_i)
 `endif
   );
 

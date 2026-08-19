@@ -40,6 +40,13 @@ module soc_top (
   input  logic jtag_tdi_i,
   output logic jtag_tdo_o,
   input  logic jtag_trst_ni
+
+`ifdef DIFT
+  ,
+  // Hardware DIFT enable — 1=DIFT active, 0=fully bypassed
+  // Connect to a GPIO, test pad, fuse, or board pullup/pulldown.
+  input  logic dift_en_i
+`endif
 );
 
   // ---------------------------------------------------------------------------
@@ -429,7 +436,8 @@ typedef struct packed {
   ,
     .data_rdata_tag_i           ( data_rdata_tag    ),
     .data_wdata_tag_o           ( data_wdata_tag    ),
-    .dift_exception_o           ( dift_exception    )
+    .dift_exception_o           ( dift_exception    ),
+    .dift_en_i                  ( dift_en_i         )
 `endif
   );
 
@@ -473,10 +481,12 @@ typedef struct packed {
     .core_data_wdata_tag_i (data_wdata_tag),
     .core_data_rdata_tag_o (data_rdata_tag),
     .dift_exception_i      (dift_exception),
+    .dift_en_i             (dift_en_i),
 `else
     .core_data_wdata_tag_i (1'b0),
     .core_data_rdata_tag_o (),
     .dift_exception_i      (1'b0),
+    .dift_en_i             (1'b0),
 `endif
 
     // Instruction port → soc_addr_decode (drives existing instr_* signals)

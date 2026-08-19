@@ -203,7 +203,8 @@ module ibex_core import ibex_pkg::*; #(
   ,
   input  logic                         data_rdata_tag_i,  // Tag bit read from shadow RAM
   output logic                         data_wdata_tag_o,  // Tag bit written to shadow RAM
-  output logic                         dift_exception_o   // DIFT security exception
+  output logic                         dift_exception_o,  // DIFT security exception
+  input  logic                         dift_en_i          // 1=DIFT active, 0=fully bypassed
 `endif
 );
 
@@ -421,6 +422,10 @@ module ibex_core import ibex_pkg::*; #(
   // Policy CSRs – driven by ibex_cs_registers outputs
   logic [31:0] tpr_csr;             // Tag Propagation Register (17 active bits in Columbia)
   logic [31:0] tcr_csr;             // Tag Check Register       (22 active bits in Columbia)
+  logic        data_rdata_tag_gated; // data_rdata_tag_i masked by dift_en_i
+  logic        lsu_wdata_tag_out;    // LSU write-data tag, gated before driving output port
+  assign data_rdata_tag_gated = data_rdata_tag_i & dift_en_i;
+  assign data_wdata_tag_o     = lsu_wdata_tag_out & dift_en_i;
 
   // IF → ID instruction tag (tag of the PC currently in the ID stage)
   logic        pc_if_tag;
@@ -557,7 +562,7 @@ module ibex_core import ibex_pkg::*; #(
   logic unused_dift_tmu;
   assign unused_dift_tmu = rf_tag_we_tmu ^ is_store_tmu ^ memory_set_tmu ^ is_store_post_tmu;
   assign pc_exception = instr_valid_id & dift_pc_check & pc_id_tag; //PC tag violation : new add
-  assign dift_exception_o = load_exception | lsu_tag_err | ex_exception | pc_exception;
+  assign dift_exception_o = (load_exception | lsu_tag_err | ex_exception | pc_exception) & dift_en_i;
 `endif
 
   //////////////
@@ -1010,8 +1015,8 @@ module ibex_core import ibex_pkg::*; #(
     // (Columbia TCR LOADSTORE_CHECK_DA bit).
 `ifdef DIFT
     ,
-    .data_wdata_tag_o  (data_wdata_tag_o),    // tag to shadow RAM
-    .data_rdata_tag_i  (data_rdata_tag_i),    // tag from shadow RAM
+    .data_wdata_tag_o  (lsu_wdata_tag_out),  // tag to shadow RAM (gated via dift_en_i at output)
+    .data_rdata_tag_i  (data_rdata_tag_gated),// tag from shadow RAM (masked by dift_en_i)
     .lsu_wdata_tag_i   (lsu_wdata_tag_lsu),   // store-data tag from EX
     .lsu_rdata_tag_o   (lsu_rdata_tag),       // loaded-data tag → WB
     .lsu_tag_err_o     (lsu_tag_err),         // address taint violation

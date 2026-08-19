@@ -255,7 +255,8 @@ module ibex_core_tb;
 
     .data_rdata_tag_i(data_rdata_tag),
     .data_wdata_tag_o(data_wdata_tag),
-    .dift_exception_o(dift_exception)
+    .dift_exception_o(dift_exception),
+    .dift_en_i       (1'b1)           // testbench: DIFT always enabled
   );
 
   // =========================================================================
@@ -514,6 +515,20 @@ module ibex_core_tb;
                          1'b1, 1'b1, 1'b0);
   endfunction
 
+  // Set ALL ALU propagation modes to OR, and all LOADSTORE enable bits set.
+  function automatic logic [31:0] tpr_all_or();
+    return tpr_set_ls_en(
+      tpr_alu_mode(JUMP_LOW, JUMP_HIGH, ALU_MODE_OR) |
+      tpr_alu_mode(BRANCH_LOW, BRANCH_HIGH, ALU_MODE_OR) |
+      tpr_alu_mode(LOADSTORE_LOW, LOADSTORE_HIGH, ALU_MODE_OR) |
+      tpr_alu_mode(INTEGER_LOW, INTEGER_HIGH, ALU_MODE_OR) |
+      tpr_alu_mode(SHIFT_LOW, SHIFT_HIGH, ALU_MODE_OR) |
+      tpr_alu_mode(LOGICAL_LOW, LOGICAL_HIGH, ALU_MODE_OR) |
+      tpr_alu_mode(COMPARISON_LOW, COMPARISON_HIGH, ALU_MODE_OR),
+      1'b1, 1'b1, 1'b0
+    );
+  endfunction
+
   // Compute expected destination tag given mode and two source tags.
   function automatic logic expected_tag(
     input logic [1:0] mode, input logic ta, tb);
@@ -738,7 +753,7 @@ module ibex_core_tb;
     test_num++;
     pc_wr = BOOT_WORD;
     emit_preamble(
-      tpr_ls_or(),
+      tpr_all_or(),
       32'h1 << check_bit
     );
     load_imm32(5'd10, DMEM_BASE);

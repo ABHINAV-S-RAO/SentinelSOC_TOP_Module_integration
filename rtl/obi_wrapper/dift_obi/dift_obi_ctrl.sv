@@ -77,6 +77,7 @@ module dift_obi_ctrl
   input  logic                          core_data_wdata_tag_i, // from core: tag of write-data
   output logic                          core_data_rdata_tag_o, // to core:   tag of read-data
   input  logic                          dift_exception_i,      // from core: security exception
+  input  logic                          dift_en_i,             // 1=DIFT active, 0=fully bypassed
 
   // OBI instruction port (manager, drives instruction SRAM / xbar)
   output logic                          instr_obi_req_o,
@@ -160,8 +161,8 @@ module dift_obi_ctrl
     .obi_we_i          (core_data_we_i),
     .obi_addr_i        (core_data_addr_i),
 
-    // Tag from/to ibex_core
-    .core_wdata_tag_i  (core_data_wdata_tag_i),
+    // Tag from/to ibex_core (write-data tag gated by dift_en_i)
+    .core_wdata_tag_i  (core_data_wdata_tag_i & dift_en_i),
     .core_rdata_tag_o  (core_data_rdata_tag_o),
 
     // Shadow tag RAM
@@ -172,8 +173,8 @@ module dift_obi_ctrl
     .tag_rdata_i       (tag_rdata_i)
   );
 
-  // Exception passthrough
-  assign dift_exception_o = dift_exception_i;
+  // Exception passthrough — gated by dift_en_i
+  assign dift_exception_o = dift_exception_i & dift_en_i;
 
 
   // Unused inputs

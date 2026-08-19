@@ -7,7 +7,8 @@ module apb_uart_tb;
   logic rstn;
   
   initial clk = 0;
-  always #10 clk = ~clk; // 50MHz clock
+  // 100MHz clock (10ns period -> toggle every 5ns)
+  always #5 clk = ~clk; 
 
   // APB Bus Signals
   logic [11:0] paddr;
@@ -62,7 +63,7 @@ module apb_uart_tb;
 
   // Test Sequence
   initial begin
-    $display("--- Starting Isolated UART Block Test ---");
+    $display("--- Starting Isolated UART Block Test (100MHz) ---");
     
     // Initialize
     rstn = 0;
@@ -73,19 +74,25 @@ module apb_uart_tb;
     rstn = 1;
     #50;
 
-    // 1. Configure UART: Line Control Register (LCR offset 3)
-    // Write 8'h03 to set 8-bit word length, 1 stop bit, no parity
-    $display("Configuring LCR for 8-bit data...");
-    apb_write(12'h003, 32'h0000_0003);
+    // 1. Configure UART Baud Rate (DLAB = 1)
+    $display("Configuring Baud Rate Divisor...");
+    apb_write(12'h003, 32'h0000_0083); // LCR = 8'h83 -> DLAB=1, 8N1
     
-    // 2. Transmit Data: Transmit Holding Register (THR offset 0)
-    // Write character 'A' (0x41)
+    // 100MHz adjusted Divisor (Decimal 26 -> 0x001A)
+    apb_write(12'h000, 32'h0000_001A); // DLL = divisor low byte
+    apb_write(12'h001, 32'h0000_0000); // DLM = divisor high byte
+
+    // 2. Lock Divisor and setup data format (DLAB = 0)
+    $display("Configuring LCR for 8-bit data...");
+    apb_write(12'h003, 32'h0000_0003); // LCR = 8'h03 -> DLAB=0, 8N1
+    
+    // 3. Transmit Data
     $display("Writing 'A' (0x41) to THR...");
     apb_write(12'h000, 32'h0000_0041);
 
-    // 3. Wait and observe TX line
+    // 4. Wait long enough for the slow serial transmission
     $display("Waiting for transmission...");
-    #20000; 
+    #200000; 
 
     $display("--- Test Complete ---");
     $finish;

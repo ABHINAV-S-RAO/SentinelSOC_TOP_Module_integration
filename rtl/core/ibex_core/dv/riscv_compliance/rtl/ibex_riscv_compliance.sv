@@ -232,6 +232,13 @@ module ibex_riscv_compliance (
 
       .instr_req_shadow_o        (                     ),
       .instr_addr_shadow_o       (                     )
+`ifdef DIFT
+      ,
+      .dift_en_i                 (1'b0                 ),
+      .data_rdata_tag_i          (1'b0                 ),
+      .data_wdata_tag_o          (                     ),
+      .dift_exception_i          (1'b0                 )
+`endif
     );
 
   // SRAM block for instruction and data storage

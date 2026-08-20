@@ -177,6 +177,10 @@ targets:
     toplevel: ibex_core
     parameters:
       - tool_vivado ? (FPGA_XILINX=true)
+    tools:
+      xcelium:
+        xrun_options:
+          - "-define DIFT"
   lint:
     <<: *default_target
     parameters:

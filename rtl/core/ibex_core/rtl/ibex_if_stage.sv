@@ -9,7 +9,7 @@
  * Instruction fetch unit: Selection of the next PC, and buffering (sampling) of
  * the read instruction.
  */
-//`define DIFT 
+`define DIFT 
 `include "prim_assert.sv"
 `include "dv_fcov_macros.svh"
 

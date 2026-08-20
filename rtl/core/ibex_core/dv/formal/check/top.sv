@@ -153,7 +153,15 @@ ibex_top #(
     .PMPNumRegions(PMPNumRegions),
     .CsrMvendorId (CSR_MVENDORID_VALUE),
     .CsrMimpId (CSR_MIMPID_VALUE)
-) ibex_top_i(.*);
+) ibex_top_i(
+`ifdef DIFT
+    .dift_en_i(1'b0),
+    .data_rdata_tag_i(1'b0),
+    .data_wdata_tag_o(),
+    .dift_exception_i(1'b0),
+`endif
+    .*
+);
 
 // Core constraints
 // 1. We do not allow going into debug mode

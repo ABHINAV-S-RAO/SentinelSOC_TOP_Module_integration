@@ -115,6 +115,14 @@ module ibex_top_tracing import ibex_pkg::*; #(
   // Shadow core instruction interface outputs
   output logic                                                        instr_req_shadow_o,
   output logic [31:0]                                                 instr_addr_shadow_o
+`ifdef DIFT
+  ,
+  // DIFT
+  input  logic                                                        dift_en_i,
+  input  logic                                                        data_rdata_tag_i,
+  output logic                                                        data_wdata_tag_o,
+  input  logic                                                        dift_exception_i
+`endif
 );
 
   // ibex_tracer relies on the signals from the RISC-V Formal Interface
@@ -329,6 +337,13 @@ module ibex_top_tracing import ibex_pkg::*; #(
 
     .instr_req_shadow_o,
     .instr_addr_shadow_o
+`ifdef DIFT
+    ,
+    .dift_en_i,
+    .data_rdata_tag_i,
+    .data_wdata_tag_o,
+    .dift_exception_i
+`endif
   );
 
   ibex_tracer

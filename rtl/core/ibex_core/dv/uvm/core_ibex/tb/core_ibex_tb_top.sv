@@ -184,6 +184,13 @@ module core_ibex_tb_top;
 
     .instr_req_shadow_o        (                           ),
     .instr_addr_shadow_o       (                           )
+`ifdef DIFT
+    ,
+    .dift_en_i                 (1'b0                       ),
+    .data_rdata_tag_i          (1'b0                       ),
+    .data_wdata_tag_o          (                           ),
+    .dift_exception_i          (1'b0                       )
+`endif
   );
 
   `define IBEX_RF_PATH core_ibex_tb_top.dut.u_ibex_top.gen_regfile_ff.register_file_i

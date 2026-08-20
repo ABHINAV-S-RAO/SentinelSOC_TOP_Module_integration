@@ -387,10 +387,10 @@ module dift_obi_ctrl_tb;
     data_rvalid_delay = 2;
     dift_en_i = 1'b1;
     
-    do_write(32'h0000_1014, 4'hF, 32'hDELAY_WR, 1'b1);
+    do_write(32'h0000_1014, 4'hF, 32'hD0D0_D0D0, 1'b1);
     do_read(32'h0000_1014, 4'hF, rdata, rtag);
-    if (rdata == 32'hDELAY_WR && rtag == 1'b1) pass_t("Delay Mode: Write/Read Tag=1 works with delayed OBI memory");
-    else fail_t($sformatf("Delay Mode: Expected DELAY_WR (1), got %h (%b)", rdata, rtag));
+    if (rdata == 32'hD0D0_D0D0 && rtag == 1'b1) pass_t("Delay Mode: Write/Read Tag=1 works with delayed OBI memory");
+    else fail_t($sformatf("Delay Mode: Expected D0D0_D0D0 (1), got %h (%b)", rdata, rtag));
 
     $display("\n=================================================");
     $display(" Simulation finished: %0d PASS, %0d FAIL", pass_count, fail_count);

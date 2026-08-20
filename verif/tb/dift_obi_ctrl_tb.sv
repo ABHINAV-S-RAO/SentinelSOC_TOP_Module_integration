@@ -377,8 +377,8 @@ module dift_obi_ctrl_tb;
     $display("\n--- PHASE 3: Inst Bus & Delays ---");
     
     // Test Instruction fetch translation
-    instr_mem[32'h1000/4] = 32'hFEEDFACE;
-    do_instr_fetch(32'h0000_1000, rdata);
+    instr_mem[32'h0010/4] = 32'hFEEDFACE;
+    do_instr_fetch(32'h0000_0010, rdata);
     if (rdata == 32'hFEEDFACE) pass_t("Instr Bus: Fetch translation successful");
     else fail_t($sformatf("Instr Bus: Expected FEEDFACE, got %h", rdata));
 

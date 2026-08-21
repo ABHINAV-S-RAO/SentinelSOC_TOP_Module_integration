@@ -2,15 +2,26 @@
 //==============================================================================
 // apb_qspi_tb_full.sv -- Self-checking testbench for apb_spi_master
 //
-// ASSUMPTIONS (VERIFY AGAINST THE REAL apb_spi_master RTL / DATASHEET):
-//   - Register map (byte offsets, from earlier ad-hoc TBs in this session):
-//       0x000  CTRL/TRIGGER   bit0=spi_std_txrx (standard SPI, full duplex)
-//                             bit3=spi_qwr      (quad write trigger)
-//                             bits[11:8]=csreg  (chip-select index, 0=CS0)
+// ASSUMPTIONS (VERIFIED against spi_master_apb_if.sv / spi_master_controller.sv):
+//   - Register map (byte offsets):
+//       0x000  CTRL/TRIGGER   bit0=spi_rd  (standard read trigger)
+//                             bit1=spi_wr  (standard write trigger, unused below)
+//                             bit2=spi_qrd (quad read trigger, unused below)
+//                             bit3=spi_qwr (quad write trigger)
+//                             bits[11:8]=csreg (chip-select index, bit0=CS0)
 //       0x004  CLKDIV         clock divider value
 //       0x010  LEN            [31:16]=data_len (bits), [13:8]=addr_len, [5:0]=cmd_len
 //       0x018  TXFIFO         write pushes a 32-bit word into the TX FIFO
 //       0x020  RXFIFO         read pops a 32-bit word from the RX FIFO
+//   - csreg is NOT optional: spi_csn0 = ~csreg[0] | spi_cs, so a CTRL write
+//     with csreg==0 never asserts any chip select and the transfer never
+//     starts. Every CTRL write below must OR in CTRL_CS0 (or the desired
+//     csreg pattern).
+//   - The DATA phase is unidirectional per transaction: spi_rd/spi_qrd select
+//     an RX-only data phase, spi_wr/spi_qwr select a TX-only data phase, and
+//     spi_data_len is a single 16-bit field (not independent TX/RX lengths).
+//     There is no register combination for simultaneous, independent-length
+//     TX+RX in one trigger.
 //   - Standard (single-line) mode uses spi_sdo0 as MOSI and spi_sdi1 as MISO.
 //   - Quad mode drives/samples all 4 lines in parallel, MSB-first nibble packing
 //     as {sdo3,sdo2,sdo1,sdo0} = current 4-bit nibble, most-significant nibble first.
@@ -31,7 +42,7 @@
 // the whole file.
 //==============================================================================
 
-module apb_qspi_tb_full;
+module apb_qspi_tb;
 
   //---------------------------------------------------------------------
   // Clock / Reset
@@ -72,8 +83,15 @@ module apb_qspi_tb_full;
   localparam logic [11:0] ADDR_TXFIFO = 12'h018;
   localparam logic [11:0] ADDR_RXFIFO = 12'h020;
 
-  localparam logic [31:0] CTRL_STD_TXRX = 32'h0000_0001; // bit0
+  localparam logic [31:0] CTRL_STD_TXRX = 32'h0000_0001; // bit0 (spi_rd - standard read trigger)
   localparam logic [31:0] CTRL_QUAD_WR  = 32'h0000_0008; // bit3
+  // csreg (bits[11:8]) selects which chip-select line is driven active for the
+  // transfer -- spi_csn0 = ~csreg[0] | spi_cs, so csreg must be non-zero or NO
+  // chip select ever asserts and the transfer silently never starts.
+  // BUG FOUND: every CTRL write in this TB was missing this field entirely
+  // (csreg defaulted to 0), so spi_csn0 stayed high for the whole simulation
+  // and every test below was waiting on a transfer that could never begin.
+  localparam logic [31:0] CTRL_CS0      = 32'h0000_0100; // csreg[0] -> select CS0
 
   //---------------------------------------------------------------------
   // Scoreboard
@@ -284,7 +302,7 @@ module apb_qspi_tb_full;
     tx_bits_captured = 0;
     tx_capture_en    = 1;
 
-    apb_write(ADDR_CTRL, CTRL_QUAD_WR | 32'h0000_0000); // CS0, quad write trigger
+    apb_write(ADDR_CTRL, CTRL_QUAD_WR | CTRL_CS0); // CS0, quad write trigger
     wait_for_transfer_done(10000);
     #50; // settle
     tx_capture_en = 0;
@@ -300,10 +318,16 @@ module apb_qspi_tb_full;
     // Test 2: Standard Read (RX-only) -- dummy slave drives known data
     //===================================================================
     $display("\n[TEST 2] Standard Read (single-line, dummy slave)");
-    apb_write(ADDR_LEN, 32'h0000_0020); // 32 RX bits, no TX
+    // BUG FOUND: LEN packing was 32'h0000_0020. Per the documented LEN format
+    // ([31:16]=data_len, [13:8]=addr_len, [5:0]=cmd_len), 0x0000_0020 actually
+    // set cmd_len=32 and data_len=0 (0x20 landed in PWDATA[5:0], not [31:16]).
+    // That would have inserted a spurious 32-bit command phase (shifting 32
+    // extra clocks against the dummy slave) instead of a 32-bit read. The
+    // correct encoding for "32 data bits, no addr/cmd" mirrors Test 1.
+    apb_write(ADDR_LEN, 32'h0020_0000); // 32 RX bits, no addr/cmd
     slave_load(32'hCAFE_BABE, 1'b0);    // reload right before triggering
 
-    apb_write(ADDR_CTRL, CTRL_STD_TXRX);
+    apb_write(ADDR_CTRL, CTRL_STD_TXRX | CTRL_CS0);
     wait_for_transfer_done(10000);
     #50;
 
@@ -311,21 +335,35 @@ module apb_qspi_tb_full;
     check_equal("Standard Read: RX FIFO", 32'hCAFE_BABE, read_data);
 
     //===================================================================
-    // Test 3: Full-duplex sanity -- trigger standard txrx with a fresh
-    // TX word queued and a fresh slave payload, confirm RX FIFO reflects
-    // the slave's data (not the TX word, i.e. no TX/RX crosstalk bug).
+    // Test 3: TX/RX crosstalk sanity -- preload the TX FIFO with a word
+    // that must NOT be used, then trigger a standard read and confirm the
+    // RX FIFO reflects the slave's data, not the stale TX word.
+    //
+    // NOTE ON "FULL DUPLEX": this controller's DATA phase is unidirectional
+    // per transaction -- the trigger bit (spi_rd/qrd vs spi_wr/qwr) selects
+    // RX-only or TX-only for that phase (see spi_master_controller.sv,
+    // "do_rx" mux), and spi_data_len is a single field, not separate TX/RX
+    // lengths. There's no register combination that runs simultaneous,
+    // independent-length TX+RX in one shot, so this test was renamed from
+    // "Full-duplex" to what it actually (and validly) checks: no leakage
+    // from a stale TX FIFO word into an RX-only transfer.
+    //
+    // BUG FOUND: the original LEN write here was 32'h0020_0020, which -- per
+    // the same [31:16]/[13:8]/[5:0] packing bug as Test 2 -- set data_len=32
+    // AND cmd_len=32 simultaneously, inserting a spurious 32-bit command
+    // phase in front of the read.
     //===================================================================
-    $display("\n[TEST 3] Full-duplex TX/RX (no crosstalk check)");
-    apb_write(ADDR_LEN,    32'h0020_0020); // 32 TX bits + 32 RX bits
-    apb_write(ADDR_TXFIFO, 32'h1234_5678);
+    $display("\n[TEST 3] TX FIFO does not leak into an RX-only transfer");
+    apb_write(ADDR_LEN,    32'h0020_0000); // 32 RX bits, no addr/cmd
+    apb_write(ADDR_TXFIFO, 32'h1234_5678); // stale word; must not appear in RX FIFO
     slave_load(32'hA5A5_5A5A, 1'b0);
 
-    apb_write(ADDR_CTRL, CTRL_STD_TXRX);
+    apb_write(ADDR_CTRL, CTRL_STD_TXRX | CTRL_CS0);
     wait_for_transfer_done(10000);
     #50;
 
     apb_read(ADDR_RXFIFO, read_data);
-    check_equal("Full-duplex: RX FIFO reflects slave data, not TX data",
+    check_equal("No TX/RX crosstalk: RX FIFO reflects slave data, not TX data",
                 32'hA5A5_5A5A, read_data);
 
     //===================================================================

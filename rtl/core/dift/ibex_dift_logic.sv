@@ -1,4 +1,4 @@
-`timescale 1ns/1ps
+// timescale removed
 
 import ibex_pkg::*; // change to ibex_pkg
 

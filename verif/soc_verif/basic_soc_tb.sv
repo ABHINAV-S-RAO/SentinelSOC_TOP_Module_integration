@@ -88,7 +88,8 @@ module basic_soc_tb;
       instr_rvalid_i <= instr_gnt_i;
       
       if (instr_gnt_i) begin
-        int index = instr_addr_o[7:2];
+        int index;
+        index = instr_addr_o[7:2];
         if (index < 5) begin
           instr_rdata_i <= instructions[index];
         end else begin

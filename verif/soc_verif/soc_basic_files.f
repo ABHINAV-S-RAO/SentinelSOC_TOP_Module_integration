@@ -156,5 +156,4 @@ verif/soc_verif/basic_soc_tb.sv
 .bender/git/checkouts/obi-75858655e8b256db/src/obi_pkg.sv
 .bender/git/checkouts/obi-75858655e8b256db/src/obi_rready_converter.sv
 .bender/git/checkouts/obi-75858655e8b256db/src/apb_to_obi.sv
-.bender/git/checkouts/obi-75858655e8b256db/src/obi_to_apb.sv
 

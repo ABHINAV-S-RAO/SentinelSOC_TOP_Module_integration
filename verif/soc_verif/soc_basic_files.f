@@ -126,6 +126,7 @@
 .bender/git/checkouts/obi-75858655e8b256db/src/obi_pkg.sv
 .bender/git/checkouts/obi-75858655e8b256db/src/obi_rready_converter.sv
 .bender/git/checkouts/obi-75858655e8b256db/src/apb_to_obi.sv
+rtl/obi_wrapper/obi_to_apb.sv
 
 // 1. Local Bender Files (All base dependencies, corrected to relative paths)
 
@@ -144,7 +145,6 @@ rtl/core/dift/ibex_register_file_latch_tag.sv
 -f rtl/core/ibex_core/rtl/ibex_core.f
 
 // 5. OBI to APB Bridge
-rtl/obi_wrapper/obi_to_apb.sv
 
 // 6. UART Submodule
 rtl/peripheral/apb_uart/io_generic_fifo.sv

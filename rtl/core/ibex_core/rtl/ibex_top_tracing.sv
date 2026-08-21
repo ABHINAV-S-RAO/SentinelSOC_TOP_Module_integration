@@ -2,6 +2,8 @@
 // Licensed under the Apache License, Version 2.0, see LICENSE for details.
 // SPDX-License-Identifier: Apache-2.0
 
+`define DIFT
+
 /**
  * Top level module of the ibex RISC-V core with tracing enabled
  */
@@ -121,7 +123,7 @@ module ibex_top_tracing import ibex_pkg::*; #(
   input  logic                                                        dift_en_i,
   input  logic                                                        data_rdata_tag_i,
   output logic                                                        data_wdata_tag_o,
-  input  logic                                                        dift_exception_i
+  output logic                                                        dift_exception_o
 `endif
 );
 
@@ -342,7 +344,7 @@ module ibex_top_tracing import ibex_pkg::*; #(
     .dift_en_i,
     .data_rdata_tag_i,
     .data_wdata_tag_o,
-    .dift_exception_i
+    .dift_exception_o
 `endif
   );
 

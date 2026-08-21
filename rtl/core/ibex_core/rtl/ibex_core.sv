@@ -3,7 +3,7 @@
 // Licensed under the Apache License, Version 2.0, see LICENSE for details.
 // SPDX-License-Identifier: Apache-2.0
 
-//`define DIFT 1'b1  // Set to 1 to enable DIFT features (guarded by `ifdef DIFT in the code)
+`define DIFT 1'b1  // Set to 1 to enable DIFT features (guarded by `ifdef DIFT in the code)
 
 `ifdef RISCV_FORMAL
   `define RVFI

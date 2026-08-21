@@ -294,7 +294,7 @@ module ibex_simple_system (
       .dift_en_i                 (1'b0),
       .data_rdata_tag_i          (1'b0),
       .data_wdata_tag_o          (),
-      .dift_exception_i          (1'b0)
+      .dift_exception_o          ()
 `endif
     );
 

@@ -7,7 +7,7 @@
  * Package with constants used by Ibex
  */
 
-//`define DIFT 1
+`define DIFT 1
 
 package ibex_pkg;
 

@@ -3,10 +3,10 @@
 // Compilation filelist for exhaustive basic SoC testing
 // =============================================================================
 
-// Include the entire core Ibex filelist (includes DIFT files we added)
--f ../../rtl/core/ibex_core/dv/uvm/core_ibex/ibex_dv.f
+// Base filelist that correctly includes the Prim libraries, DIFT, and Ibex Core (WITHOUT UVM)
+-f ../files.f
 
-// Include Paths for APB and OBI types
+// OBI and APB Includes
 +incdir+../../rtl/obi_wrapper
 +incdir+../../rtl/peripheral/apb_uart
 
@@ -14,7 +14,7 @@
 ../../rtl/obi_wrapper/obi_to_apb.sv
 
 // APB UART Submodule
-../../rtl/peripheral/apb_uart/apb_uart_sv.sv
+// (Already compiled by ../files.f, no need to include here)
 
 // Basic SoC Top
 ../../rtl/soc/basic_soc_top.sv

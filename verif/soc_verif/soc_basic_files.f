@@ -13,36 +13,6 @@
 +incdir+rtl/obi_wrapper
 +incdir+rtl/peripheral/apb_uart
 
-// 1. Local Bender Files (All base dependencies, corrected to relative paths)
-
-// 2. Ibex Packages and Primitives
-rtl/core/ibex_core/rtl/ibex_pkg.sv
-rtl/core/ibex_core/rtl/ibex_tracer_pkg.sv
-rtl/core/ibex_core/vendor/lowrisc_ip/ip/prim_generic/rtl/prim_clock_gating.sv
-
-// 3. DIFT Modules
-rtl/core/dift/ibex_dift_logic.sv
-rtl/core/dift/ibex_dift_mem.sv
-rtl/core/dift/ibex_dift_tmu.sv
-rtl/core/dift/ibex_register_file_latch_tag.sv
-
-// 4. Ibex Core
--f rtl/core/ibex_core/rtl/ibex_core.f
-
-// 5. OBI to APB Bridge
-rtl/obi_wrapper/obi_to_apb.sv
-
-// 6. UART Submodule
-rtl/peripheral/apb_uart/io_generic_fifo.sv
-rtl/peripheral/apb_uart/uart_rx.sv
-rtl/peripheral/apb_uart/uart_tx.sv
-rtl/peripheral/apb_uart/uart_interrupt.sv
-rtl/peripheral/apb_uart/apb_uart.sv
-rtl/peripheral/apb_uart/apb_uart_sv.sv
-
-// 7. Basic SoC Top and Testbench
-rtl/soc/basic_soc_top.sv
-verif/soc_verif/basic_soc_tb.sv
 .bender/git/checkouts/tech_cells_generic-c280dda8b91b4f97/src/rtl/tc_sram.sv
 .bender/git/checkouts/tech_cells_generic-c280dda8b91b4f97/src/rtl/tc_sram_impl.sv
 .bender/git/checkouts/tech_cells_generic-c280dda8b91b4f97/src/rtl/tc_clk.sv
@@ -157,3 +127,32 @@ verif/soc_verif/basic_soc_tb.sv
 .bender/git/checkouts/obi-75858655e8b256db/src/obi_rready_converter.sv
 .bender/git/checkouts/obi-75858655e8b256db/src/apb_to_obi.sv
 
+// 1. Local Bender Files (All base dependencies, corrected to relative paths)
+
+// 2. Ibex Packages and Primitives
+rtl/core/ibex_core/rtl/ibex_pkg.sv
+rtl/core/ibex_core/rtl/ibex_tracer_pkg.sv
+rtl/core/ibex_core/vendor/lowrisc_ip/ip/prim_generic/rtl/prim_clock_gating.sv
+
+// 3. DIFT Modules
+rtl/core/dift/ibex_dift_logic.sv
+rtl/core/dift/ibex_dift_mem.sv
+rtl/core/dift/ibex_dift_tmu.sv
+rtl/core/dift/ibex_register_file_latch_tag.sv
+
+// 4. Ibex Core
+-f rtl/core/ibex_core/rtl/ibex_core.f
+
+// 5. OBI to APB Bridge
+rtl/obi_wrapper/obi_to_apb.sv
+
+// 6. UART Submodule
+rtl/peripheral/apb_uart/io_generic_fifo.sv
+rtl/peripheral/apb_uart/uart_rx.sv
+rtl/peripheral/apb_uart/uart_tx.sv
+rtl/peripheral/apb_uart/uart_interrupt.sv
+rtl/peripheral/apb_uart/apb_uart_sv.sv
+
+// 7. Basic SoC Top and Testbench
+rtl/soc/basic_soc_top.sv
+verif/soc_verif/basic_soc_tb.sv

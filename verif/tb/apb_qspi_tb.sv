@@ -61,7 +61,7 @@ module apb_qspi_tb;
 
   // --- Hardware Loopback for RX Testing ---
   assign spi_sdi0 = spi_sdo0;
-  assign spi_sdi1 = spi_sdo1;
+  assign spi_sdi1 = spi_sdo0;
   assign spi_sdi2 = spi_sdo2;
   assign spi_sdi3 = spi_sdo3;
 

@@ -11,7 +11,7 @@
 // 5. riscv_enable_tag: Decodes TPR ENABLE fields for ID stage.              //
 ////////////////////////////////////////////////////////////////////////////////
 
-`timescale 1ns/1ps
+// timescale removed
 
 import ibex_pkg::*;
 

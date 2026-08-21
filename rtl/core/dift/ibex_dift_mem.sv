@@ -1,4 +1,4 @@
-`timescale 1ns/1ps
+// timescale removed
 
 module ibex_dift_mem
   #(

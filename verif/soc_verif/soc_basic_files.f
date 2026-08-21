@@ -140,9 +140,13 @@ rtl/core/dift/ibex_dift_logic.sv
 rtl/core/dift/ibex_dift_mem.sv
 rtl/core/dift/ibex_dift_tmu.sv
 rtl/core/dift/ibex_register_file_latch_tag.sv
+rtl/obi_wrapper/dift_obi/dift_tag_sram_shim.sv
+rtl/obi_wrapper/dift_obi/dift_obi_ctrl.sv
 
 // 4. Ibex Core
 -f rtl/core/ibex_core/rtl/ibex_core.f
+rtl/core/ibex_core/rtl/ibex_top_tracing.sv
+rtl/core/ibex_core/rtl/ibex_top.sv
 
 // 5. OBI to APB Bridge
 

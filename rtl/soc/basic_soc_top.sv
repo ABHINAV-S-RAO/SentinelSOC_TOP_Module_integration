@@ -212,15 +212,15 @@ module basic_soc_top (
     .rst_ni             ( rst_ni ),
 
     // Data port from core
-    .data_core_req_i    ( core_data_req ),
-    .data_core_addr_i   ( core_data_addr ),
-    .data_core_we_i     ( core_data_we ),
-    .data_core_be_i     ( core_data_be ),
-    .data_core_wdata_i  ( core_data_wdata ),
-    .data_core_gnt_o    ( core_data_gnt ),
-    .data_core_rvalid_o ( core_data_rvalid ),
-    .data_core_rdata_o  ( core_data_rdata ),
-    .data_core_err_o    ( core_data_err ),
+    .core_data_req_i    ( core_data_req ),
+    .core_data_addr_i   ( core_data_addr ),
+    .core_data_we_i     ( core_data_we ),
+    .core_data_be_i     ( core_data_be ),
+    .core_data_wdata_i  ( core_data_wdata ),
+    .core_data_gnt_o    ( core_data_gnt ),
+    .core_data_rvalid_o ( core_data_rvalid ),
+    .core_data_rdata_o  ( core_data_rdata ),
+    .core_data_err_o    ( core_data_err ),
 
     // Data port to memory/peripherals
     .data_obi_req_o     ( dift_data_req ),
@@ -240,6 +240,13 @@ module basic_soc_top (
     .tag_wdata_o        ( tag_wdata ),
     .tag_rdata_i        ( tag_rdata ),
     .tag_gnt_i          ( 1'b1 ),
+
+`ifdef DIFT
+    .core_data_wdata_tag_i ( data_wdata_tag ),
+    .core_data_rdata_tag_o ( data_rdata_tag ),
+    .dift_exception_i      ( dift_exception ),
+    .dift_en_i             ( dift_en_i ),
+`endif
 
     .dift_exception_o   ( irq_dift )
   );

@@ -137,6 +137,10 @@ module apb_qspi_tb;
 
     // --- NEW RX LOOPBACK TEST ---
     $display("--- Starting RX Loopback Test ---");
+
+    // Set TX Length to 32 (0x0020) AND RX Length to 32 (0x0020)
+    $display("Configuring SPI Lengths for TX and RX...");
+    apb_write(12'h010, 32'h0020_0020);
     
     $display("Loading TX FIFO with 0xCAFEBABE...");
     apb_write(12'h018, 32'hCAFE_BABE); 
@@ -144,7 +148,7 @@ module apb_qspi_tb;
     // Trigger Standard Full-Duplex SPI Transfer (Bit [0] = spi_txrx)
     // This forces the module to transmit and receive at the exact same time
     $display("Triggering Full-Duplex TX/RX on CS0...");
-    apb_write(12'h000, 32'h0000_0001); 
+    apb_write(12'h000, 32'h0000_0003); 
 
     $display("Waiting for loopback transmission...");
     #5000; 

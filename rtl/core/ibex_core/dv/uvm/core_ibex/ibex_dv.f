@@ -84,6 +84,11 @@ ${PRJ_DIR}/rtl/ibex_core.sv
 ${PRJ_DIR}/rtl/ibex_top.sv
 ${PRJ_DIR}/rtl/ibex_top_tracing.sv
 
+// DIFT Logic (under rtl/core/dift/)
+${PRJ_DIR}/../dift/ibex_dift_logic.sv
+${PRJ_DIR}/../dift/ibex_dift_tmu.sv
+${PRJ_DIR}/../dift/ibex_register_file_latch_tag.sv
+
 // Core DV files
 +incdir+${PRJ_DIR}/dv/uvm/core_ibex/common
 ${PRJ_DIR}/dv/uvm/core_ibex/common/date.c

@@ -27,7 +27,6 @@ module apb_qspi_tb;
   logic       spi_sdo0, spi_sdo1, spi_sdo2, spi_sdo3;
   logic       spi_sdi0, spi_sdi1, spi_sdi2, spi_sdi3;
 
-  // Variable to store APB read results
   logic [31:0] read_data;
 
   // Instantiate the isolated QSPI RTL
@@ -59,11 +58,27 @@ module apb_qspi_tb;
     .spi_sdi3 (spi_sdi3)
   );
 
-  // --- Hardware Loopback for RX Testing ---
-  assign spi_sdi0 = spi_sdo0;
-  assign spi_sdi1 = spi_sdo0;
-  assign spi_sdi2 = spi_sdo2;
-  assign spi_sdi3 = spi_sdo3;
+  // --- DUMMY SPI SLAVE (Replaces the broken loopback) ---
+  logic [31:0] mock_flash_data;
+
+  // Reset the payload whenever Chip Select goes high
+  always @(posedge spi_csn0) begin
+    mock_flash_data <= 32'hCAFE_BABE;
+  end
+
+  // Shift bits out on the falling edge of the SPI clock
+  always @(negedge spi_clk) begin
+    if (!spi_csn0) begin
+      mock_flash_data <= {mock_flash_data[30:0], 1'b0};
+    end
+  end
+
+  // Route the MSB directly into the MISO pin (sdi1)
+  assign spi_sdi0 = 1'b0;
+  assign spi_sdi1 = mock_flash_data[31]; 
+  assign spi_sdi2 = 1'b0;
+  assign spi_sdi3 = 1'b0;
+  // ------------------------------------------------------
 
   // Simple APB Write Task
   task apb_write(input logic [11:0] addr, input logic [31:0] data);
@@ -75,7 +90,7 @@ module apb_qspi_tb;
     penable = 1'b0;
     
     @(posedge clk);
-    penable = 1'b1; // Access phase
+    penable = 1'b1; 
     
     @(posedge clk);
     while (!pready) @(posedge clk);
@@ -88,17 +103,17 @@ module apb_qspi_tb;
   task apb_read(input logic [11:0] addr, output logic [31:0] data);
     @(posedge clk);
     paddr   = addr;
-    pwrite  = 1'b0; // Read operation
+    pwrite  = 1'b0; 
     psel    = 1'b1;
     penable = 1'b0;
     
     @(posedge clk);
-    penable = 1'b1; // Access phase
+    penable = 1'b1; 
     
     @(posedge clk);
     while (!pready) @(posedge clk);
     
-    data    = prdata; // Capture the incoming read data
+    data    = prdata; 
     psel    = 1'b0;
     penable = 1'b0;
   endtask
@@ -107,7 +122,6 @@ module apb_qspi_tb;
   initial begin
     $display("--- Starting Isolated QSPI Block Test ---");
     
-    // Initialize
     rstn = 0;
     paddr = 0; pwdata = 0; pwrite = 0; psel = 0; penable = 0;
     
@@ -115,50 +129,42 @@ module apb_qspi_tb;
     rstn = 1;
     #50;
 
-    // --- TX TEST ---
-    // 1. Configure Clock Divider (Offset 0x04)
+    // --- TX TEST (Quad Write) ---
     $display("Configuring Clock Divider...");
     apb_write(12'h004, 32'h0000_0002); 
     
-    // 2. Configure Transfer Lengths (Offset 0x10)
-    $display("Configuring SPI Lengths (32 bits data)...");
+    $display("Configuring SPI Lengths (32 bits TX)...");
     apb_write(12'h010, 32'h0020_0000); 
 
-    // 3. Load the TX FIFO (Offset 0x18)
     $display("Loading TX FIFO with 0xDEADBEEF...");
     apb_write(12'h018, 32'hDEAD_BEEF); 
     
-    // 4. Trigger the Quad-Write Transfer (Offset 0x00)
-    $display("Triggering QSPI Write on CS0...");
+    $display("Triggering Quad Write on CS0...");
     apb_write(12'h000, 32'h0000_0008); 
 
     $display("Waiting for transmission...");
     #5000; 
 
-    // --- NEW RX LOOPBACK TEST ---
-    $display("--- Starting RX Loopback Test ---");
+    // --- RX TEST (Dummy Slave) ---
+    $display("--- Starting RX Read Test ---");
 
-    // Set TX Length to 32 (0x0020) AND RX Length to 32 (0x0020)
-    $display("Configuring SPI Lengths for TX and RX...");
-    apb_write(12'h010, 32'h0020_0020);
+    // Set TX Length to 0 (No Command), RX Length to 32 (0x0020)
+    $display("Configuring SPI Lengths for RX only...");
+    apb_write(12'h010, 32'h0000_0020);
     
-    $display("Loading TX FIFO with 0xCAFEBABE...");
-    apb_write(12'h018, 32'hCAFE_BABE); 
-    
-    // Trigger Standard Full-Duplex SPI Transfer (Bit [0] = spi_txrx)
-    // This forces the module to transmit and receive at the exact same time
-    $display("Triggering Full-Duplex TX/RX on CS0...");
-    apb_write(12'h000, 32'h0000_0003); 
+    // Trigger Standard Read (Bit [0] = spi_rd). 
+    // This tells the Master to mute TX and clock in the data from our Dummy Slave!
+    $display("Triggering Standard Read on CS0...");
+    apb_write(12'h000, 32'h0000_0001); 
 
-    $display("Waiting for loopback transmission...");
+    $display("Waiting for RX transmission...");
     #5000; 
 
-    // Read the RX FIFO (Offset 0x20 in the PULP SPI IP)
     $display("Reading RX FIFO via APB...");
     apb_read(12'h020, read_data); 
     
     if (read_data == 32'hCAFE_BABE) begin
-        $display("SUCCESS: RX FIFO Loopback passed! Data matched.");
+        $display("SUCCESS: RX FIFO Test passed! Data matched.");
     end else begin
         $display("ERROR: RX FIFO mismatch. Expected 0xCAFEBABE, got 0x%h", read_data);
     end

@@ -1176,7 +1176,11 @@ module ibex_core import ibex_pkg::*; #(
   // self-contained riscv_core approach.
   // ===========================================================================
 `ifdef DIFT
-    ibex_register_file_latch_tag #(
+  `ifdef VERILATOR
+      ibex_register_file_ff #(
+  `else
+      ibex_register_file_latch_tag #(
+  `endif
     .RV32E            (RV32E),
     .DataWidth        (1),          // 1-bit tag per register
     .DummyInstructions(DummyInstructions),

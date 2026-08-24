@@ -188,7 +188,7 @@ rtl/obi_wrapper/dift_obi/dift_obi_ctrl.sv
 
 // 4. Ibex Core
 -f rtl/core/ibex_core/rtl/ibex_core.f
-rtl/core/ibex_core/rtl/ibex_top_tracing.sv
+// rtl/core/ibex_core/rtl/ibex_top_tracing.sv // Not used in basic SoC, causes missing tracer error
 rtl/core/ibex_core/rtl/ibex_top.sv
 
 // 5. OBI to APB Bridge

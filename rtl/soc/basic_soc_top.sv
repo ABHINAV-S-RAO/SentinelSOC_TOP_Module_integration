@@ -208,7 +208,8 @@ module basic_soc_top (
   // DIFT OBI Interceptor
   // ---------------------------------------------------------------------------
   logic tag_req, tag_we;
-  logic [31:0] tag_addr, tag_wdata, tag_rdata;
+  logic [29:0] tag_addr;
+  logic tag_wdata, tag_rdata;
 
   dift_obi_ctrl u_dift_obi_ctrl (
     .clk_i              ( clk_i ),
@@ -295,10 +296,9 @@ module basic_soc_top (
     if (tag_req && tag_we)
       tag_mem[tag_addr[TAG_AW-1:0]] <= tag_wdata[0];
   end
-  assign tag_rdata = {31'b0, tag_mem[tag_rd_addr_q]};
-  assign data_rdata_tag = tag_rdata[0];
+  assign tag_rdata = tag_mem[tag_rd_addr_q];
 `else
-  assign tag_rdata = 32'b0;
+  assign tag_rdata = 1'b0;
 `endif
 
   // ---------------------------------------------------------------------------

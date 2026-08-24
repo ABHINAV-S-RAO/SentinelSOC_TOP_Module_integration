@@ -102,10 +102,10 @@ module basic_soc_tb;
   // ---------------------------------------------------------------------------
   // Simple UART BFM
   // ---------------------------------------------------------------------------
-  logic [7:0] tb_tx_data = 8'h0;
-  logic [7:0] tb_rx_data = 8'h0;
-  logic       tb_tx_valid = 0;
-  logic       tb_rx_valid = 0;
+  logic [7:0] tb_tx_data;
+  logic [7:0] tb_rx_data;
+  logic       tb_tx_valid;
+  logic       tb_rx_valid;
 
   // UART TX Monitor (Reads data coming out of DUT)
   // (Assuming basic 115200 baud or similar, we will just sample loosely for the TB)

@@ -75,33 +75,36 @@ module basic_soc_top (
   apb_resp_t     apb_rsp;
 
   // Assign DIFT intercepted signals to OBI Struct
-  assign apb_obi_req.req   = dift_data_req;
-  assign apb_obi_req.we    = dift_data_we;
-  assign apb_obi_req.be    = dift_data_be;
-  assign apb_obi_req.addr  = dift_data_addr;
-  assign apb_obi_req.wdata = dift_data_wdata;
-  assign dift_data_gnt     = apb_obi_rsp.gnt;
-  assign dift_data_rvalid  = apb_obi_rsp.rvalid;
-  assign dift_data_rdata   = apb_obi_rsp.rdata;
-  assign dift_data_err     = apb_obi_rsp.err;
+  assign apb_obi_req.req     = dift_data_req;
+  assign apb_obi_req.a.we    = dift_data_we;
+  assign apb_obi_req.a.be    = dift_data_be;
+  assign apb_obi_req.a.addr  = dift_data_addr;
+  assign apb_obi_req.a.wdata = dift_data_wdata;
+  assign dift_data_gnt       = apb_obi_rsp.gnt;
+  assign dift_data_rvalid    = apb_obi_rsp.rvalid;
+  assign dift_data_rdata     = apb_obi_rsp.r.rdata;
+  assign dift_data_err       = apb_obi_rsp.r.err;
 
-  // Default unused OBI struct fields
-  assign apb_obi_req.wtop  = '0;
-  assign apb_obi_req.atop  = '0;
-  assign apb_obi_req.id    = '0;
-  assign apb_obi_req.prot  = '0;
-  assign apb_obi_req.dbg   = 1'b0;
+  // Tie off unused OBI struct fields
+  assign apb_obi_req.a.aid        = '0;
+  assign apb_obi_req.a.a_optional = '0;
 
   // Interrupts
   logic irq_software_i = 1'b0;
   logic irq_timer_i    = 1'b0;
-  logic irq_external_i = 1'b0;
-  logic irq_nm_i       = 1'b0;
+  logic irq_external_i;
+  logic irq_nm_i;
   logic irq_dift;
   logic irq_uart;
 
   // Route UART interrupt to external interrupt
   assign irq_external_i = irq_uart;
+  
+  // Route DIFT exception to NMI
+  assign irq_nm_i       = irq_dift;
+  
+  // Default values for unimplemented features
+  assign core_data_rdata_intg = '0;
 
   // ---------------------------------------------------------------------------
   // Core Instantiation

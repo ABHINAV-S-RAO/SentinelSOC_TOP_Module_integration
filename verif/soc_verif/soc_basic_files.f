@@ -133,8 +133,50 @@ rtl/obi_wrapper/obi_to_apb.sv
 // 2. Ibex Packages and Primitives
 rtl/core/ibex_core/rtl/ibex_pkg.sv
 rtl/core/ibex_core/rtl/ibex_tracer_pkg.sv
-rtl/core/ibex_core/vendor/lowrisc_ip/ip/prim_generic/rtl/prim_clock_gating.sv
+rtl/core/ibex_core/vendor/lowrisc_ip/ip/prim_generic/rtl/prim_pkg.sv
+rtl/core/ibex_core/vendor/lowrisc_ip/ip/prim/rtl/prim_assert.sv
+rtl/core/ibex_core/vendor/lowrisc_ip/ip/prim/rtl/prim_util_pkg.sv
+rtl/core/ibex_core/vendor/lowrisc_ip/ip/prim/rtl/prim_count_pkg.sv
+rtl/core/ibex_core/vendor/lowrisc_ip/ip/prim/rtl/prim_count.sv
+rtl/core/ibex_core/vendor/lowrisc_ip/ip/prim/rtl/prim_secded_pkg.sv
+rtl/core/ibex_core/vendor/lowrisc_ip/ip/prim/rtl/prim_secded_22_16_dec.sv
+rtl/core/ibex_core/vendor/lowrisc_ip/ip/prim/rtl/prim_secded_22_16_enc.sv
+rtl/core/ibex_core/vendor/lowrisc_ip/ip/prim/rtl/prim_secded_64_57_dec.sv
+rtl/core/ibex_core/vendor/lowrisc_ip/ip/prim/rtl/prim_secded_64_57_enc.sv
+rtl/core/ibex_core/vendor/lowrisc_ip/ip/prim/rtl/prim_secded_hamming_22_16_dec.sv
+rtl/core/ibex_core/vendor/lowrisc_ip/ip/prim/rtl/prim_secded_hamming_22_16_enc.sv
+rtl/core/ibex_core/vendor/lowrisc_ip/ip/prim/rtl/prim_secded_hamming_39_32_dec.sv
+rtl/core/ibex_core/vendor/lowrisc_ip/ip/prim/rtl/prim_secded_hamming_39_32_enc.sv
+rtl/core/ibex_core/vendor/lowrisc_ip/ip/prim/rtl/prim_secded_hamming_72_64_dec.sv
+rtl/core/ibex_core/vendor/lowrisc_ip/ip/prim/rtl/prim_secded_hamming_72_64_enc.sv
+rtl/core/ibex_core/vendor/lowrisc_ip/ip/prim/rtl/prim_mubi_pkg.sv
 rtl/core/ibex_core/vendor/lowrisc_ip/ip/prim_generic/rtl/prim_ram_1p_pkg.sv
+rtl/core/ibex_core/vendor/lowrisc_ip/ip/prim/rtl/prim_ram_1p_adv.sv
+rtl/core/ibex_core/vendor/lowrisc_ip/ip/prim/rtl/prim_ram_1p_scr.sv
+rtl/core/ibex_core/vendor/lowrisc_ip/ip/prim_generic/rtl/prim_ram_1p.sv
+rtl/core/ibex_core/vendor/lowrisc_ip/ip/prim_generic/rtl/prim_clock_gating.sv
+rtl/core/ibex_core/vendor/lowrisc_ip/ip/prim_generic/rtl/prim_buf.sv
+rtl/core/ibex_core/vendor/lowrisc_ip/ip/prim_generic/rtl/prim_clock_mux2.sv
+rtl/core/ibex_core/vendor/lowrisc_ip/ip/prim_generic/rtl/prim_flop.sv
+rtl/core/ibex_core/vendor/lowrisc_ip/ip/prim_generic/rtl/prim_and2.sv
+
+// Shared lowRISC code
+rtl/core/ibex_core/vendor/lowrisc_ip/ip/prim/rtl/prim_cipher_pkg.sv
+rtl/core/ibex_core/vendor/lowrisc_ip/ip/prim/rtl/prim_lfsr.sv
+rtl/core/ibex_core/vendor/lowrisc_ip/ip/prim/rtl/prim_secded_inv_28_22_enc.sv
+rtl/core/ibex_core/vendor/lowrisc_ip/ip/prim/rtl/prim_secded_inv_28_22_dec.sv
+rtl/core/ibex_core/vendor/lowrisc_ip/ip/prim/rtl/prim_secded_inv_39_32_enc.sv
+rtl/core/ibex_core/vendor/lowrisc_ip/ip/prim/rtl/prim_secded_inv_39_32_dec.sv
+rtl/core/ibex_core/vendor/lowrisc_ip/ip/prim/rtl/prim_secded_inv_72_64_enc.sv
+rtl/core/ibex_core/vendor/lowrisc_ip/ip/prim/rtl/prim_secded_inv_72_64_dec.sv
+rtl/core/ibex_core/vendor/lowrisc_ip/ip/prim/rtl/prim_prince.sv
+rtl/core/ibex_core/vendor/lowrisc_ip/ip/prim/rtl/prim_subst_perm.sv
+rtl/core/ibex_core/vendor/lowrisc_ip/ip/prim/rtl/prim_secded_28_22_enc.sv
+rtl/core/ibex_core/vendor/lowrisc_ip/ip/prim/rtl/prim_secded_28_22_dec.sv
+rtl/core/ibex_core/vendor/lowrisc_ip/ip/prim/rtl/prim_secded_39_32_enc.sv
+rtl/core/ibex_core/vendor/lowrisc_ip/ip/prim/rtl/prim_secded_39_32_dec.sv
+rtl/core/ibex_core/vendor/lowrisc_ip/ip/prim/rtl/prim_secded_72_64_enc.sv
+rtl/core/ibex_core/vendor/lowrisc_ip/ip/prim/rtl/prim_secded_72_64_dec.sv
 
 // 3. DIFT Modules
 rtl/core/dift/ibex_dift_logic.sv

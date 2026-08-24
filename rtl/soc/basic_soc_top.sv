@@ -294,7 +294,7 @@ module basic_soc_top (
 
   always_ff @(posedge clk_i) begin
     if (tag_req && tag_we)
-      tag_mem[tag_addr[TAG_AW-1:0]] <= tag_wdata[0];
+      tag_mem[tag_addr[TAG_AW-1:0]] <= tag_wdata;
   end
   assign tag_rdata = tag_mem[tag_rd_addr_q];
 `else

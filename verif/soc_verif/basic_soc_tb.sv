@@ -98,6 +98,17 @@ module basic_soc_tb;
       end
     end
   end
+  
+  always_ff @(posedge clk_i) begin
+    if (rst_ni) begin
+      if (instr_req_o && instr_gnt_i) begin
+        $display("[TB %0t] Fetching instruction at addr 0x%h", $time, instr_addr_o);
+      end
+      if (instr_rvalid_i) begin
+        $display("[TB %0t] Returning instruction 0x%h", $time, instr_rdata_i);
+      end
+    end
+  end
 
   // ---------------------------------------------------------------------------
   // Simple UART BFM

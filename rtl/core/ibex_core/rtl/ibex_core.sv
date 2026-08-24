@@ -1177,7 +1177,6 @@ module ibex_core import ibex_pkg::*; #(
   // ===========================================================================
 `ifdef DIFT
       ibex_register_file_ff #(
-  `endif
     .RV32E            (RV32E),
     .DataWidth        (1),          // 1-bit tag per register
     .DummyInstructions(DummyInstructions),

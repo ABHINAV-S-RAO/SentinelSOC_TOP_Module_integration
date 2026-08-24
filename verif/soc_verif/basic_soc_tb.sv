@@ -88,13 +88,16 @@ module basic_soc_tb;
       instr_rvalid_i <= instr_gnt_i;
       
       if (instr_gnt_i) begin
-        int index;
-        index = instr_addr_o[7:2];
-        if (index < 5) begin
-          instr_rdata_i <= instructions[index];
-        end else begin
-          instr_rdata_i <= 32'h0000006f; // j .
-        end
+        if (instr_addr_o == 32'h80)
+          instr_rdata_i <= instructions[0];
+        else if (instr_addr_o == 32'h84)
+          instr_rdata_i <= instructions[1];
+        else if (instr_addr_o == 32'h88)
+          instr_rdata_i <= instructions[2];
+        else if (instr_addr_o == 32'h8C)
+          instr_rdata_i <= instructions[3];
+        else
+          instr_rdata_i <= instructions[4]; // j .
       end
     end
   end

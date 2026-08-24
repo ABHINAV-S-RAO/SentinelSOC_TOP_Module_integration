@@ -261,7 +261,20 @@ module basic_soc_top (
     .instr_obi_rdata_i  ( '0 ),
     .instr_obi_rid_i    ( '0 ),
     .instr_obi_err_i    ( 1'b0 ),
-    .data_obi_rid_i     ( '0 )
+    .data_obi_rid_i     ( '0 ),
+    
+    // Explicitly disconnected outputs
+    .core_instr_gnt_o   ( ),
+    .core_instr_rvalid_o( ),
+    .core_instr_rdata_o ( ),
+    .core_instr_err_o   ( ),
+    .instr_obi_req_o    ( ),
+    .instr_obi_addr_o   ( ),
+    .instr_obi_we_o     ( ),
+    .instr_obi_be_o     ( ),
+    .instr_obi_wdata_o  ( ),
+    .instr_obi_aid_o    ( ),
+    .data_obi_aid_o     ( )
   );
 
   // Minimal Shadow SRAM (Tag memory)

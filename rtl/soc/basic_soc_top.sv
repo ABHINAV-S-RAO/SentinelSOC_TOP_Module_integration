@@ -251,7 +251,17 @@ module basic_soc_top (
     .dift_en_i             ( dift_en_i ),
 `endif
 
-    .dift_exception_o   ( irq_dift )
+    .dift_exception_o   ( irq_dift ),
+    
+    // Unused Instruction / Identifier Ports
+    .core_instr_req_i   ( 1'b0 ),
+    .core_instr_addr_i  ( '0 ),
+    .instr_obi_gnt_i    ( 1'b0 ),
+    .instr_obi_rvalid_i ( 1'b0 ),
+    .instr_obi_rdata_i  ( '0 ),
+    .instr_obi_rid_i    ( '0 ),
+    .instr_obi_err_i    ( 1'b0 ),
+    .data_obi_rid_i     ( '0 )
   );
 
   // Minimal Shadow SRAM (Tag memory)

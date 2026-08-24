@@ -173,7 +173,11 @@ module basic_soc_tb;
 
     $display("==================================================");
     $display("Test Execution Complete.");
-    $display("Functional Coverage: %0f%%", cg_inst.get_coverage());
+    $display("--- Functional Coverage Breakdown ---");
+    $display("UART TX Coverage (Write 'A'): %0f%%", cg_inst.cp_uart_tx.get_coverage());
+    $display("UART RX Coverage (Read 'B'):  %0f%%", cg_inst.cp_uart_rx.get_coverage());
+    $display("APB PWRITE Toggle Coverage:   %0f%%", cg_inst.cp_apb_write.get_coverage());
+    $display("Total Overall Coverage:       %0f%%", cg_inst.get_coverage());
     $display("==================================================");
     $finish;
   end

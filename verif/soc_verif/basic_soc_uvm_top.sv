@@ -50,18 +50,31 @@ module basic_soc_uvm_top;
   );
 
   // ---------------------------------------------------------------------------
+  // Internal Probes Wire-Up
+  // ---------------------------------------------------------------------------
+  assign vif.apb_paddr   = u_dut.apb_req.paddr;
+  assign vif.apb_pwdata  = u_dut.apb_req.pwdata;
+  assign vif.apb_pwrite  = u_dut.apb_req.pwrite;
+  assign vif.apb_psel    = u_dut.u_apb_uart.PSEL;
+  assign vif.apb_penable = u_dut.apb_req.penable;
+  
+`ifdef DIFT
+  assign vif.irq_dift    = u_dut.irq_dift;
+`else
+  assign vif.irq_dift    = 1'b0;
+`endif
+
+  // ---------------------------------------------------------------------------
   // UVM Initialization
   // ---------------------------------------------------------------------------
   initial begin
-    // Pass the virtual interface to the UVM configuration database
     uvm_config_db#(virtual basic_soc_if)::set(null, "uvm_test_top.env.agent.*", "vif", vif);
-    
-    // Start the UVM test
+    uvm_config_db#(virtual basic_soc_if)::set(null, "uvm_test_top.env.*", "vif", vif); // For cov
     run_test("basic_soc_test");
   end
 
   // ---------------------------------------------------------------------------
-  // Waveform Dumping (Optional)
+  // Waveform Dumping
   // ---------------------------------------------------------------------------
   initial begin
     $shm_open("waves.shm");

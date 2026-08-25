@@ -5,7 +5,7 @@
 interface basic_soc_if(input logic clk_i, input logic rst_ni);
 
   // ---------------------------------------------------------------------------
-  // DUT Signals
+  // DUT Top-level Signals
   // ---------------------------------------------------------------------------
   logic uart_tx_o;
   logic uart_rx_i;
@@ -24,7 +24,19 @@ interface basic_soc_if(input logic clk_i, input logic rst_ni);
   logic        instr_err_i;
 
   // ---------------------------------------------------------------------------
-  // Clocking blocks (Optional for UVM, but good for precise timing)
+  // Internal Probes (driven by tb top)
+  // ---------------------------------------------------------------------------
+  logic [31:0] apb_paddr;
+  logic [31:0] apb_pwdata;
+  logic        apb_pwrite;
+  logic        apb_psel;
+  logic        apb_penable;
+  
+  // DIFT internal exception
+  logic        irq_dift;
+
+  // ---------------------------------------------------------------------------
+  // Clocking block for clean sampling
   // ---------------------------------------------------------------------------
   clocking cb @(posedge clk_i);
     default input #1ps output #1ns;
@@ -38,12 +50,14 @@ interface basic_soc_if(input logic clk_i, input logic rst_ni);
     output instr_rdata_i;
     output instr_rdata_intg_i;
     output instr_err_i;
+    
+    input apb_paddr;
+    input apb_pwdata;
+    input apb_pwrite;
+    input apb_psel;
+    input apb_penable;
+    input irq_dift;
   endclocking
-
-  // Helper tasks
-  task wait_clks(int num);
-    repeat(num) @(posedge clk_i);
-  endtask
 
 endinterface
 

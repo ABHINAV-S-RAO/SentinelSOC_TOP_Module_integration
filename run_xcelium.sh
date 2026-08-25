@@ -4,4 +4,5 @@ xrun -64bit -sv -uvm \
   +UVM_TESTNAME=basic_soc_test \
   -top basic_soc_uvm_top \
   -access +rwc \
+  -coverage all -covoverwrite \
   -timescale 1ns/1ps

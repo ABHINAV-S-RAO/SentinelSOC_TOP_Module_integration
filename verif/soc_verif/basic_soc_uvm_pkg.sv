@@ -1,5 +1,6 @@
 `ifndef BASIC_SOC_UVM_PKG_SV
 `define BASIC_SOC_UVM_PKG_SV
+`timescale 1ns/1ps
 
 package basic_soc_uvm_pkg;
   import uvm_pkg::*;

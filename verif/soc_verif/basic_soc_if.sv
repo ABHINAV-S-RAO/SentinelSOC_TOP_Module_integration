@@ -1,5 +1,6 @@
 `ifndef BASIC_SOC_IF_SV
 `define BASIC_SOC_IF_SV
+`timescale 1ns/1ps
 
 interface basic_soc_if(input logic clk_i, input logic rst_ni);
 
@@ -26,7 +27,7 @@ interface basic_soc_if(input logic clk_i, input logic rst_ni);
   // Clocking blocks (Optional for UVM, but good for precise timing)
   // ---------------------------------------------------------------------------
   clocking cb @(posedge clk_i);
-    default input #1step output #1ns;
+    default input #1ps output #1ns;
     input  uart_tx_o;
     output uart_rx_i;
     

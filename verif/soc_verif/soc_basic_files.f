@@ -202,4 +202,6 @@ rtl/peripheral/apb_uart/apb_uart_sv.sv
 
 // 7. Basic SoC Top and Testbench
 rtl/soc/basic_soc_top.sv
-verif/soc_verif/basic_soc_tb.sv
+verif/soc_verif/basic_soc_if.sv
+verif/soc_verif/basic_soc_uvm_pkg.sv
+verif/soc_verif/basic_soc_uvm_top.sv

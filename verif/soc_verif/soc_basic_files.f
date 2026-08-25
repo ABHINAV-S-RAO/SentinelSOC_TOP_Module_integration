@@ -16,16 +16,16 @@
 .bender/git/checkouts/tech_cells_generic-c280dda8b91b4f97/src/rtl/tc_sram.sv
 .bender/git/checkouts/tech_cells_generic-c280dda8b91b4f97/src/rtl/tc_sram_impl.sv
 .bender/git/checkouts/tech_cells_generic-c280dda8b91b4f97/src/rtl/tc_clk.sv
-.bender/git/checkouts/tech_cells_generic-c280dda8b91b4f97/src/deprecated/cluster_pwr_cells.sv
-.bender/git/checkouts/tech_cells_generic-c280dda8b91b4f97/src/deprecated/generic_memory.sv
-.bender/git/checkouts/tech_cells_generic-c280dda8b91b4f97/src/deprecated/generic_rom.sv
-.bender/git/checkouts/tech_cells_generic-c280dda8b91b4f97/src/deprecated/pad_functional.sv
-.bender/git/checkouts/tech_cells_generic-c280dda8b91b4f97/src/deprecated/pulp_buffer.sv
-.bender/git/checkouts/tech_cells_generic-c280dda8b91b4f97/src/deprecated/pulp_pwr_cells.sv
+// .bender/git/checkouts/tech_cells_generic-c280dda8b91b4f97/src/deprecated/cluster_pwr_cells.sv
+// .bender/git/checkouts/tech_cells_generic-c280dda8b91b4f97/src/deprecated/generic_memory.sv
+// .bender/git/checkouts/tech_cells_generic-c280dda8b91b4f97/src/deprecated/generic_rom.sv
+// .bender/git/checkouts/tech_cells_generic-c280dda8b91b4f97/src/deprecated/pad_functional.sv
+// .bender/git/checkouts/tech_cells_generic-c280dda8b91b4f97/src/deprecated/pulp_buffer.sv
+// .bender/git/checkouts/tech_cells_generic-c280dda8b91b4f97/src/deprecated/pulp_pwr_cells.sv
 .bender/git/checkouts/tech_cells_generic-c280dda8b91b4f97/src/tc_pwr.sv
-.bender/git/checkouts/tech_cells_generic-c280dda8b91b4f97/src/deprecated/pulp_clock_gating_async.sv
-.bender/git/checkouts/tech_cells_generic-c280dda8b91b4f97/src/deprecated/cluster_clk_cells.sv
-.bender/git/checkouts/tech_cells_generic-c280dda8b91b4f97/src/deprecated/pulp_clk_cells.sv
+// .bender/git/checkouts/tech_cells_generic-c280dda8b91b4f97/src/deprecated/pulp_clock_gating_async.sv
+// .bender/git/checkouts/tech_cells_generic-c280dda8b91b4f97/src/deprecated/cluster_clk_cells.sv
+// .bender/git/checkouts/tech_cells_generic-c280dda8b91b4f97/src/deprecated/pulp_clk_cells.sv
 .bender/git/checkouts/common_cells-229df333cc9dff23/src/binary_to_gray.sv
 .bender/git/checkouts/common_cells-229df333cc9dff23/src/cb_filter_pkg.sv
 .bender/git/checkouts/common_cells-229df333cc9dff23/src/cc_onehot.sv
@@ -107,18 +107,18 @@
 .bender/git/checkouts/common_cells-229df333cc9dff23/src/stream_arbiter.sv
 .bender/git/checkouts/common_cells-229df333cc9dff23/src/stream_omega_net.sv
 .bender/git/checkouts/common_cells-229df333cc9dff23/src/mem_to_banks.sv
-.bender/git/checkouts/common_cells-229df333cc9dff23/src/deprecated/clock_divider_counter.sv
-.bender/git/checkouts/common_cells-229df333cc9dff23/src/deprecated/clk_div.sv
-.bender/git/checkouts/common_cells-229df333cc9dff23/src/deprecated/find_first_one.sv
-.bender/git/checkouts/common_cells-229df333cc9dff23/src/deprecated/generic_LFSR_8bit.sv
-.bender/git/checkouts/common_cells-229df333cc9dff23/src/deprecated/generic_fifo.sv
-.bender/git/checkouts/common_cells-229df333cc9dff23/src/deprecated/prioarbiter.sv
-.bender/git/checkouts/common_cells-229df333cc9dff23/src/deprecated/pulp_sync.sv
-.bender/git/checkouts/common_cells-229df333cc9dff23/src/deprecated/pulp_sync_wedge.sv
-.bender/git/checkouts/common_cells-229df333cc9dff23/src/deprecated/rrarbiter.sv
-.bender/git/checkouts/common_cells-229df333cc9dff23/src/deprecated/clock_divider.sv
-.bender/git/checkouts/common_cells-229df333cc9dff23/src/deprecated/fifo_v2.sv
-.bender/git/checkouts/common_cells-229df333cc9dff23/src/deprecated/fifo_v1.sv
+// .bender/git/checkouts/common_cells-229df333cc9dff23/src/deprecated/clock_divider_counter.sv
+// .bender/git/checkouts/common_cells-229df333cc9dff23/src/deprecated/clk_div.sv
+// .bender/git/checkouts/common_cells-229df333cc9dff23/src/deprecated/find_first_one.sv
+// .bender/git/checkouts/common_cells-229df333cc9dff23/src/deprecated/generic_LFSR_8bit.sv
+// .bender/git/checkouts/common_cells-229df333cc9dff23/src/deprecated/generic_fifo.sv
+// .bender/git/checkouts/common_cells-229df333cc9dff23/src/deprecated/prioarbiter.sv
+// .bender/git/checkouts/common_cells-229df333cc9dff23/src/deprecated/pulp_sync.sv
+// .bender/git/checkouts/common_cells-229df333cc9dff23/src/deprecated/pulp_sync_wedge.sv
+// .bender/git/checkouts/common_cells-229df333cc9dff23/src/deprecated/rrarbiter.sv
+// .bender/git/checkouts/common_cells-229df333cc9dff23/src/deprecated/clock_divider.sv
+// .bender/git/checkouts/common_cells-229df333cc9dff23/src/deprecated/fifo_v2.sv
+// .bender/git/checkouts/common_cells-229df333cc9dff23/src/deprecated/fifo_v1.sv
 .bender/git/checkouts/common_cells-229df333cc9dff23/src/edge_propagator_ack.sv
 .bender/git/checkouts/common_cells-229df333cc9dff23/src/edge_propagator.sv
 .bender/git/checkouts/common_cells-229df333cc9dff23/src/edge_propagator_rx.sv

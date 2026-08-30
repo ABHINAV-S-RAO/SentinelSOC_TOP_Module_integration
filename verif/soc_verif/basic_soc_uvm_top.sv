@@ -68,8 +68,8 @@ module basic_soc_uvm_top;
   // UVM Initialization
   // ---------------------------------------------------------------------------
   initial begin
-    uvm_config_db#(virtual basic_soc_if)::set(null, "uvm_test_top.env.agent.*", "vif", vif);
-    uvm_config_db#(virtual basic_soc_if)::set(null, "uvm_test_top.env.*", "vif", vif); // For cov
+    uvm_config_db#(virtual basic_soc_if)::set(null, "uvm_test_top.*", "vif", vif);
+    uvm_config_db#(virtual basic_soc_if)::set(null, "uvm_test_top.env", "vif", vif); 
     run_test("basic_soc_test");
   end
 

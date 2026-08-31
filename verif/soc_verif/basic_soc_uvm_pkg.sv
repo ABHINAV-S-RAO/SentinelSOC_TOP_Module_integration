@@ -139,10 +139,10 @@ package basic_soc_uvm_pkg;
             
             vif.instr_rvalid_i <= 1'b1;
             case (vif.instr_addr_o)
-              32'h80: vif.instr_rdata_i <= instructions[0];
-              32'h84: vif.instr_rdata_i <= instructions[1];
-              32'h88: vif.instr_rdata_i <= instructions[2];
-              32'h8C: vif.instr_rdata_i <= instructions[3];
+              32'h00: vif.instr_rdata_i <= instructions[0];
+              32'h04: vif.instr_rdata_i <= instructions[1];
+              32'h08: vif.instr_rdata_i <= instructions[2];
+              32'h0C: vif.instr_rdata_i <= instructions[3];
               default: vif.instr_rdata_i <= instructions[4]; // loop
             endcase
             
@@ -219,9 +219,9 @@ package basic_soc_uvm_pkg;
       option.per_instance = 1;
       // Cover memory addresses fetched
       cp_addr: coverpoint cg_item.addr {
-        bins boot = {32'h80};
-        bins text = {[32'h84:32'h8C]};
-        bins loop = {32'h90};
+        bins boot = {32'h00};
+        bins text = {[32'h04:32'h0C]};
+        bins loop = {32'h10};
       }
       // Cover UART transactions
       cp_is_write: coverpoint cg_item.is_write;

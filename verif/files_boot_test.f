@@ -79,5 +79,5 @@ rtl/soc/soc_buffer.sv
 rtl/soc/soc_top.sv
 
 # --- Secure Boot SoC Testbench ---
-tb/flash.sv
-tb/soc_tb.sv
+rtl/memory/flash.sv
+verif/tb/soc_tb.sv

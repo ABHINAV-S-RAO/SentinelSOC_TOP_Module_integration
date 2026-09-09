@@ -965,10 +965,47 @@ soc_addr_decode #(
   assign irq_spi     = 1'b0;
 
   // QSPI
-  // u_apb_qspi : apb_spi_master #(...) (...)
-  assign qspi_csn_o  = 1'b1;
-  assign qspi_clk_o  = 1'b0;
-  assign irq_qspi    = 1'b0;
+  logic [1:0] qspi_events;
+  assign irq_qspi = qspi_events[0]; // events_o[0] handles the RX/TX interrupts
+
+  apb_spi_master #(
+    .BUFFER_DEPTH   ( 10 ),
+    .APB_ADDR_WIDTH ( 12 )
+  ) u_apb_qspi (
+    .HCLK     ( clk_i ),
+    .HRESETn  ( rst_ni ),
+
+    // APB Bus Interface
+    .PADDR    ( apb_req.paddr[11:0] ),
+    .PWDATA   ( apb_req.pwdata ),
+    .PWRITE   ( apb_req.pwrite ),
+    .PSEL     ( psel_qspi ),
+    .PENABLE  ( apb_req.penable ),
+    .PRDATA   ( prdata_qspi ),
+    .PREADY   ( pready_qspi ),
+    .PSLVERR  ( pslverr_qspi ),
+
+    // Interrupts
+    .events_o ( qspi_events ),
+
+    // Physical SPI Interface
+    .spi_clk  ( qspi_clk_o ),
+    .spi_csn0 ( qspi_csn_o ),
+    .spi_csn1 ( ),
+    .spi_csn2 ( ),
+    .spi_csn3 ( ),
+    .spi_mode ( ), // Usually routed to external tech-specific pad macros
+
+    // Data Lines mapped directly to the top-level bidirectional array
+    .spi_sdo0 ( qspi_io_io[0] ),
+    .spi_sdo1 ( qspi_io_io[1] ),
+    .spi_sdo2 ( qspi_io_io[2] ),
+    .spi_sdo3 ( qspi_io_io[3] ),
+    .spi_sdi0 ( qspi_io_io[0] ),
+    .spi_sdi1 ( qspi_io_io[1] ),
+    .spi_sdi2 ( qspi_io_io[2] ),
+    .spi_sdi3 ( qspi_io_io[3] )
+  );
 
   // GPIO
   // u_gpio : gpio #(...) (...)

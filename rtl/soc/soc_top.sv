@@ -721,7 +721,8 @@ soc_addr_decode #(
   // ---------------------------------------------------------------------------
   // TODO: replace with foundry SRAM macro when available
   soc_bootrom #(
-    .NumWords ( BOOTROM_SIZE_WORDS )
+    .NumWords ( BOOTROM_SIZE_WORDS ),
+    .InitFile ( "../software/bootrom.hex" ) // Add this line to load the C code
   ) u_bootrom (
     .clk_i    ( clk_i         ),
     .rst_ni   ( rst_ni        ),

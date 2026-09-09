@@ -62,11 +62,11 @@ module flash #(
         end
       end else if (cmd_reg == 8'h03) begin
         // Handle Standard Read Array (Command 0x03 + 24-bit address)
-        if (bit_cnt >= 32) begin
-          miso_en <= 1'b1;
+        if (bit_cnt >= 32) begin          
           // Pull byte from memory array based on address, shifting bits out MSB first
           int byte_idx;
           int bit_idx;
+          miso_en <= 1'b1;
           byte_idx = addr_reg + ((bit_cnt - 32) / 8);
           bit_idx  = 7 - ((bit_cnt - 32) % 8);
           miso     <= mem[byte_idx][bit_idx];

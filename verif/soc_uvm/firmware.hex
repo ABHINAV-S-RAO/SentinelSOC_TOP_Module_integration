@@ -1,0 +1,4 @@
+00000013 // addi x0, x0, 0 (NOP)
+00000013 // addi x0, x0, 0 (NOP)
+00000013 // addi x0, x0, 0 (NOP)
+0000006f // j .            (Infinite Loop)

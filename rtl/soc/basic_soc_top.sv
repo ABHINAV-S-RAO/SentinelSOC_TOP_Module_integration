@@ -1,7 +1,6 @@
 // =============================================================================
 // basic_soc_top.sv
-// Simplified Top-level SoC for UART/DIFT exhaustive testing.
-// Exposes the Instruction OBI interface to the Testbench (Dummy Memory).
+// Updated Top-Level SoC with Data OBI Exports, System Decoder & Security Regs
 // =============================================================================
 
 `include "obi/typedef.svh"
@@ -9,16 +8,19 @@
 `include "apb/typedef.svh"
 
 module basic_soc_top (
-  input  logic clk_i,
-  input  logic rst_ni,
+  input  logic        clk_i,
+  input  logic        rst_ni,
+
+  // Hardware Security Verification Status
+  input  logic        crypto_verified_i,
 
   // UART Interface
-  output logic uart_tx_o,
-  input  logic uart_rx_i,
+  output logic        uart_tx_o,
+  input  logic        uart_rx_i,
 
-  // DIFT Interface
+  // DIFT Control
 `ifdef DIFT
-  input  logic dift_en_i,
+  input  logic        dift_en_i,
 `endif
 
   // Instruction Fetch OBI Interface (Driven by Testbench Dummy Mem)
@@ -28,91 +30,58 @@ module basic_soc_top (
   output logic [31:0] instr_addr_o,
   input  logic [31:0] instr_rdata_i,
   input  logic [6:0]  instr_rdata_intg_i,
-  input  logic        instr_err_i
+  input  logic        instr_err_i,
+
+  // EXPORTED Data OBI Interface (To Testbench Memory/Scoreboard)
+  output logic        data_req_o,
+  input  logic        data_gnt_i,
+  input  logic        data_rvalid_i,
+  output logic [31:0] data_addr_o,
+  output logic        data_we_o,
+  output logic [3:0]  data_be_o,
+  output logic [31:0] data_wdata_o,
+  input  logic [31:0] data_rdata_i,
+  input  logic        data_err_i
 );
 
-  localparam logic [31:0] BOOT_ADDR  = 32'h0000_0000;
-  localparam logic [31:0] HART_ID    = 32'h0000_0000;
-  localparam int unsigned DSRAM_SIZE_WORDS = 1024;
+  localparam logic [31:0] BOOT_ADDR          = 32'h0000_0000;
+  localparam logic [31:0] HART_ID            = 32'h0000_0000;
+  localparam int unsigned DSRAM_SIZE_WORDS   = 1024;
 
-  // ---------------------------------------------------------------------------
-  // Internal Signals
-  // ---------------------------------------------------------------------------
   // Core Data OBI
-  logic        core_data_req;
-  logic        core_data_gnt;
-  logic        core_data_rvalid;
-  logic        core_data_we;
+  logic        core_data_req, core_data_gnt, core_data_rvalid;
+  logic        core_data_we, core_data_err;
   logic [3:0]  core_data_be;
-  logic [31:0] core_data_addr;
-  logic [31:0] core_data_wdata;
-  logic [6:0]  core_data_wdata_intg;
-  logic [31:0] core_data_rdata;
-  logic [6:0]  core_data_rdata_intg;
-  logic        core_data_err;
+  logic [31:0] core_data_addr, core_data_wdata, core_data_rdata;
+  logic [6:0]  core_data_wdata_intg, core_data_rdata_intg;
 
   // DIFT Intercepted Data OBI
-  logic        dift_data_req;
-  logic        dift_data_gnt;
-  logic        dift_data_rvalid;
-  logic        dift_data_we;
+  logic        dift_data_req, dift_data_gnt, dift_data_rvalid;
+  logic        dift_data_we, dift_data_err;
   logic [3:0]  dift_data_be;
-  logic [31:0] dift_data_addr;
-  logic [31:0] dift_data_wdata;
-  logic [31:0] dift_data_rdata;
-  logic        dift_data_err;
+  logic [31:0] dift_data_addr, dift_data_wdata, dift_data_rdata;
 
-  // Struct instances for OBI to APB
-  `OBI_TYPEDEF_DEFAULT_ALL(obi_apb, obi_pkg::ObiDefaultConfig)
-  typedef logic [31:0] apb_addr_t;
-  typedef logic [31:0] apb_data_t;
-  typedef logic [ 3:0] apb_strb_t;
-  `APB_TYPEDEF_ALL(apb, apb_addr_t, apb_data_t, apb_strb_t)
+  // Control Signals from Control Registers
+  logic        boot_done;
+  logic        isram_lock;
 
-  obi_apb_req_t  apb_obi_req;
-  obi_apb_rsp_t  apb_obi_rsp;
-  apb_req_t      apb_req;
-  apb_resp_t     apb_rsp;
+  // Address Decoder Subordinate Channels
+  // Slot 0: TB External Data RAM
+  // Slot 1: APB Peripherals (UART)
+  // Slot 2: SOC Control Registers
+  logic        apb_req, apb_gnt, apb_rvalid, apb_we, apb_err;
+  logic [3:0]  apb_be;
+  logic [31:0] apb_addr, apb_wdata, apb_rdata;
 
-  // Assign DIFT intercepted signals to OBI Struct
-  assign apb_obi_req.req     = dift_data_req;
-  assign apb_obi_req.a.we    = dift_data_we;
-  assign apb_obi_req.a.be    = dift_data_be;
-  assign apb_obi_req.a.addr  = dift_data_addr;
-  assign apb_obi_req.a.wdata = dift_data_wdata;
-  assign dift_data_gnt       = apb_obi_rsp.gnt;
-  assign dift_data_rvalid    = apb_obi_rsp.rvalid;
-  assign dift_data_rdata     = apb_obi_rsp.r.rdata;
-  assign dift_data_err       = apb_obi_rsp.r.err;
-
-  // Tie off unused OBI struct fields
-  assign apb_obi_req.a.aid        = '0;
-  assign apb_obi_req.a.a_optional = '0;
-
-  // Interrupts
-  logic irq_software_i = 1'b0;
-  logic irq_timer_i    = 1'b0;
-  logic irq_external_i;
-  logic irq_nm_i;
-  logic irq_dift;
-  logic irq_uart;
-
-  // Route UART interrupt to external interrupt
-  assign irq_external_i = irq_uart;
-  
-  // Route DIFT exception to NMI
-  assign irq_nm_i       = irq_dift;
-  
-  // Default values for unimplemented features
-  assign core_data_rdata_intg = '0;
+  logic        ctrl_req, ctrl_gnt, ctrl_rvalid, ctrl_we, ctrl_err;
+  logic [3:0]  ctrl_be;
+  logic [31:0] ctrl_addr, ctrl_wdata, ctrl_rdata;
 
   // ---------------------------------------------------------------------------
-  // Core Instantiation
+  // Core Instantiation (Ibex)
   // ---------------------------------------------------------------------------
 `ifdef DIFT
-  logic data_rdata_tag;
-  logic data_wdata_tag;
-  logic dift_exception;
+  logic data_rdata_tag, data_wdata_tag, dift_exception;
 `endif
 
   ibex_top #(
@@ -142,7 +111,6 @@ module basic_soc_top (
     .hart_id_i            ( HART_ID ),
     .boot_addr_i          ( BOOT_ADDR ),
 
-    // Instruction Interface -> Top Level Pins
     .instr_req_o          ( instr_req_o ),
     .instr_gnt_i          ( instr_gnt_i ),
     .instr_rvalid_i       ( instr_rvalid_i ),
@@ -151,7 +119,6 @@ module basic_soc_top (
     .instr_rdata_intg_i   ( instr_rdata_intg_i ),
     .instr_err_i          ( instr_err_i ),
 
-    // Data Interface -> DIFT Intercept
     .data_req_o           ( core_data_req ),
     .data_gnt_i           ( core_data_gnt ),
     .data_rvalid_i        ( core_data_rvalid ),
@@ -161,14 +128,14 @@ module basic_soc_top (
     .data_wdata_o         ( core_data_wdata ),
     .data_wdata_intg_o    ( core_data_wdata_intg ),
     .data_rdata_i         ( core_data_rdata ),
-    .data_rdata_intg_i    ( core_data_rdata_intg ),
+    .data_rdata_intg_i    ( '0 ),
     .data_err_i           ( core_data_err ),
 
-    .irq_software_i       ( irq_software_i ),
-    .irq_timer_i          ( irq_timer_i ),
-    .irq_external_i       ( irq_external_i ),
+    .irq_software_i       ( 1'b0 ),
+    .irq_timer_i          ( 1'b0 ),
+    .irq_external_i       ( irq_uart ),
     .irq_fast_i           ( 15'h0 ),
-    .irq_nm_i             ( irq_nm_i ),
+    .irq_nm_i             ( irq_dift ),
 
     .scramble_key_valid_i ( 1'b0 ),
     .scramble_key_i       ( '0 ),
@@ -184,7 +151,7 @@ module basic_soc_top (
     .alert_major_bus_o    ( ),
     .core_sleep_o         ( ),
     .scan_rst_ni          ( 1'b1 ),
-    
+
     .lockstep_cmp_en_o       (),
     .data_req_shadow_o       (),
     .data_we_shadow_o        (),
@@ -210,12 +177,12 @@ module basic_soc_top (
   logic tag_req, tag_we;
   logic [29:0] tag_addr;
   logic tag_wdata, tag_rdata;
+  logic irq_dift, irq_uart;
 
   dift_obi_ctrl u_dift_obi_ctrl (
     .clk_i              ( clk_i ),
     .rst_ni             ( rst_ni ),
 
-    // Data port from core
     .core_data_req_i    ( core_data_req ),
     .core_data_addr_i   ( core_data_addr ),
     .core_data_we_i     ( core_data_we ),
@@ -226,7 +193,6 @@ module basic_soc_top (
     .core_data_rdata_o  ( core_data_rdata ),
     .core_data_err_o    ( core_data_err ),
 
-    // Data port to memory/peripherals
     .data_obi_req_o     ( dift_data_req ),
     .data_obi_addr_o    ( dift_data_addr ),
     .data_obi_we_o      ( dift_data_we ),
@@ -237,7 +203,6 @@ module basic_soc_top (
     .data_obi_rdata_i   ( dift_data_rdata ),
     .data_obi_err_i     ( dift_data_err ),
 
-    // Shadow tag RAM interface
     .tag_req_o          ( tag_req ),
     .tag_we_o           ( tag_we ),
     .tag_addr_o         ( tag_addr ),
@@ -253,8 +218,6 @@ module basic_soc_top (
 `endif
 
     .dift_exception_o   ( irq_dift ),
-    
-    // Unused Instruction / Identifier Ports
     .core_instr_req_i   ( 1'b0 ),
     .core_instr_addr_i  ( '0 ),
     .instr_obi_gnt_i    ( 1'b0 ),
@@ -263,8 +226,6 @@ module basic_soc_top (
     .instr_obi_rid_i    ( '0 ),
     .instr_obi_err_i    ( 1'b0 ),
     .data_obi_rid_i     ( '0 ),
-    
-    // Explicitly disconnected outputs
     .core_instr_gnt_o   ( ),
     .core_instr_rvalid_o( ),
     .core_instr_rdata_o ( ),
@@ -278,7 +239,7 @@ module basic_soc_top (
     .data_obi_aid_o     ( )
   );
 
-  // Minimal Shadow SRAM (Tag memory)
+  // Corrected Tag RAM Indexing (Word-aligned index [TAG_AW+1:2])
 `ifdef DIFT
   localparam int unsigned TAG_AW = $clog2(DSRAM_SIZE_WORDS);
   logic tag_mem [DSRAM_SIZE_WORDS];
@@ -288,13 +249,13 @@ module basic_soc_top (
     if (!rst_ni) begin
       tag_rd_addr_q <= '0;
     end else if (tag_req) begin
-      tag_rd_addr_q <= tag_addr[TAG_AW-1:0];
+      tag_rd_addr_q <= tag_addr[TAG_AW+1:2];
     end
   end
 
   always_ff @(posedge clk_i) begin
     if (tag_req && tag_we)
-      tag_mem[tag_addr[TAG_AW-1:0]] <= tag_wdata;
+      tag_mem[tag_addr[TAG_AW+1:2]] <= tag_wdata;
   end
   assign tag_rdata = tag_mem[tag_rd_addr_q];
 `else
@@ -302,8 +263,108 @@ module basic_soc_top (
 `endif
 
   // ---------------------------------------------------------------------------
-  // OBI to APB Bridge
+  // Address Decoding: Route DIFT OBI to External RAM, APB Bridge, & SOC Regs
   // ---------------------------------------------------------------------------
+  soc_addr_decode u_soc_addr_decode (
+    .clk_i               ( clk_i ),
+    .rst_ni              ( rst_ni ),
+    .boot_done_i         ( boot_done ),
+    .fw_verified_i       ( crypto_verified_i ),
+    .dbg_mode_i          ( 1'b0 ),
+    .ctrl_isram_lock_i   ( isram_lock ),
+
+    // Data Master Input (From DIFT Controller)
+    .data_req_i          ( dift_data_req ),
+    .data_we_i           ( dift_data_we ),
+    .data_be_i           ( dift_data_be ),
+    .data_addr_i         ( dift_data_addr ),
+    .data_wdata_i        ( dift_data_wdata ),
+    .data_gnt_o          ( dift_data_gnt ),
+    .data_rvalid_o       ( dift_data_rvalid ),
+    .data_rdata_o        ( dift_data_rdata ),
+    .data_err_o          ( dift_data_err ),
+
+    // Subordinate 0: External RAM (Exported to Testbench)
+    .ram_req_o           ( data_req_o ),
+    .ram_we_o            ( data_we_o ),
+    .ram_be_o            ( data_be_o ),
+    .ram_addr_o          ( data_addr_o ),
+    .ram_wdata_o         ( data_wdata_o ),
+    .ram_gnt_i           ( data_gnt_i ),
+    .ram_rvalid_i        ( data_rvalid_i ),
+    .ram_rdata_i         ( data_rdata_i ),
+    .ram_err_i           ( data_err_i ),
+
+    // Subordinate 1: APB Peripherals (UART)
+    .apb_req_o           ( apb_req ),
+    .apb_we_o            ( apb_we ),
+    .apb_be_o            ( apb_be ),
+    .apb_addr_o          ( apb_addr ),
+    .apb_wdata_o         ( apb_wdata ),
+    .apb_gnt_i           ( apb_gnt ),
+    .apb_rvalid_i        ( apb_rvalid ),
+    .apb_rdata_i         ( apb_rdata ),
+    .apb_err_i           ( apb_err ),
+
+    // Subordinate 2: SOC Control Registers
+    .ctrl_req_o          ( ctrl_req ),
+    .ctrl_we_o           ( ctrl_we ),
+    .ctrl_be_o           ( ctrl_be ),
+    .ctrl_addr_o         ( ctrl_addr ),
+    .ctrl_wdata_o        ( ctrl_wdata ),
+    .ctrl_gnt_i          ( ctrl_gnt ),
+    .ctrl_rvalid_i       ( ctrl_rvalid ),
+    .ctrl_rdata_i        ( ctrl_rdata ),
+    .ctrl_err_i          ( ctrl_err )
+  );
+
+  // ---------------------------------------------------------------------------
+  // SOC Control Registers
+  // ---------------------------------------------------------------------------
+  soc_ctrl_regs u_soc_ctrl_regs (
+    .clk_i               ( clk_i ),
+    .rst_ni              ( rst_ni ),
+    .req_i               ( ctrl_req ),
+    .we_i                ( ctrl_we ),
+    .be_i                ( ctrl_be ),
+    .addr_i              ( ctrl_addr ),
+    .wdata_i             ( ctrl_wdata ),
+    .gnt_o               ( ctrl_gnt ),
+    .rvalid_o            ( ctrl_rvalid ),
+    .rdata_o             ( ctrl_rdata ),
+    .err_o               ( ctrl_err ),
+    .crypto_verified_i   ( crypto_verified_i ),
+    .boot_done_o         ( boot_done ),
+    .isram_lock_o        ( isram_lock )
+  );
+
+  // ---------------------------------------------------------------------------
+  // OBI to APB Bridge & UART
+  // ---------------------------------------------------------------------------
+  `OBI_TYPEDEF_DEFAULT_ALL(obi_apb, obi_pkg::ObiDefaultConfig)
+  typedef logic [31:0] apb_addr_t;
+  typedef logic [31:0] apb_data_t;
+  typedef logic [ 3:0] apb_strb_t;
+  `APB_TYPEDEF_ALL(apb, apb_addr_t, apb_data_t, apb_strb_t)
+
+  obi_apb_req_t  apb_obi_req;
+  obi_apb_rsp_t  apb_obi_rsp;
+  apb_req_t      apb_req_struct;
+  apb_resp_t     apb_rsp_struct;
+
+  assign apb_obi_req.req     = apb_req;
+  assign apb_obi_req.a.we    = apb_we;
+  assign apb_obi_req.a.be    = apb_be;
+  assign apb_obi_req.a.addr  = apb_addr;
+  assign apb_obi_req.a.wdata = apb_wdata;
+  assign apb_obi_req.a.aid   = '0;
+  assign apb_obi_req.a.a_optional = '0;
+
+  assign apb_gnt            = apb_obi_rsp.gnt;
+  assign apb_rvalid         = apb_obi_rsp.rvalid;
+  assign apb_rdata          = apb_obi_rsp.r.rdata;
+  assign apb_err            = apb_obi_rsp.r.err;
+
   obi_to_apb #(
     .ObiCfg     ( obi_pkg::ObiDefaultConfig ),
     .obi_req_t  ( obi_apb_req_t ),
@@ -315,30 +376,26 @@ module basic_soc_top (
     .rst_ni     ( rst_ni ),
     .obi_req_i  ( apb_obi_req ),
     .obi_rsp_o  ( apb_obi_rsp ),
-    .apb_req_o  ( apb_req ),
-    .apb_rsp_i  ( apb_rsp )
+    .apb_req_o  ( apb_req_struct ),
+    .apb_rsp_i  ( apb_rsp_struct )
   );
 
-  // ---------------------------------------------------------------------------
-  // APB UART 
-  // ---------------------------------------------------------------------------
   logic psel_uart;
-  // Route to UART if APB request is in range (e.g. 0x1000_0000 -> 0x1000_0FFF)
-  assign psel_uart = (apb_req.paddr[31:12] == 20'h10000); 
+  assign psel_uart = (apb_req_struct.paddr[31:12] == 20'h10000);
 
   apb_uart_sv #(
     .APB_ADDR_WIDTH ( 12 )
   ) u_apb_uart (
     .CLK            ( clk_i ),
     .RSTN           ( rst_ni ),
-    .PADDR          ( apb_req.paddr[11:0] ),
-    .PWDATA         ( apb_req.pwdata ),
-    .PWRITE         ( apb_req.pwrite ),
+    .PADDR          ( apb_req_struct.paddr[11:0] ),
+    .PWDATA         ( apb_req_struct.pwdata ),
+    .PWRITE         ( apb_req_struct.pwrite ),
     .PSEL           ( psel_uart ),
-    .PENABLE        ( apb_req.penable ),
-    .PRDATA         ( apb_rsp.prdata ),
-    .PREADY         ( apb_rsp.pready ),
-    .PSLVERR        ( apb_rsp.pslverr ),
+    .PENABLE        ( apb_req_struct.penable ),
+    .PRDATA         ( apb_rsp_struct.prdata ),
+    .PREADY         ( apb_rsp_struct.pready ),
+    .PSLVERR        ( apb_rsp_struct.pslverr ),
     .rx_i           ( uart_rx_i ),
     .tx_o           ( uart_tx_o ),
     .event_o        ( irq_uart )

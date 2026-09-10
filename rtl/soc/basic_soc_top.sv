@@ -76,6 +76,7 @@ module basic_soc_top (
   logic        ctrl_req, ctrl_gnt, ctrl_rvalid, ctrl_we, ctrl_err;
   logic [3:0]  ctrl_be;
   logic [31:0] ctrl_addr, ctrl_wdata, ctrl_rdata;
+  logic irq_dift, irq_uart;
 
   // ---------------------------------------------------------------------------
   // Core Instantiation (Ibex)
@@ -177,7 +178,6 @@ module basic_soc_top (
   logic tag_req, tag_we;
   logic [29:0] tag_addr;
   logic tag_wdata, tag_rdata;
-  logic irq_dift, irq_uart;
 
   dift_obi_ctrl u_dift_obi_ctrl (
     .clk_i              ( clk_i ),

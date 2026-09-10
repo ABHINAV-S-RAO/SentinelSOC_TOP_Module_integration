@@ -44,7 +44,6 @@ rtl/peripheral/apb_uart/uart_rx.sv
 rtl/peripheral/apb_uart/uart_tx.sv
 rtl/peripheral/apb_uart/uart_interrupt.sv
 rtl/peripheral/apb_uart/apb_uart.sv
-rtl/peripheral/apb_uart/apb_uart_sv.sv
 
 rtl/Interrupts/plic/plic_regmap.sv
 rtl/Interrupts/plic/rv_plic_gateway.sv
@@ -89,7 +88,7 @@ rtl/riscv-dbg/src/dmi_intf.sv
 rtl/soc/soc_addr_decode.sv
 rtl/soc/soc_ctrl_regs.sv
 rtl/soc/soc_buffer.sv
-rtl/soc/soc_top.sv
+rtl/soc/basic_soc_top.sv
 
 // =============================================================================
 // UVM Testbench Infrastructure
@@ -97,4 +96,4 @@ rtl/soc/soc_top.sv
 verif/soc_uvm/interface/obi_if.sv
 verif/soc_uvm/interface/dift_tag_if.sv
 verif/soc_uvm/soc_uvm_pkg.sv
-verif/soc_uvm/basic_soc_tb_top.sv
+verif/soc_uvm/soc_tb_top.sv

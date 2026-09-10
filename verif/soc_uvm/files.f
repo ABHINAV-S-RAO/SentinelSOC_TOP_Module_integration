@@ -29,6 +29,7 @@
 // LowRISC primitive packages (MUST be compiled first)
 rtl/core/ibex_core/vendor/lowrisc_ip/ip/prim_generic/rtl/prim_ram_1p_pkg.sv
 rtl/core/ibex_core/vendor/lowrisc_ip/ip/prim/rtl/prim_secded_pkg.sv
+rtl/core/ibex_core/vendor/lowrisc_ip/ip/prim_generic/rtl/prim_buf.sv
 
 // Ibex Core files
 
@@ -49,6 +50,7 @@ rtl/core/ibex_core/rtl/ibex_top.sv
 
 // DIFT OBI Controller
 rtl/obi_wrapper/dift_obi/dift_obi_ctrl.sv
+rtl/obi_wrapper/dift_obi/dift_tag_sram_shim.sv
 
 // APB Peripherals & Interrupts
 rtl/peripheral/apb_uart/io_generic_fifo.sv

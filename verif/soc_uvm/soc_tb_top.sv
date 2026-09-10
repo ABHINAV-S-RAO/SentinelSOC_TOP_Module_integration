@@ -1,49 +1,5 @@
 `timescale 1ns/1ps
 
-module tb_memory_model #(
-  parameter int MEM_SIZE_WORDS = 65536 // 256 KB memory
-)(
-  input  logic        clk_i,
-  input  logic        rst_ni,
-
-  // OBI Subordinate Interface
-  input  logic        req_i,
-  output logic        gnt_o,
-  output logic        rvalid_o,
-  input  logic [31:0] addr_i,
-  input  logic        we_i,
-  input  logic [3:0]  be_i,
-  input  logic [31:0] wdata_i,
-  output logic [31:0] rdata_o,
-  output logic        err_o
-);
-
-  logic [31:0] mem [MEM_SIZE_WORDS];
-
-  assign gnt_o = req_i;
-  assign err_o = 1'b0;
-
-  always_ff @(posedge clk_i or negedge rst_ni) begin
-    if (!rst_ni) begin
-      rvalid_o <= 1'b0;
-      rdata_o  <= 32'h0;
-    end else begin
-      rvalid_o <= req_i;
-      if (req_i) begin
-        if (we_i) begin
-          if (be_i[0]) mem[addr_i[17:2]][ 7: 0] <= wdata_i[ 7: 0];
-          if (be_i[1]) mem[addr_i[17:2]][15: 8] <= wdata_i[15: 8];
-          if (be_i[2]) mem[addr_i[17:2]][23:16] <= wdata_i[23:16];
-          if (be_i[3]) mem[addr_i[17:2]][31:24] <= wdata_i[31:24];
-        end else begin
-          rdata_o <= mem[addr_i[17:2]];
-        end
-      end
-    end
-  end
-
-endmodule
-
 module soc_tb_top;
   import uvm_pkg::*;
   import soc_uvm_pkg::*;
@@ -164,14 +120,27 @@ module soc_tb_top;
   // ---------------------------------------------------------------------------
   // Dynamic Firmware Loader Mechanism (+FIRMWARE=)
   // ---------------------------------------------------------------------------
-  initial begin
-    if ($value$plusargs("FIRMWARE=%s", firmware_file)) begin
-      $display("[TB TOP] Loading binary memory image to TB Instruction Memory: %s", firmware_file);
-      $readmemh(firmware_file, u_tb_instr_mem.mem);
-    end else begin
-      $display("[TB TOP] WARNING: No +FIRMWARE=<path.hex> plusarg supplied!");
-    end
-  end
+ initial begin
+   if ($value$plusargs("FIRMWARE=%s", firmware_file)) begin
+     int fd;
+     fd = $fopen(firmware_file, "r");
+     if (fd == 0) begin
+       $fatal(1, "[TB TOP] ERROR: Firmware file '%s' could not be opened!", firmware_file);
+     end else begin
+       $fclose(fd);
+     end 
+     
+     $display("[TB TOP] Pre-zeroing instruction memory array...");
+     foreach (u_tb_instr_mem.mem[i]) begin
+       u_tb_instr_mem.mem[i] = 32'h0000_0000; // NOP (addi x0, x0, 0)
+     end
+ 
+     $display("[TB TOP] Loading binary memory image: %s", firmware_file);
+     $readmemh(firmware_file, u_tb_instr_mem.mem);
+   end else begin
+     $display("[TB TOP] WARNING: No +FIRMWARE=<path.hex> plusarg supplied!");
+   end
+ end
 
   // ---------------------------------------------------------------------------
   // Interface Probes Wiring
@@ -217,7 +186,9 @@ module soc_tb_top;
     uvm_config_db#(virtual obi_if)::set(null, "*", "instr_obi_vif", instr_obi_if);
     uvm_config_db#(virtual obi_if)::set(null, "*", "data_obi_vif",  data_obi_if);
     uvm_config_db#(virtual dift_tag_if)::set(null, "*", "dift_tag_vif", dift_if);
-
+    // Pass interfaces down to env/monitors
+    uvm_config_db#(virtual obi_if)::set(null, "*", "vif", u_obi_if);
+    uvm_config_db#(virtual dift_tag_if)::set(null, "*", "vif", u_dift_if);
     run_test();
   end
 

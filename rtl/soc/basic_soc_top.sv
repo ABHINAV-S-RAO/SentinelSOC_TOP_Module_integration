@@ -159,7 +159,7 @@ module basic_soc_top (
     .data_be_shadow_o        (),
     .data_addr_shadow_o      (),
     .data_wdata_shadow_o     (),
-    .data_wdata_intg_shadow_o(),
+    .data_wdata_intg_shadow_o(),x`
     .instr_req_shadow_o      (),
     .instr_addr_shadow_o     ()
 
@@ -276,12 +276,12 @@ soc_addr_decode u_soc_addr_decode (
     .ctrl_isram_lock_i   ( isram_lock ),
 
     // Ibex Instruction Fetch Channel
-    .instr_req_i         ( instr_req_o ),
-    .instr_gnt_o         ( instr_gnt_i ),
-    .instr_rvalid_o      ( instr_rvalid_i ),
-    .instr_addr_i        ( instr_addr_o ),
-    .instr_rdata_o       ( instr_rdata_i ),
-    .instr_err_o         ( instr_err_i ),
+    .instr_req_i         ( 1'b0 ),
+    .instr_gnt_o         ( ),
+    .instr_rvalid_o      ( ),
+    .instr_addr_i        ( '0),
+    .instr_rdata_o       ( ),
+    .instr_err_o         ( ),
 
     // Ibex Data Channel (From DIFT Controller)
     .data_req_i          ( dift_data_req ),

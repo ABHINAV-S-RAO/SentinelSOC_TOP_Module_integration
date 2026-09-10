@@ -110,4 +110,5 @@ rtl/soc/basic_soc_top.sv
 verif/soc_uvm/interface/obi_if.sv
 verif/soc_uvm/interface/dift_tag_if.sv
 verif/soc_uvm/soc_uvm_pkg.sv
+verif/soc_uvm/tests/soc_base_test.sv
 verif/soc_uvm/soc_tb_top.sv

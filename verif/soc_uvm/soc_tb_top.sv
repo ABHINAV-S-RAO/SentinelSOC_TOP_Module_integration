@@ -46,6 +46,7 @@ endmodule
 
 module soc_tb_top;
   import uvm_pkg::*;
+  import soc_uvm_pkg::*;
   `include "uvm_macros.svh"
 
   // ---------------------------------------------------------------------------

@@ -28,6 +28,7 @@
 .bender/git/checkouts/obi-75858655e8b256db/src/obi_mux.sv
 // LowRISC primitive packages (MUST be compiled first)
 rtl/core/ibex_core/vendor/lowrisc_ip/ip/prim_generic/rtl/prim_ram_1p_pkg.sv
+rtl/core/ibex_core/vendor/lowrisc_ip/ip/prim/rtl/prim_secded_pkg.sv
 
 // Ibex Core files
 

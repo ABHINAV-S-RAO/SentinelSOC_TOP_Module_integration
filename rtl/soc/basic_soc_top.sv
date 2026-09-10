@@ -362,7 +362,7 @@ soc_addr_decode u_soc_addr_decode (
 
     // SHA + ED25519 CSR
     .sha_req_o           ( ),
-    .sha_gnt_i           ( 1 me0 ),
+    .sha_gnt_i           ( 1'b0 ),
     .sha_rvalid_i        ( 1'b0 ),
     .sha_addr_o          ( ),
     .sha_we_o            ( ),

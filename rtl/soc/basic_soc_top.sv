@@ -265,15 +265,25 @@ module basic_soc_top (
   // ---------------------------------------------------------------------------
   // Address Decoding: Route DIFT OBI to External RAM, APB Bridge, & SOC Regs
   // ---------------------------------------------------------------------------
-  soc_addr_decode u_soc_addr_decode (
+soc_addr_decode u_soc_addr_decode (
     .clk_i               ( clk_i ),
     .rst_ni              ( rst_ni ),
+
+    // Access-control signals
     .boot_done_i         ( boot_done ),
     .fw_verified_i       ( crypto_verified_i ),
     .dbg_mode_i          ( 1'b0 ),
     .ctrl_isram_lock_i   ( isram_lock ),
 
-    // Data Master Input (From DIFT Controller)
+    // Ibex Instruction Fetch Channel
+    .instr_req_i         ( instr_req_o ),
+    .instr_gnt_o         ( instr_gnt_i ),
+    .instr_rvalid_o      ( instr_rvalid_i ),
+    .instr_addr_i        ( instr_addr_o ),
+    .instr_rdata_o       ( instr_rdata_i ),
+    .instr_err_o         ( instr_err_i ),
+
+    // Ibex Data Channel (From DIFT Controller)
     .data_req_i          ( dift_data_req ),
     .data_we_i           ( dift_data_we ),
     .data_be_i           ( dift_data_be ),
@@ -284,18 +294,40 @@ module basic_soc_top (
     .data_rdata_o        ( dift_data_rdata ),
     .data_err_o          ( dift_data_err ),
 
-    // Subordinate 0: External RAM (Exported to Testbench)
-    .ram_req_o           ( data_req_o ),
-    .ram_we_o            ( data_we_o ),
-    .ram_be_o            ( data_be_o ),
-    .ram_addr_o          ( data_addr_o ),
-    .ram_wdata_o         ( data_wdata_o ),
-    .ram_gnt_i           ( data_gnt_i ),
-    .ram_rvalid_i        ( data_rvalid_i ),
-    .ram_rdata_i         ( data_rdata_i ),
-    .ram_err_i           ( data_err_i ),
+    // DSRAM Channel -> Exported to Testbench Memory (Replaces ram_* ports)
+    .dsram_req_o         ( data_req_o ),
+    .dsram_we_o          ( data_we_o ),
+    .dsram_be_o          ( data_be_o ),
+    .dsram_addr_o        ( data_addr_o ),
+    .dsram_wdata_o       ( data_wdata_o ),
+    .dsram_gnt_i         ( data_gnt_i ),
+    .dsram_rvalid_i      ( data_rvalid_i ),
+    .dsram_rdata_i       ( data_rdata_i ),
+    .dsram_err_i         ( data_err_i ),
 
-    // Subordinate 1: APB Peripherals (UART)
+    // BootROM Channel
+    .bootrom_req_o       ( ),
+    .bootrom_gnt_i       ( 1'b0 ),
+    .bootrom_rvalid_i    ( 1'b0 ),
+    .bootrom_addr_o      ( ),
+    .bootrom_we_o        ( ),
+    .bootrom_be_o        ( ),
+    .bootrom_wdata_o     ( ),
+    .bootrom_rdata_i     ( 32'h0 ),
+    .bootrom_err_i       ( 1'b0 ),
+
+    // ISRAM Channel
+    .isram_req_o         ( ),
+    .isram_gnt_i         ( 1'b0 ),
+    .isram_rvalid_i      ( 1'b0 ),
+    .isram_addr_o        ( ),
+    .isram_we_o          ( ),
+    .isram_be_o          ( ),
+    .isram_wdata_o       ( ),
+    .isram_rdata_i       ( 32'h0 ),
+    .isram_err_i         ( 1'b0 ),
+
+    // APB Peripherals (UART)
     .apb_req_o           ( apb_req ),
     .apb_we_o            ( apb_we ),
     .apb_be_o            ( apb_be ),
@@ -306,7 +338,7 @@ module basic_soc_top (
     .apb_rdata_i         ( apb_rdata ),
     .apb_err_i           ( apb_err ),
 
-    // Subordinate 2: SOC Control Registers
+    // SOC Control Registers
     .ctrl_req_o          ( ctrl_req ),
     .ctrl_we_o           ( ctrl_we ),
     .ctrl_be_o           ( ctrl_be ),
@@ -315,7 +347,50 @@ module basic_soc_top (
     .ctrl_gnt_i          ( ctrl_gnt ),
     .ctrl_rvalid_i       ( ctrl_rvalid ),
     .ctrl_rdata_i        ( ctrl_rdata ),
-    .ctrl_err_i          ( ctrl_err )
+    .ctrl_err_i          ( ctrl_err ),
+
+    // Buffer CSR
+    .buf_req_o           ( ),
+    .buf_gnt_i           ( 1'b0 ),
+    .buf_rvalid_i        ( 1'b0 ),
+    .buf_addr_o          ( ),
+    .buf_we_o            ( ),
+    .buf_be_o            ( ),
+    .buf_wdata_o         ( ),
+    .buf_rdata_i         ( 32'h0 ),
+    .buf_err_i           ( 1'b0 ),
+
+    // SHA + ED25519 CSR
+    .sha_req_o           ( ),
+    .sha_gnt_i           ( 1 me0 ),
+    .sha_rvalid_i        ( 1'b0 ),
+    .sha_addr_o          ( ),
+    .sha_we_o            ( ),
+    .sha_be_o            ( ),
+    .sha_wdata_o         ( ),
+    .sha_rdata_i         ( 32'h0 ),
+    .sha_err_i           ( 1'b0 ),
+
+    // PLIC Interrupt Controller
+    .plic_req_o          ( ),
+    .plic_gnt_i          ( 1'b0 ),
+    .plic_rvalid_i       ( 1'b0 ),
+    .plic_addr_o         ( ),
+    .plic_we_o           ( ),
+    .plic_be_o           ( ),
+    .plic_wdata_o        ( ),
+    .plic_rdata_i        ( 32'h0 ),
+    .plic_err_i          ( 1'b0 ),
+
+    // Debug Subordinate
+    .dbg_req_o           ( ),
+    .dbg_addr_o          ( ),
+    .dbg_we_o            ( ),
+    .dbg_be_o            ( ),
+    .dbg_wdata_o         ( ),
+    .dbg_gnt_i           ( 1'b0 ),
+    .dbg_rvalid_i        ( 1'b0 ),
+    .dbg_rdata_i         ( 32'h0 )
   );
 
   // ---------------------------------------------------------------------------

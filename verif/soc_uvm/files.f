@@ -24,6 +24,8 @@
 // Vendor & Core RTL Dependencies
 // =============================================================================
 -f verif/bender_files.f
+.bender/git/checkouts/obi-75858655e8b256db/src/obi_demux.sv
+.bender/git/checkouts/obi-75858655e8b256db/src/obi_mux.sv
 
 rtl/core/ibex_core/rtl/ibex_pkg.sv
 rtl/core/ibex_core/rtl/ibex_tracer_pkg.sv

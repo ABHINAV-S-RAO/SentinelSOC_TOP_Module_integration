@@ -39,6 +39,11 @@ rtl/core/dift/ibex_register_file_latch_tag.sv
 
 // Ibex Core Native Manifest
 -f rtl/core/ibex_core/rtl/ibex_core.f
+// Ibex Core Top
+rtl/core/ibex_core/rtl/ibex_top.sv
+
+// DIFT OBI Controller
+rtl/obi_wrapper/dift_obi/dift_obi_ctrl.sv
 
 // APB Peripherals & Interrupts
 rtl/peripheral/apb_uart/io_generic_fifo.sv

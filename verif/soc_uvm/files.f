@@ -26,6 +26,10 @@
 -f verif/bender_files.f
 .bender/git/checkouts/obi-75858655e8b256db/src/obi_demux.sv
 .bender/git/checkouts/obi-75858655e8b256db/src/obi_mux.sv
+// LowRISC primitive packages (MUST be compiled first)
+rtl/core/ibex_core/vendor/lowrisc_ip/ip/prim_generic/rtl/prim_ram_1p_pkg.sv
+
+// Ibex Core files
 
 rtl/core/ibex_core/rtl/ibex_pkg.sv
 rtl/core/ibex_core/rtl/ibex_tracer_pkg.sv

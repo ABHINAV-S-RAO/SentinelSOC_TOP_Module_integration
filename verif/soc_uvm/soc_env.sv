@@ -1,3 +1,6 @@
+`ifndef SOC_ENV_SV
+`define SOC_ENV_SV
+
 class soc_env extends uvm_env;
   `uvm_component_utils(soc_env)
 
@@ -18,6 +21,9 @@ class soc_env extends uvm_env;
 
   function void build_phase(uvm_phase phase);
     super.build_phase(phase);
+    // instr_mon/data_mon: raw OBI trace only (OBI_MON debug prints), no
+    // scoreboard consumer exists for these — soc_scoreboard checks via
+    // qspi/apb/addr/dift events instead. Kept for execution-visibility only.
     uvm_config_db#(string)::set(this, "instr_mon", "vif_name", "instr_obi_vif");
     uvm_config_db#(string)::set(this, "data_mon",  "vif_name", "data_obi_vif");
 
@@ -39,7 +45,7 @@ class soc_env extends uvm_env;
 
   function void connect_phase(uvm_phase phase);
     super.connect_phase(phase);
-    data_mon.ap.connect(scb.data_obi_imp);
+    // instr_mon/data_mon intentionally left unconnected — debug trace only.
     qspi_mon.ap.connect(scb.qspi_export);
     qspi_mon.ap.connect(cov.qspi_imp);
     addr_mon.ap.connect(scb.addr_export);
@@ -53,3 +59,5 @@ class soc_env extends uvm_env;
   endfunction
 
 endclass
+
+`endif

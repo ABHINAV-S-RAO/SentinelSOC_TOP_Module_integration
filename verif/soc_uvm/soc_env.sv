@@ -14,6 +14,7 @@ class soc_env extends uvm_env;
   dift_tag_monitor       dift_mon;
   soc_scoreboard         scb;
   soc_coverage           cov;
+  qspi_cov qspi_coverage_inst;
 
   function new(string name, uvm_component parent);
     super.new(name, parent);
@@ -34,7 +35,7 @@ class soc_env extends uvm_env;
     dift_mon        = dift_tag_monitor::type_id::create("dift_mon", this);
     scb             = soc_scoreboard::type_id::create("scb", this);
     cov             = soc_coverage::type_id::create("cov", this);
-
+    qspi_coverage_inst = qspi_cov::type_id::create("qspi_coverage_inst", this);
     apb_mon_uart    = apb_periph_monitor::type_id::create("apb_mon_uart", this);
     apb_mon_qspi    = apb_periph_monitor::type_id::create("apb_mon_qspi", this);
     apb_mon_sysctrl = apb_periph_monitor::type_id::create("apb_mon_sysctrl", this);
@@ -56,6 +57,7 @@ class soc_env extends uvm_env;
     apb_mon_uart.ap.connect(cov.apb_imp);
     apb_mon_qspi.ap.connect(scb.apb_export);
     apb_mon_sysctrl.ap.connect(scb.apb_export);
+    qspi_mon.ap.connect(qspi_coverage_inst.analysis_export);
   endfunction
 
 endclass

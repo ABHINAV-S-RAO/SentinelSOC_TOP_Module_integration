@@ -1,24 +1,13 @@
 `ifndef SOC_SCOREBOARD_SV
 `define SOC_SCOREBOARD_SV
 
-// Replaces the transaction-counting stub. Each test_all.s variant loads a
-// matching expected-value config into this scoreboard via config_db before
-// run_phase (see soc_env.sv / individual uvm_test classes). This scoreboard
-// does not generate stimulus — firmware does. It only judges what firmware
-// produced against what the test author said it should produce.
-//
-// Four independent checks, each with its own pass/fail, so a QSPI bug and
-// a DIFT bug in the same run don't hide behind each other:
-//   1. QSPI read data vs. flash contents (via qspi_flash_bfm.peek_byte)
-//   2. UART TX byte stream vs. expected string
-//   3. DIFT tag transitions vs. expected propagation table
-//   4. addr_decode violations, aggregated from addr_decode_monitor
-//
-// Existing sentinel-code pass/fail at DSRAM_BASE+0x8 (TEST_PASS_CODE /
-// TEST_FAIL_CODE) still drives UVM objection drop in sw_status_monitor.sv
-// as before — that's unchanged and still the "did firmware think it
-// passed" signal. This scoreboard is the independent "did it actually
-// happen correctly" signal, and both should agree at end of test.
+// Declare specialized analysis implementation suffixes for multiple imp ports
+`uvm_analysis_imp_decl(_qspi)
+`uvm_analysis_imp_decl(_apb)
+`uvm_analysis_imp_decl(_addr)
+`uvm_analysis_imp_decl(_dift)
+
+typedef byte byte_arr_t[];
 
 class dift_expect;
   bit [4:0]  rf_addr;
@@ -56,22 +45,20 @@ class soc_scoreboard extends uvm_scoreboard;
     dift_export = new("dift_export", this);
   endfunction
 
-  function void build_phase(uvm_phase phase);
+  function automatic void build_phase(uvm_phase phase);
     super.build_phase(phase);
-    void'(uvm_config_db#(byte[])::get(this, "", "expected_flash_image", expected_flash_image));
-    // expected_uart_stream / expected_dift pushed by the test class directly
-    // via a handle grab, since queues of class objects don't marshal well
-    // through config_db by value.
+    void'(uvm_config_db#(byte_arr_t)::get(this, "", "expected_flash_image", expected_flash_image));
     if (!uvm_config_db#(qspi_flash_bfm)::get(this, "", "bfm_h", bfm_h))
-      `uvm_warning("SCB", "no flash BFM handle — QSPI data-integrity checks disabled")
+      `uvm_warning("SCB", "no flash BFM handle - QSPI data-integrity checks disabled")
   endfunction
 
   // --- QSPI: cross-check monitor-decoded read data against flash contents
-  function void write_qspi(qspi_txn t);
-    if (t.mode == 2'b10 || t.cmd inside {8'h03, 8'h0B, 8'h6B, 8'hEB}) begin // read-family opcodes; TODO confirm actual opcode map
+  function automatic void write_qspi(qspi_txn t);
+    byte unsigned expected;
+    if (t.mode == 2'b10 || t.cmd inside {8'h03, 8'h0B, 8'h6B, 8'hEB}) begin
       if (bfm_h != null) begin
         foreach (t.data[i]) begin
-          byte unsigned expected = bfm_h.peek_byte(t.addr + i);
+          expected = bfm_h.peek_byte(t.addr + i);
           if (t.data[i] !== expected) begin
             qspi_mismatches++;
             `uvm_error("SCB_QSPI", $sformatf("addr=0x%08h byte[%0d]: got 0x%02h expected 0x%02h",
@@ -83,22 +70,20 @@ class soc_scoreboard extends uvm_scoreboard;
   endfunction
 
   // --- APB: currently pass-through logging; extend per-peripheral as needed
-  function void write_apb(apb_txn t);
+  function automatic void write_apb(apb_txn t);
     if (t.pslverr)
       `uvm_info("SCB_APB", $sformatf("%0s: PSLVERR at addr=0x%08h", t.periph, t.paddr), UVM_MEDIUM)
-    if (t.periph == "UART" && t.write && t.paddr[2:0] == 3'h0) // THR offset per session notes
+    if (t.periph == "UART" && t.write && t.paddr[2:0] == 3'h0)
       observed_uart_stream.push_back(t.pdata[7:0]);
   endfunction
 
-  // --- addr decode: just aggregate, monitor already flags via uvm_error
-  function void write_addr(addr_decode_event e);
+  // --- addr decode: aggregate violations
+  function automatic void write_addr(addr_decode_event e);
     if (e.onehot_violation || e.region_mismatch) addr_decode_violations++;
   endfunction
 
-  // --- DIFT: walk expected queue in order, tolerate exception events
-  // interrupting the normal sequence (an exception ends the propagation
-  // chain early by design)
-  function void write_dift(dift_event e);
+  // --- DIFT: walk expected queue in order
+  function automatic void write_dift(dift_event e);
     if (dift_idx >= expected_dift.size()) return;
     if (e.exception) begin
       if (!expected_dift[dift_idx].expect_exception) begin
@@ -119,7 +104,7 @@ class soc_scoreboard extends uvm_scoreboard;
     dift_idx++;
   endfunction
 
-  function void check_phase(uvm_phase phase);
+  function automatic void check_phase(uvm_phase phase);
     super.check_phase(phase);
     if (observed_uart_stream.size() != expected_uart_stream.size()) begin
       uart_mismatches++;

@@ -21,7 +21,19 @@ set TOP ibex_top
 # at wherever the sky130 PDK actually lives for THIS project/machine.
 set LIB "/home/ibexcore/project/test/skywater-pdk/libraries/sky130_fd_sc_hd/latest/timing/sky130_fd_sc_hd__tt_025C_1v80.lib"
 
-# Synthesis-only filelist (TB stripped out) -- see files_dift_synth.f
+# Synthesis-only filelist -- see files_dift_synth.f. Relative to
+# original files.f, this drops:
+#   - the TB (verif/tb/ibex_core_tb.sv) -- not synthesizable
+#   - the dv_utils incdir -- verification-only (DPI/UVM) headers
+#   - -f verif/bender_files.f -- turned out to be an Xcelium/irun
+#     OPTIONS file (-64bit -uvm -timescale ... -access +rwc), not an
+#     RTL filelist. Feeding it to read_hdl corrupted the parse and
+#     cascaded into unrelated errors in tc_sram.sv etc. If ibex_top
+#     genuinely needs OBI/APB/common_cells RTL that lived behind that
+#     -f, add the actual RTL files/filelist here explicitly instead.
+# Genus's -f parser also doesn't support "#" comments inside the
+# filelist itself (it tokenizes comment words as filenames), so
+# files_dift_synth.f is kept comment-free -- notes live here instead.
 # Resolved relative to THIS script's own location, so it works no
 # matter what directory you're in when you launch genus, and no
 # matter what the containing folder is named (genus/, synth/, etc).

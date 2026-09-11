@@ -351,6 +351,14 @@ qspi_flash_bfm #(
   assign dift_if.tag_wdata = u_dut.tag_wdata;
   assign dift_if.tag_rdata = u_dut.tag_rdata;
   assign dift_if.irq_dift  = u_dut.irq_dift;
+
+  // Add internal ibex_core probes required by dift_tag_monitor.sv
+  assign dift_if.rf_waddr         = u_dut.u_core.rf_waddr_wb;
+  assign dift_if.rf_we_tag_lsu    = u_dut.u_core.rf_we_tag_wb;
+  assign dift_if.rf_wdata_tag_lsu = u_dut.u_core.rf_wdata_tag_wb;
+  assign dift_if.is_load          = u_dut.u_core.outstanding_load_wb;
+  assign dift_if.dift_exception_o = u_dut.irq_dift;
+  assign dift_if.exception_pc     = u_dut.u_core.csr_mepc;
 `else
   assign dift_if.irq_dift  = 1'b0;
 `endif

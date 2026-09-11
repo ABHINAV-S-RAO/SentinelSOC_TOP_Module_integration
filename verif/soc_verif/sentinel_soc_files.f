@@ -14,13 +14,21 @@ rtl/core/ibex_core/rtl/ibex_tracer_pkg.sv
 # -------------------------------------------------------
 # lowRISC prim packages (must come before ibex_core.f)
 # These are packages (not modules), so -y cannot auto-find them.
+# Add ALL prim packages upfront to avoid any missing pkg errors.
 # -------------------------------------------------------
 rtl/core/ibex_core/vendor/lowrisc_ip/ip/prim_generic/rtl/prim_pkg.sv
 rtl/core/ibex_core/vendor/lowrisc_ip/ip/prim_generic/rtl/prim_ram_1p_pkg.sv
+rtl/core/ibex_core/vendor/lowrisc_ip/ip/prim_generic/rtl/prim_ram_2p_pkg.sv
+rtl/core/ibex_core/vendor/lowrisc_ip/ip/prim_generic/rtl/prim_rom_pkg.sv
+rtl/core/ibex_core/vendor/lowrisc_ip/ip/prim/rtl/prim_alert_pkg.sv
+rtl/core/ibex_core/vendor/lowrisc_ip/ip/prim/rtl/prim_cipher_pkg.sv
 rtl/core/ibex_core/vendor/lowrisc_ip/ip/prim/rtl/prim_count_pkg.sv
-rtl/core/ibex_core/vendor/lowrisc_ip/ip/prim/rtl/prim_util_pkg.sv
+rtl/core/ibex_core/vendor/lowrisc_ip/ip/prim/rtl/prim_esc_pkg.sv
 rtl/core/ibex_core/vendor/lowrisc_ip/ip/prim/rtl/prim_mubi_pkg.sv
+rtl/core/ibex_core/vendor/lowrisc_ip/ip/prim/rtl/prim_pad_wrapper_pkg.sv
 rtl/core/ibex_core/vendor/lowrisc_ip/ip/prim/rtl/prim_secded_pkg.sv
+rtl/core/ibex_core/vendor/lowrisc_ip/ip/prim/rtl/prim_subreg_pkg.sv
+rtl/core/ibex_core/vendor/lowrisc_ip/ip/prim/rtl/prim_util_pkg.sv
 
 # -y lets elaborator auto-resolve prim_buf, prim_flop, prim_ram_1p etc.
 -y rtl/core/ibex_core/vendor/lowrisc_ip/ip/prim/rtl

@@ -121,7 +121,7 @@ module soc_tb_top;
    // spi_sdi_i = 4'h0;
 
    // Seed the tag for DIFT test
-   u_dut.tag_mem[0] = 1'b1;
+   $deposit(u_dut.tag_mem[0], 1'b1);
   end
 
   // ---------------------------------------------------------------------------

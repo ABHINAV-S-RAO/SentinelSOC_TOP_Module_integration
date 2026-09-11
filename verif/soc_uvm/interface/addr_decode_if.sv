@@ -5,11 +5,24 @@ interface addr_decode_if (
   input logic clk_i,
   input logic rst_ni
 );
-  logic [31:0] addr;
-  logic        req;
-  logic        is_fetch;
-  logic [15:0] region_sel;
-  logic        error;
+  logic        clk;
+  logic [31:0] addr_i;
+  logic        is_fetch_i;
+
+  // Select signals sampled by monitor
+  logic        fsel_bootrom;
+  logic        fsel_isram;
+  logic        sel_isram;
+  logic        sel_dsram;
+  logic        sel_sysctrl;
+  logic        sel_buffer;
+  logic        sel_sha;
+  logic        psel_uart;
+  logic        psel_qspi;
+  logic        psel_plic;
+  logic        psel_dbg;
+
+  assign clk = clk_i;
 endinterface
 
 `endif

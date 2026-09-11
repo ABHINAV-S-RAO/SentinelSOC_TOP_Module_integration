@@ -22,6 +22,14 @@ rtl/core/dift/ibex_register_file_latch_tag.sv
 # ibex native compile order
 -f rtl/core/ibex_core/rtl/ibex_core.f
 
+rtl/core/ibex_core/rtl/ibex_top.sv
+rtl/core/ibex_core/rtl/ibex_top_tracing.sv
+
+# DIFT OBI Wrapper
+rtl/obi_wrapper/dift_obi/dift_obi_pkg.sv
+rtl/obi_wrapper/dift_obi/dift_obi_ctrl.sv
+rtl/obi_wrapper/dift_obi/dift_tag_sram_shim.sv
+
 rtl/peripheral/apb_uart/io_generic_fifo.sv
 rtl/peripheral/apb_uart/uart_rx.sv
 rtl/peripheral/apb_uart/uart_tx.sv
@@ -55,13 +63,12 @@ rtl/crypto/ed25519/ED25519/ED25519.srcs/sources_1/new/SHA/sha512_msg_sched.sv
 rtl/crypto/ed25519/ED25519/ED25519.srcs/sources_1/new/SHA/sha512_padder.sv
 rtl/crypto/ed25519/ED25519/ED25519.srcs/sources_1/new/SHA/sha512_round.sv
 rtl/crypto/ed25519/ED25519/ED25519.srcs/sources_1/new/SHA/sha512_top.sv
-rtl/crypto/ed25519/ED25519/ED25519.srcs/sources_1/new/bram.sv
+
 rtl/crypto/ed25519/ED25519/ED25519.srcs/sources_1/new/reg_file.sv
 rtl/crypto/ed25519/ED25519/ED25519.srcs/sources_1/new/micro_seq.sv
 rtl/crypto/ed25519/ED25519/ED25519.srcs/sources_1/new/master_fsm.sv
 rtl/crypto/ed25519/ED25519/ED25519.srcs/sources_1/new/top_ed25519.sv
-rtl/crypto/ed25519/ED25519/ED25519.srcs/sources_1/new/top_most.sv
-rtl/crypto/ed25519/sha_ed25519_obi_wrapper.sv
+rtl/crypto/top_most.sv
 
 rtl/soc/soc_bootrom.sv
 rtl/soc/soc_sram.sv

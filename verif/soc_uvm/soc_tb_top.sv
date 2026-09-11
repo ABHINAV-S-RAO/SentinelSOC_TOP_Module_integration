@@ -114,7 +114,7 @@ module soc_tb_top;
 
     // No real flash yet -- park QSPI inputs safe/idle so an accidental
     // firmware QSPI transaction doesn't hang on X.
-    spi_sdi_i = 4'h0;
+   // spi_sdi_i = 4'h0;
   end
 
   // ---------------------------------------------------------------------------
@@ -218,6 +218,21 @@ module soc_tb_top;
     .err_o              ( data_err )
   );
 
+qspi_flash_bfm #(
+    .FLASH_SIZE(1 << 20)
+  ) u_qspi_flash_bfm (
+    .spi_clk  ( spi_clk_o     ),
+    .spi_csn0 ( spi_csn_o[0]  ), // Connect to chip select index 0
+    .spi_mode ( spi_mode_o    ),
+    .spi_sdo0 ( spi_sdo_o[0]  ),
+    .spi_sdo1 ( spi_sdo_o[1]  ),
+    .spi_sdo2 ( spi_sdo_o[2]  ),
+    .spi_sdo3 ( spi_sdo_o[3]  ),
+    .spi_sdi0 ( spi_sdi_i[0]  ),
+    .spi_sdi1 ( spi_sdi_i[1]  ),
+    .spi_sdi2 ( spi_sdi_i[2]  ),
+    .spi_sdi3 ( spi_sdi_i[3]  )
+  );
   // ---------------------------------------------------------------------------
   // Dynamic Firmware Loader Mechanism (+FIRMWARE=)
   // ---------------------------------------------------------------------------

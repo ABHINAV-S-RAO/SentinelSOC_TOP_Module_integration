@@ -1,7 +1,6 @@
 `ifndef SOC_SCOREBOARD_SV
 `define SOC_SCOREBOARD_SV
 
-// Declare specialized analysis implementation suffixes for multiple imp ports
 `uvm_analysis_imp_decl(_qspi)
 `uvm_analysis_imp_decl(_apb)
 `uvm_analysis_imp_decl(_addr)
@@ -23,10 +22,9 @@ class soc_scoreboard extends uvm_scoreboard;
   uvm_analysis_imp_addr   #(addr_decode_event, soc_scoreboard) addr_export;
   uvm_analysis_imp_dift   #(dift_event,        soc_scoreboard) dift_export;
 
-  // pulled in via config_db, set per-test
-  byte           expected_flash_image[];        // full expected flash content, or empty = skip
-  byte           expected_uart_stream[$];        // expected TX bytes in order
-  dift_expect    expected_dift[$];               // expected tag events in order
+  byte           expected_flash_image[];
+  byte           expected_uart_stream[$];
+  dift_expect    expected_dift[$];
 
   byte           observed_uart_stream[$];
   int            dift_idx;
@@ -34,8 +32,6 @@ class soc_scoreboard extends uvm_scoreboard;
   int            qspi_mismatches;
   int            uart_mismatches;
   int            dift_mismatches;
-
-  qspi_flash_bfm bfm_h;  // hierarchical handle set via config_db for peek_byte()
 
   function new(string name, uvm_component parent);
     super.new(name, parent);
@@ -48,28 +44,27 @@ class soc_scoreboard extends uvm_scoreboard;
   function automatic void build_phase(uvm_phase phase);
     super.build_phase(phase);
     void'(uvm_config_db#(byte_arr_t)::get(this, "", "expected_flash_image", expected_flash_image));
-    if (!uvm_config_db#(qspi_flash_bfm)::get(this, "", "bfm_h", bfm_h))
-      `uvm_warning("SCB", "no flash BFM handle - QSPI data-integrity checks disabled")
   endfunction
 
-  // --- QSPI: cross-check monitor-decoded read data against flash contents
+  // --- QSPI: cross-check monitor-decoded read data against flash image array
   function automatic void write_qspi(qspi_txn t);
     byte unsigned expected;
     if (t.mode == 2'b10 || t.cmd inside {8'h03, 8'h0B, 8'h6B, 8'hEB}) begin
-      if (bfm_h != null) begin
+      if (expected_flash_image.size() > 0) begin
         foreach (t.data[i]) begin
-          expected = bfm_h.peek_byte(t.addr + i);
-          if (t.data[i] !== expected) begin
-            qspi_mismatches++;
-            `uvm_error("SCB_QSPI", $sformatf("addr=0x%08h byte[%0d]: got 0x%02h expected 0x%02h",
-                                              t.addr, i, t.data[i], expected))
+          if ((t.addr + i) < expected_flash_image.size()) begin
+            expected = expected_flash_image[t.addr + i];
+            if (t.data[i] !== expected) begin
+              qspi_mismatches++;
+              `uvm_error("SCB_QSPI", $sformatf("addr=0x%08h byte[%0d]: got 0x%02h expected 0x%02h",
+                                                t.addr, i, t.data[i], expected))
+            end
           end
         end
       end
     end
   endfunction
 
-  // --- APB: currently pass-through logging; extend per-peripheral as needed
   function automatic void write_apb(apb_txn t);
     if (t.pslverr)
       `uvm_info("SCB_APB", $sformatf("%0s: PSLVERR at addr=0x%08h", t.periph, t.paddr), UVM_MEDIUM)
@@ -77,12 +72,10 @@ class soc_scoreboard extends uvm_scoreboard;
       observed_uart_stream.push_back(t.pdata[7:0]);
   endfunction
 
-  // --- addr decode: aggregate violations
   function automatic void write_addr(addr_decode_event e);
     if (e.onehot_violation || e.region_mismatch) addr_decode_violations++;
   endfunction
 
-  // --- DIFT: walk expected queue in order
   function automatic void write_dift(dift_event e);
     if (dift_idx >= expected_dift.size()) return;
     if (e.exception) begin

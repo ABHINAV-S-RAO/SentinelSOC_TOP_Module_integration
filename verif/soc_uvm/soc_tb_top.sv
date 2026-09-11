@@ -1,5 +1,51 @@
 `timescale 1ns/1ps
 
+module tb_memory_model #(
+  parameter int MEM_SIZE_WORDS = 65536 // 256 KB memory
+)(
+  input  logic        clk_i,
+  input  logic        rst_ni,
+
+  // OBI Subordinate Interface
+  input  logic        req_i,
+  output logic        gnt_o,
+  output logic        rvalid_o,
+  input  logic [31:0] addr_i,
+  input  logic        we_i,
+  input  logic [3:0]  be_i,
+  input  logic [31:0] wdata_i,
+  output logic [31:0] rdata_o,
+  output logic        err_o
+);
+
+  logic [31:0] mem [MEM_SIZE_WORDS];
+
+  assign gnt_o = req_i;
+  assign err_o = 1'b0;
+
+  always_ff @(posedge clk_i or negedge rst_ni) begin
+    if (!rst_ni) begin
+      rvalid_o <= 1'b0;
+      rdata_o  <= 32'h0;
+    end else begin
+      rvalid_o <= req_i;
+      if (req_i) begin
+        if (we_i) begin
+          if (be_i[0]) mem[addr_i[17:2]][ 7: 0] <= wdata_i[ 7: 0];
+          if (be_i[1]) mem[addr_i[17:2]][15: 8] <= wdata_i[15: 8];
+          if (be_i[2]) mem[addr_i[17:2]][23:16] <= wdata_i[23:16];
+          if (be_i[3]) mem[addr_i[17:2]][31:24] <= wdata_i[31:24];
+        end else begin
+          rdata_o <= mem[addr_i[17:2]];
+        end
+      end
+    end
+  end
+
+endmodule
+
+`timescale 1ns/1ps
+
 module soc_tb_top;
   import uvm_pkg::*;
   import soc_uvm_pkg::*;
@@ -37,19 +83,39 @@ module soc_tb_top;
   logic dift_en;
   logic crypto_verified;
 
-  logic        instr_req, instr_gnt, instr_rvalid, instr_err;
-  logic [31:0] instr_addr, instr_rdata;
-
+  // Data path -- unchanged by the restructuring
   logic        data_req, data_gnt, data_rvalid, data_err, data_we;
   logic [3:0]  data_be;
   logic [31:0] data_addr, data_wdata, data_rdata;
 
+  // BootROM export -- OBI-style, port list confirmed against basic_soc_top.sv
+  logic        bootrom_req, bootrom_gnt, bootrom_rvalid, bootrom_err, bootrom_we;
+  logic [3:0]  bootrom_be;
+  logic [31:0] bootrom_addr, bootrom_wdata, bootrom_rdata;
+
+  // ISRAM export -- OBI-style, read/write
+  logic        isram_req, isram_gnt, isram_rvalid, isram_err, isram_we;
+  logic [3:0]  isram_be;
+  logic [31:0] isram_addr, isram_wdata, isram_rdata;
+
+  // QSPI pins -- confirmed against basic_soc_top.sv. No real flash BFM yet;
+  // tied off below until one exists.
+  logic        spi_clk_o;
+  logic [3:0]  spi_csn_o;
+  logic [1:0]  spi_mode_o;
+  logic [3:0]  spi_sdo_o;
+  logic [3:0]  spi_sdi_i;
+
   string firmware_file;
 
   initial begin
-    crypto_verified = 1'b1; // Pass signature verification
+    crypto_verified = 1'b1; // Pass signature verification (secure-boot on hold)
     dift_en         = 1'b1; // Enable DIFT tracking
     uart_rx_i       = 1'b1; // Idle high
+
+    // No real flash yet -- park QSPI inputs safe/idle so an accidental
+    // firmware QSPI transaction doesn't hang on X.
+    spi_sdi_i = 4'h0;
   end
 
   // ---------------------------------------------------------------------------
@@ -65,13 +131,31 @@ module soc_tb_top;
     .uart_tx_o           ( uart_tx_o ),
     .uart_rx_i           ( uart_rx_i ),
 
-    .instr_req_o         ( instr_req ),
-    .instr_gnt_i         ( instr_gnt ),
-    .instr_rvalid_i      ( instr_rvalid ),
-    .instr_addr_o        ( instr_addr ),
-    .instr_rdata_i       ( instr_rdata ),
-    .instr_rdata_intg_i  ( 7'h0 ),
-    .instr_err_i         ( 1'b0 ),
+    .bootrom_req_o       ( bootrom_req ),
+    .bootrom_gnt_i       ( bootrom_gnt ),
+    .bootrom_rvalid_i    ( bootrom_rvalid ),
+    .bootrom_addr_o      ( bootrom_addr ),
+    .bootrom_we_o        ( bootrom_we ),
+    .bootrom_be_o        ( bootrom_be ),
+    .bootrom_wdata_o     ( bootrom_wdata ),
+    .bootrom_rdata_i     ( bootrom_rdata ),
+    .bootrom_err_i       ( bootrom_err ),
+
+    .isram_req_o         ( isram_req ),
+    .isram_gnt_i         ( isram_gnt ),
+    .isram_rvalid_i      ( isram_rvalid ),
+    .isram_addr_o        ( isram_addr ),
+    .isram_we_o          ( isram_we ),
+    .isram_be_o          ( isram_be ),
+    .isram_wdata_o       ( isram_wdata ),
+    .isram_rdata_i       ( isram_rdata ),
+    .isram_err_i         ( isram_err ),
+
+    .spi_clk_o           ( spi_clk_o ),
+    .spi_csn_o           ( spi_csn_o ),
+    .spi_mode_o          ( spi_mode_o ),
+    .spi_sdo_o           ( spi_sdo_o ),
+    .spi_sdi_i           ( spi_sdi_i ),
 
     .data_req_o          ( data_req ),
     .data_gnt_i          ( data_gnt ),
@@ -87,22 +171,40 @@ module soc_tb_top;
   // ---------------------------------------------------------------------------
   // Testbench Memory Models
   // ---------------------------------------------------------------------------
-  // Instruction Memory Model
-  tb_memory_model u_tb_instr_mem (
+  // BootROM backing memory (replaces old direct u_tb_instr_mem wiring).
+  // we_i/be_i/wdata_i wired to the DUT's real outputs rather than hardcoded
+  // -- if soc_addr_decode's write-blocking to this region ever has a bug,
+  // this will surface it instead of silently absorbing it.
+  tb_memory_model u_tb_bootrom (
     .clk_i              ( clk_i ),
     .rst_ni             ( rst_ni ),
-    .req_i              ( instr_req ),
-    .gnt_o              ( instr_gnt ),
-    .rvalid_o           ( instr_rvalid ),
-    .addr_i             ( instr_addr ),
-    .we_i               ( 1'b0 ),
-    .be_i               ( 4'hF ),
-    .wdata_i            ( 32'h0 ),
-    .rdata_o            ( instr_rdata ),
-    .err_o              ( instr_err )
+    .req_i              ( bootrom_req ),
+    .gnt_o              ( bootrom_gnt ),
+    .rvalid_o           ( bootrom_rvalid ),
+    .addr_i             ( bootrom_addr ),
+    .we_i               ( bootrom_we ),
+    .be_i               ( bootrom_be ),
+    .wdata_i            ( bootrom_wdata ),
+    .rdata_o            ( bootrom_rdata ),
+    .err_o              ( bootrom_err )
   );
 
-  // Data Memory Model
+  // ISRAM backing memory
+  tb_memory_model u_tb_isram (
+    .clk_i              ( clk_i ),
+    .rst_ni             ( rst_ni ),
+    .req_i              ( isram_req ),
+    .gnt_o              ( isram_gnt ),
+    .rvalid_o           ( isram_rvalid ),
+    .addr_i             ( isram_addr ),
+    .we_i               ( isram_we ),
+    .be_i               ( isram_be ),
+    .wdata_i            ( isram_wdata ),
+    .rdata_o            ( isram_rdata ),
+    .err_o              ( isram_err )
+  );
+
+  // Data Memory Model -- unchanged
   tb_memory_model u_tb_data_mem (
     .clk_i              ( clk_i ),
     .rst_ni             ( rst_ni ),
@@ -120,41 +222,48 @@ module soc_tb_top;
   // ---------------------------------------------------------------------------
   // Dynamic Firmware Loader Mechanism (+FIRMWARE=)
   // ---------------------------------------------------------------------------
- initial begin
-   if ($value$plusargs("FIRMWARE=%s", firmware_file)) begin
-     int fd;
-     fd = $fopen(firmware_file, "r");
-     if (fd == 0) begin
-       $fatal(1, "[TB TOP] ERROR: Firmware file '%s' could not be opened!", firmware_file);
-     end else begin
-       $fclose(fd);
-     end 
-     
-     $display("[TB TOP] Pre-zeroing instruction memory array...");
-     foreach (u_tb_instr_mem.mem[i]) begin
-       u_tb_instr_mem.mem[i] = 32'h0000_0000; // NOP (addi x0, x0, 0)
-     end
- 
-     $display("[TB TOP] Loading binary memory image: %s", firmware_file);
-     $readmemh(firmware_file, u_tb_instr_mem.mem);
-   end else begin
-     $display("[TB TOP] WARNING: No +FIRMWARE=<path.hex> plusarg supplied!");
-   end
- end
+  // Loads into BootROM, since that's what the CPU fetches from at reset via
+  // soc_addr_decode (BOOTROM = 0x0000_0000). Layer-1 direct-load testing
+  // preloads BootROM directly rather than going through a real QSPI->ISRAM
+  // copy flow -- correct for now since Layer 3 (real flash boot) isn't
+  // built yet.
+  initial begin
+    if ($value$plusargs("FIRMWARE=%s", firmware_file)) begin
+      int fd;
+      fd = $fopen(firmware_file, "r");
+      if (fd == 0) begin
+        $fatal(1, "[TB TOP] ERROR: Firmware file '%s' could not be opened!", firmware_file);
+      end else begin
+        $fclose(fd);
+      end
+
+      $display("[TB TOP] Pre-zeroing BootROM memory array...");
+      foreach (u_tb_bootrom.mem[i]) begin
+        u_tb_bootrom.mem[i] = 32'h00000013; // real NOP (addi x0, x0, 0)
+      end
+
+      $display("[TB TOP] Loading binary memory image: %s", firmware_file);
+      $readmemh(firmware_file, u_tb_bootrom.mem);
+    end else begin
+      $display("[TB TOP] WARNING: No +FIRMWARE=<path.hex> plusarg supplied!");
+    end
+  end
 
   // ---------------------------------------------------------------------------
   // Interface Probes Wiring
   // ---------------------------------------------------------------------------
-  // Instruction OBI Probes
-  assign instr_obi_if.req    = instr_req;
-  assign instr_obi_if.gnt    = instr_gnt;
-  assign instr_obi_if.rvalid = instr_rvalid;
+  // Instruction fetch is internal-only post-restructuring (routes through
+  // soc_addr_decode to BootROM/ISRAM). Probed hierarchically off u_dut,
+  // consistent with how dift_if already probes u_dut.tag_req/irq_dift below.
+  assign instr_obi_if.req    = u_dut.instr_req_int;
+  assign instr_obi_if.gnt    = u_dut.instr_gnt_int;
+  assign instr_obi_if.rvalid = u_dut.instr_rvalid_int;
   assign instr_obi_if.we     = 1'b0;
   assign instr_obi_if.be     = 4'hF;
-  assign instr_obi_if.addr   = instr_addr;
+  assign instr_obi_if.addr   = u_dut.instr_addr_int;
   assign instr_obi_if.wdata  = 32'h0;
-  assign instr_obi_if.rdata  = instr_rdata;
-  assign instr_obi_if.err    = instr_err;
+  assign instr_obi_if.rdata  = u_dut.instr_rdata_int;
+  assign instr_obi_if.err    = u_dut.instr_err_int;
 
   // Data OBI Probes
   assign data_obi_if.req    = data_req;
@@ -186,9 +295,6 @@ module soc_tb_top;
     uvm_config_db#(virtual obi_if)::set(null, "*", "instr_obi_vif", instr_obi_if);
     uvm_config_db#(virtual obi_if)::set(null, "*", "data_obi_vif",  data_obi_if);
     uvm_config_db#(virtual dift_tag_if)::set(null, "*", "dift_tag_vif", dift_if);
-    // Pass interfaces down to env/monitors
-    uvm_config_db#(virtual obi_if)::set(null, "*", "vif", u_obi_if);
-    uvm_config_db#(virtual dift_tag_if)::set(null, "*", "vif", u_dift_if);
     run_test();
   end
 

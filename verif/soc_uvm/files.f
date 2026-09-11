@@ -59,6 +59,14 @@ rtl/peripheral/apb_uart/uart_tx.sv
 rtl/peripheral/apb_uart/uart_interrupt.sv
 rtl/peripheral/apb_uart/apb_uart.sv
 
+// QSPI -- ADDED. basic_soc_top.sv now instantiates apb_spi_master as a
+// second APB peripheral (this session's restructuring); it was previously
+// only compiled under the standalone apb_qspi_tb.sv filelist and was
+// missing here entirely -- would have hard-failed elaboration.
+rtl/peripheral/apb_spi_master/spi_master_apb_if.sv
+rtl/peripheral/apb_spi_master/spi_master_controller.sv
+rtl/peripheral/apb_spi_master/apb_spi_master.sv
+
 rtl/Interrupts/plic/plic_regmap.sv
 rtl/Interrupts/plic/rv_plic_gateway.sv
 rtl/Interrupts/plic/rv_plic_target.sv
@@ -83,6 +91,14 @@ rtl/crypto/ed25519/ED25519/ED25519.srcs/sources_1/new/top_most.sv
 rtl/crypto/ed25519/sha_ed25519_obi_wrapper.sv
 
 // SoC Memories & Peripherals
+// FLAGGED, NOT REMOVED: if bootrom_*/isram_* are now exported top-level
+// ports backed externally (same pattern as the existing DSRAM export),
+// these two RTL memory macros are likely no longer instantiated inside
+// basic_soc_top.sv for simulation purposes -- soc_tb_top.sv's new
+// u_tb_bootrom/u_tb_isram TB models would be standing in for them instead.
+// Confirm against the actual basic_soc_top.sv instantiation before pruning;
+// left in place here since removing on a guess risks breaking a still-live
+// internal instantiation.
 rtl/soc/soc_bootrom.sv
 rtl/soc/soc_sram.sv
 

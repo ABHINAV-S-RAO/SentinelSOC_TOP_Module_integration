@@ -16,3 +16,4 @@ rtl/core/dift/ibex_dift_tmu.sv
 rtl/core/dift/ibex_register_file_latch_tag.sv
 
 -f rtl/core/ibex_core/rtl/ibex_core.f
+rtl/core/ibex_core/rtl/ibex_top.sv

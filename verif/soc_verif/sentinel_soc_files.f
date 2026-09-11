@@ -27,7 +27,7 @@ rtl/peripheral/apb_uart/uart_rx.sv
 rtl/peripheral/apb_uart/uart_tx.sv
 rtl/peripheral/apb_uart/uart_interrupt.sv
 rtl/peripheral/apb_uart/apb_uart.sv
-rtl/peripheral/apb_uart/apb_uart_sv.sv
+#rtl/peripheral/apb_uart/apb_uart_sv.sv
 
 # GPIO (NEW)
 rtl/peripheral/apb_gpio/rtl/apb_gpio.sv
@@ -52,7 +52,7 @@ rtl/crypto/ed25519/ED25519/ED25519.srcs/sources_1/new/micro_seq.sv
 rtl/crypto/ed25519/ED25519/ED25519.srcs/sources_1/new/master_fsm.sv
 rtl/crypto/ed25519/ED25519/ED25519.srcs/sources_1/new/top_ed25519.sv
 rtl/crypto/ed25519/ED25519/ED25519.srcs/sources_1/new/top_most.sv
-rtl/crypto/ed25519/sha_ed25519_obi_wrapper.sv
+rtl/crypto/sha_ed25519_obi_wrapper.sv
 
 rtl/soc/soc_bootrom.sv
 rtl/soc/soc_sram.sv

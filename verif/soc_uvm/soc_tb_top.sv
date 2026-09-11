@@ -44,8 +44,6 @@ module tb_memory_model #(
 
 endmodule
 
-`timescale 1ns/1ps
-
 module soc_tb_top;
   import uvm_pkg::*;
   import soc_uvm_pkg::*;

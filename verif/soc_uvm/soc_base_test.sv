@@ -19,8 +19,16 @@ class soc_base_test extends uvm_test;
   endfunction
 
   task run_phase(uvm_phase phase);
+    phase.raise_objection(this);
     // Safety watchdog timeout (10 ms) in case software gets stuck in an infinite loop
     uvm_top.set_timeout(10ms, 0);
+    `uvm_info(get_type_name(), "Simulation started. Firmware running...", UVM_LOW)
+
+    // Run for 100 us to let firmware execute and monitors collect data
+    #100us;
+
+    `uvm_info(get_type_name(), "Dropping objection to finish test.", UVM_LOW)
+    phase.drop_objection(this);
   endtask
 endclass
 

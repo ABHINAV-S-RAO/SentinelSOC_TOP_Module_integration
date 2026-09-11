@@ -6,7 +6,7 @@ package sentinel_soc_uvm_pkg;
   // Base Test
   // ---------------------------------------------------------------------------
   class sentinel_soc_base_test extends uvm_test;
-    `uvm_component_utils(sentinel_soc_base_test)
+    `uvm_component_utils(sentinel_soc_base_test);
 
     virtual sentinel_soc_if vif;
 

@@ -313,19 +313,20 @@ qspi_flash_bfm #(
   assign data_obi_if.rdata  = data_rdata;
   assign data_obi_if.err    = data_err;
 
+// Address Decode Probes mapped to top-level OBI decoder requests
   assign addr_decode_vif.addr_i       = u_dut.instr_addr_int;
   assign addr_decode_vif.is_fetch_i   = u_dut.instr_req_int;
-  assign addr_decode_vif.fsel_bootrom = u_dut.u_addr_decode.fsel_bootrom;
-  assign addr_decode_vif.fsel_isram   = u_dut.u_addr_decode.fsel_isram;
-  assign addr_decode_vif.sel_isram    = u_dut.u_addr_decode.sel_isram;
-  assign addr_decode_vif.sel_dsram    = u_dut.u_addr_decode.sel_dsram;
-  assign addr_decode_vif.sel_sysctrl  = u_dut.u_addr_decode.sel_sysctrl;
-  assign addr_decode_vif.sel_buffer   = u_dut.u_addr_decode.sel_buffer;
-  assign addr_decode_vif.sel_sha      = u_dut.u_addr_decode.sel_sha;
-  assign addr_decode_vif.psel_uart    = u_dut.u_addr_decode.psel_uart;
-  assign addr_decode_vif.psel_qspi    = u_dut.u_addr_decode.psel_qspi;
-  assign addr_decode_vif.psel_plic    = u_dut.u_addr_decode.psel_plic;
-  assign addr_decode_vif.psel_dbg     = u_dut.u_addr_decode.psel_dbg;
+  assign addr_decode_vif.fsel_bootrom = u_dut.u_soc_addr_decode.bootrom_req_o;
+  assign addr_decode_vif.fsel_isram   = u_dut.u_soc_addr_decode.isram_req_o;
+  assign addr_decode_vif.sel_isram    = u_dut.u_soc_addr_decode.isram_req_o;
+  assign addr_decode_vif.sel_dsram    = u_dut.u_soc_addr_decode.dsram_req_o;
+  assign addr_decode_vif.sel_sysctrl  = u_dut.u_soc_addr_decode.ctrl_req_o;
+  assign addr_decode_vif.sel_buffer   = u_dut.u_soc_addr_decode.buf_req_o;
+  assign addr_decode_vif.sel_sha      = u_dut.u_soc_addr_decode.sha_req_o;
+  assign addr_decode_vif.psel_uart    = 1'b0; // Handled inside APB subsystem
+  assign addr_decode_vif.psel_qspi    = 1'b0; // Handled inside APB subsystem
+  assign addr_decode_vif.psel_plic    = u_dut.u_soc_addr_decode.plic_req_o;
+  assign addr_decode_vif.psel_dbg     = u_dut.u_soc_addr_decode.dbg_req_o;
 
   assign qspi_vif.spi_clk  = spi_clk_o;
   assign qspi_vif.spi_csn0 = spi_csn_o[0];
@@ -361,7 +362,7 @@ qspi_flash_bfm #(
     uvm_config_db#(virtual addr_decode_if)::set(null, "*", "addr_decode_vif", addr_decode_vif);
     uvm_config_db#(virtual apb_if)::set(null, "*", "apb_vif", apb_vif);
     uvm_config_db#(virtual qspi_if)::set(null, "*", "qspi_vif", qspi_vif);
-    
+
     run_test();
   end
 

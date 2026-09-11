@@ -1,7 +1,7 @@
 // =============================================================================
 // Compiler & Simulation Options
 // =============================================================================
--64bit -uvm -sv -timescale 1ns/1ps -access +rwc -top soc_tb_top
+-64bit -uvm -sv -timescale 1ns/1ps -access +rwc -coverage functional -top soc_tb_top
 +define+DIFT
 
 // =============================================================================

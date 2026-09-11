@@ -363,12 +363,22 @@ qspi_flash_bfm #(
   assign dift_if.irq_dift  = u_dut.irq_dift;
 
   // Add internal ibex_core probes required by dift_tag_monitor.sv
-  assign dift_if.rf_waddr         = u_dut.u_core.rf_waddr_wb;
-  assign dift_if.rf_we_tag_lsu    = u_dut.u_core.rf_we_tag_wb;
-  assign dift_if.rf_wdata_tag_lsu = u_dut.u_core.rf_wdata_tag_wb;
-  assign dift_if.is_load          = u_dut.u_core.outstanding_load_wb;
+`ifdef DIFT
+  assign dift_if.rf_waddr         = u_dut.u_ibex_top.u_ibex_core.rf_waddr_wb;
+  assign dift_if.rf_we_tag_lsu    = u_dut.u_ibex_top.u_ibex_core.rf_we_tag_wb;
+  assign dift_if.rf_wdata_tag_lsu = u_dut.u_ibex_top.u_ibex_core.rf_wdata_tag_wb;
+  assign dift_if.is_load          = u_dut.u_ibex_top.u_ibex_core.outstanding_load_wb;
   assign dift_if.dift_exception_o = u_dut.irq_dift;
-  assign dift_if.exception_pc     = u_dut.u_core.csr_mepc;
+  assign dift_if.exception_pc     = u_dut.u_ibex_top.u_ibex_core.cs_registers_i.mepc_q;
+`else
+  // Without DIFT, tie off to safe defaults so the monitor sees no events
+  assign dift_if.rf_waddr         = '0;
+  assign dift_if.rf_we_tag_lsu    = 1'b0;
+  assign dift_if.rf_wdata_tag_lsu = 1'b0;
+  assign dift_if.is_load          = 1'b0;
+  assign dift_if.dift_exception_o = 1'b0;
+  assign dift_if.exception_pc     = '0;
+`endif
 `else
   assign dift_if.irq_dift  = 1'b0;
 `endif

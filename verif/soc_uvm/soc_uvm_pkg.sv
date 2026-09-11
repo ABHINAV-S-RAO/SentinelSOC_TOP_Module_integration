@@ -7,6 +7,7 @@ package soc_uvm_pkg;
 
   `include "obi_seq_item.sv"
   `include "dift_tag_seq_item.sv"
+  `include "qspi_txn.sv"
   `include "obi_monitor.sv"
   `include "dift_tag_monitor.sv"
   `include "sw_status_monitor.sv"
@@ -15,8 +16,10 @@ package soc_uvm_pkg;
   `include "qspi_protocol_monitor.sv"
   `include "soc_scoreboard.sv"
   `include "soc_cov.sv"
+  `include "qspi_cov.sv"  
   `include "soc_env.sv"
   `include "soc_base_test.sv"
+  `include "soc_qspi_test.sv"
 endpackage
 
 `endif

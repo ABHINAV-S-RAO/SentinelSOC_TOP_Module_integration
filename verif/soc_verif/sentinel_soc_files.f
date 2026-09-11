@@ -11,6 +11,10 @@
 rtl/core/ibex_core/rtl/ibex_pkg.sv
 rtl/core/ibex_core/rtl/ibex_tracer_pkg.sv
 
+-y rtl/core/ibex_core/vendor/lowrisc_ip/ip/prim/rtl
+-y rtl/core/ibex_core/vendor/lowrisc_ip/ip/prim_generic/rtl
++libext+.sv+.svh
+
 rtl/core/ibex_core/vendor/lowrisc_ip/ip/prim_generic/rtl/prim_clock_gating.sv
 
 # DIFT modules

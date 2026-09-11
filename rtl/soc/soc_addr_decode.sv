@@ -359,7 +359,7 @@ module soc_addr_decode #(
   data_sel_e data_sel;
 
   always_comb begin
-    if      ((data_addr_i & BOOTROM_MASK) == BOOTROM_BASE) data_sel = SEL_BOOTROM;
+    if      ((data_addr_i & BOOTROM_MASK) == BOOTROM_BASE) data_sel = SEL_ERR; // BootROM is fetch-only
     else if ((data_addr_i & ISRAM_MASK)   == ISRAM_BASE)   data_sel = SEL_ISRAM;
     else if ((data_addr_i & DSRAM_MASK)   == DSRAM_BASE)   data_sel = SEL_DSRAM;
     else if (priv_denied)                                  data_sel = SEL_ERR; // Req 1-3

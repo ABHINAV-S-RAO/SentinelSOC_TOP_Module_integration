@@ -73,6 +73,10 @@ module soc_tb_top;
   obi_if      data_obi_if  (.clk_i(clk_i), .rst_ni(rst_ni));
   dift_tag_if dift_if      (.clk_i(clk_i), .rst_ni(rst_ni));
 
+  addr_decode_if addr_decode_vif(.clk_i(clk_i), .rst_ni(rst_ni));
+  apb_if         apb_vif        (.pclk(clk_i),  .presetn(rst_ni));
+  qspi_if        qspi_vif       ();
+
   // ---------------------------------------------------------------------------
   // Signal Declarations
   // ---------------------------------------------------------------------------
@@ -309,6 +313,32 @@ qspi_flash_bfm #(
   assign data_obi_if.rdata  = data_rdata;
   assign data_obi_if.err    = data_err;
 
+  assign addr_decode_vif.addr_i       = u_dut.instr_addr_int;
+  assign addr_decode_vif.is_fetch_i   = u_dut.instr_req_int;
+  assign addr_decode_vif.fsel_bootrom = u_dut.u_addr_decode.fsel_bootrom;
+  assign addr_decode_vif.fsel_isram   = u_dut.u_addr_decode.fsel_isram;
+  assign addr_decode_vif.sel_isram    = u_dut.u_addr_decode.sel_isram;
+  assign addr_decode_vif.sel_dsram    = u_dut.u_addr_decode.sel_dsram;
+  assign addr_decode_vif.sel_sysctrl  = u_dut.u_addr_decode.sel_sysctrl;
+  assign addr_decode_vif.sel_buffer   = u_dut.u_addr_decode.sel_buffer;
+  assign addr_decode_vif.sel_sha      = u_dut.u_addr_decode.sel_sha;
+  assign addr_decode_vif.psel_uart    = u_dut.u_addr_decode.psel_uart;
+  assign addr_decode_vif.psel_qspi    = u_dut.u_addr_decode.psel_qspi;
+  assign addr_decode_vif.psel_plic    = u_dut.u_addr_decode.psel_plic;
+  assign addr_decode_vif.psel_dbg     = u_dut.u_addr_decode.psel_dbg;
+
+  assign qspi_vif.spi_clk  = spi_clk_o;
+  assign qspi_vif.spi_csn0 = spi_csn_o[0];
+  assign qspi_vif.spi_mode = spi_mode_o;
+  assign qspi_vif.spi_sdo0 = spi_sdo_o[0];
+  assign qspi_vif.spi_sdo1 = spi_sdo_o[1];
+  assign qspi_vif.spi_sdo2 = spi_sdo_o[2];
+  assign qspi_vif.spi_sdo3 = spi_sdo_o[3];
+  assign qspi_vif.spi_sdi0 = spi_sdi_i[0];
+  assign qspi_vif.spi_sdi1 = spi_sdi_i[1];
+  assign qspi_vif.spi_sdi2 = spi_sdi_i[2];
+  assign qspi_vif.spi_sdi3 = spi_sdi_i[3];
+
   // DIFT Tag Probes
 `ifdef DIFT
   assign dift_if.tag_req   = u_dut.tag_req;
@@ -328,6 +358,10 @@ qspi_flash_bfm #(
     uvm_config_db#(virtual obi_if)::set(null, "*", "instr_obi_vif", instr_obi_if);
     uvm_config_db#(virtual obi_if)::set(null, "*", "data_obi_vif",  data_obi_if);
     uvm_config_db#(virtual dift_tag_if)::set(null, "*", "dift_tag_vif", dift_if);
+    uvm_config_db#(virtual addr_decode_if)::set(null, "*", "addr_decode_vif", addr_decode_vif);
+    uvm_config_db#(virtual apb_if)::set(null, "*", "apb_vif", apb_vif);
+    uvm_config_db#(virtual qspi_if)::set(null, "*", "qspi_vif", qspi_vif);
+    
     run_test();
   end
 

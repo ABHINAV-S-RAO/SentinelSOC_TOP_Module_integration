@@ -132,6 +132,10 @@ rtl/soc/basic_soc_top.sv
 // =============================================================================
 verif/soc_uvm/interface/obi_if.sv
 verif/soc_uvm/interface/dift_tag_if.sv
+verif/soc_uvm/interface/addr_decode_if.sv
+verif/soc_uvm/interface/apb_if.sv
+verif/soc_uvm/interface/qspi_if.sv
+
 verif/soc_uvm/qspi_flash_bfm.sv
 verif/soc_uvm/soc_uvm_pkg.sv
 verif/soc_uvm/soc_tb_top.sv

@@ -19,7 +19,7 @@ endclass
 class dift_tag_monitor extends uvm_monitor;
   `uvm_component_utils(dift_tag_monitor)
 
-  virtual dift_if vif;
+  virtual dift_tag_if vif;
   // expects: clk, rf_waddr, rf_we_tag_lsu, rf_wdata_tag_lsu, is_load,
   //          dift_exception_o, exception_pc
   uvm_analysis_port #(dift_event) ap;

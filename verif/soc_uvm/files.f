@@ -1,7 +1,7 @@
 // =============================================================================
 // Compiler & Simulation Options
 // =============================================================================
--64bit -uvm -sv -timescale 1ns/1ps -access +rwc
+-64bit -uvm -sv -timescale 1ns/1ps -access +rwc -top soc_tb_top
 +define+DIFT
 
 // =============================================================================
@@ -24,6 +24,7 @@
 // Vendor & Core RTL Dependencies
 // =============================================================================
 -f verif/bender_files.f
+.bender/git/checkouts/obi-75858655e8b256db/src/obi_intf.sv
 .bender/git/checkouts/obi-75858655e8b256db/src/obi_demux.sv
 .bender/git/checkouts/obi-75858655e8b256db/src/obi_mux.sv
 // LowRISC primitive packages (MUST be compiled first)

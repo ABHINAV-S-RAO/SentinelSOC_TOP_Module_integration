@@ -107,6 +107,7 @@ module soc_tb_top;
   logic [3:0]  spi_sdi_i;
 
   string firmware_file;
+  string firmware_isram_file;
 
   initial begin
     crypto_verified = 1'b1; // Pass signature verification (secure-boot on hold)
@@ -246,6 +247,25 @@ module soc_tb_top;
       $readmemh(firmware_file, u_tb_bootrom.mem);
     end else begin
       $display("[TB TOP] WARNING: No +FIRMWARE=<path.hex> plusarg supplied!");
+    end
+    if ($value$plusargs("FIRMWARE_ISRAM=%s", firmware_isram_file)) begin
+      int fd_isram;
+      fd_isram = $fopen(firmware_isram_file, "r");
+      if (fd_isram == 0) begin
+        $fatal(1, "[TB TOP] ERROR: ISRAM Firmware file '%s' could not be opened!", firmware_isram_file);
+      end else begin
+        $fclose(fd_isram);
+      end
+
+      $display("[TB TOP] Pre-zeroing ISRAM memory array...");
+      foreach (u_tb_isram.mem[i]) begin
+        u_tb_isram.mem[i] = 32'h00000000;
+      end
+
+      $display("[TB TOP] Loading ISRAM memory image: %s", firmware_isram_file);
+      $readmemh(firmware_isram_file, u_tb_isram.mem);
+    end else begin
+      $display("[TB TOP] WARNING: No +FIRMWARE_ISRAM=<path.hex> plusarg supplied!");
     end
   end
 

@@ -24,6 +24,7 @@ rtl/core/dift/ibex_register_file_latch_tag.sv
 
 rtl/core/ibex_core/vendor/lowrisc_ip/ip/prim_generic/rtl/prim_pkg.sv
 rtl/core/ibex_core/vendor/lowrisc_ip/ip/prim_generic/rtl/prim_ram_1p_pkg.sv
+rtl/core/ibex_core/vendor/lowrisc_ip/ip/prim/rtl/prim_secded_pkg.sv
 
 rtl/core/ibex_core/rtl/ibex_top.sv
 rtl/core/ibex_core/rtl/ibex_top_tracing.sv

@@ -46,7 +46,7 @@ class qspi_protocol_monitor extends uvm_monitor;
 
   function void build_phase(uvm_phase phase);
     super.build_phase(phase);
-    if (!uvm_config_db#(virtual qspi_if)::get(this, "", "vif", vif))
+    if (!uvm_config_db#(virtual qspi_if)::get(this, "", "qspi_vif", vif))
       `uvm_fatal("QSPI_MON", "vif not set — connect qspi_if in soc_env")
   endfunction
 

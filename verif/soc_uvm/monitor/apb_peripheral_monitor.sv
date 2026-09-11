@@ -36,7 +36,7 @@ class apb_periph_monitor extends uvm_monitor;
 
   function void build_phase(uvm_phase phase);
     super.build_phase(phase);
-    if (!uvm_config_db#(virtual apb_if)::get(this, "", "vif", vif))
+    if (!uvm_config_db#(virtual apb_if)::get(this, "", "apb_vif", vif))
       `uvm_fatal("APB_MON", "vif not set")
     if (!uvm_config_db#(string)::get(this, "", "periph_name", periph_name))
       periph_name = "UNKNOWN";

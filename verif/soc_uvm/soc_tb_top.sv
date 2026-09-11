@@ -119,6 +119,9 @@ module soc_tb_top;
     // No real flash yet -- park QSPI inputs safe/idle so an accidental
     // firmware QSPI transaction doesn't hang on X.
    // spi_sdi_i = 4'h0;
+
+   // Seed the tag for DIFT test
+   u_dut.tag_mem[0] = 1'b1;
   end
 
   // ---------------------------------------------------------------------------

@@ -10,7 +10,7 @@
  */
 MEMORY
 {
-  BOOTROM (rx)  : ORIGIN = 0x00000000, LENGTH = 0x10000   /* 64KB, matches soc_addr_decode BOOTROM region */
+  BOOTROM (rx)  : ORIGIN = 0x00000080, LENGTH = 0xFF80   /* 64KB, minus 0x80 reset vector offset */
   ISRAM   (rwx) : ORIGIN = 0x00010000, LENGTH = 0x10000   /* 64KB, matches soc_addr_decode ISRAM region */
 }
 

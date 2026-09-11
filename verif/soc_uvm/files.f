@@ -63,6 +63,12 @@ rtl/peripheral/apb_uart/apb_uart.sv
 // second APB peripheral (this session's restructuring); it was previously
 // only compiled under the standalone apb_qspi_tb.sv filelist and was
 // missing here entirely -- would have hard-failed elaboration.
+// Leaf submodules first -- apb_spi_master.sv/spi_master_controller.sv
+// instantiate these directly (confirmed via elaboration error + `find`).
+rtl/peripheral/apb_spi_master/spi_master_fifo.sv
+rtl/peripheral/apb_spi_master/spi_master_clkgen.sv
+rtl/peripheral/apb_spi_master/spi_master_tx.sv
+rtl/peripheral/apb_spi_master/spi_master_rx.sv
 rtl/peripheral/apb_spi_master/spi_master_apb_if.sv
 rtl/peripheral/apb_spi_master/spi_master_controller.sv
 rtl/peripheral/apb_spi_master/apb_spi_master.sv

@@ -7,7 +7,7 @@ class qspi_cov extends uvm_subscriber #(qspi_txn);
     option.per_instance = 1;
 
     // SPI Command Opcodes
-    cmd_cp: coverpoint txn.opcode {
+    cmd_cp: coverpoint txn.cmd {
       bins read_id    = {8'h9F};
       bins read_std   = {8'h03};
       bins read_fast  = {8'h0B};
@@ -18,25 +18,14 @@ class qspi_cov extends uvm_subscriber #(qspi_txn);
     }
 
     // Bus Width Modes
-    mode_cp: coverpoint txn.bus_mode {
+    mode_cp: coverpoint txn.mode {
       bins single_spi = {2'b00};
-      bins dual_spi   = {2'b01};
-      bins quad_spi   = {2'b10};
-    }
-
-    // Clock Prescaler Settings
-    clk_div_cp: coverpoint txn.clk_divider {
-      bins div2  = {3'd1};
-      bins div4  = {3'd2};
-      bins div8  = {3'd4};
-      bins div16 = {3'd8};
+      bins quad_tx    = {2'b01};
+      bins quad_rx    = {2'b10};
     }
 
     // Cross Coverage: Bus Mode vs Command
     mode_x_cmd: cross mode_cp, cmd_cp;
-
-    // Cross Coverage: Clock Prescaler vs Bus Mode
-    clk_x_mode: cross clk_div_cp, mode_cp;
   endgroup
 
   function new(string name, uvm_component parent);

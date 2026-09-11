@@ -100,16 +100,7 @@ rtl/soc/soc_bootrom.sv
 rtl/soc/soc_sram.sv
 rtl/crypto/otp.sv
 
-rtl/riscv-dbg/src/dm_pkg.sv
-rtl/riscv-dbg/src/dm_mem.sv
-rtl/riscv-dbg/src/dm_csrs.sv
-rtl/riscv-dbg/src/dm_sba.sv
-rtl/riscv-dbg/src/dm_obi_top.sv
-rtl/riscv-dbg/src/dm_top.sv
-rtl/riscv-dbg/src/dmi_cdc.sv
-rtl/riscv-dbg/src/dmi_jtag_tap.sv
-rtl/riscv-dbg/src/dmi_jtag.sv
-rtl/riscv-dbg/src/dmi_intf.sv
+
 
 rtl/soc/soc_addr_decode.sv
 rtl/soc/soc_ctrl_regs.sv

@@ -1,77 +1,147 @@
 `ifndef SOC_SCOREBOARD_SV
 `define SOC_SCOREBOARD_SV
 
-import uvm_pkg::*;
-`include "uvm_macros.svh"
+// Replaces the transaction-counting stub. Each test_all.s variant loads a
+// matching expected-value config into this scoreboard via config_db before
+// run_phase (see soc_env.sv / individual uvm_test classes). This scoreboard
+// does not generate stimulus — firmware does. It only judges what firmware
+// produced against what the test author said it should produce.
+//
+// Four independent checks, each with its own pass/fail, so a QSPI bug and
+// a DIFT bug in the same run don't hide behind each other:
+//   1. QSPI read data vs. flash contents (via qspi_flash_bfm.peek_byte)
+//   2. UART TX byte stream vs. expected string
+//   3. DIFT tag transitions vs. expected propagation table
+//   4. addr_decode violations, aggregated from addr_decode_monitor
+//
+// Existing sentinel-code pass/fail at DSRAM_BASE+0x8 (TEST_PASS_CODE /
+// TEST_FAIL_CODE) still drives UVM objection drop in sw_status_monitor.sv
+// as before — that's unchanged and still the "did firmware think it
+// passed" signal. This scoreboard is the independent "did it actually
+// happen correctly" signal, and both should agree at end of test.
 
-`uvm_analysis_imp_decl(_data_obi)
-`uvm_analysis_imp_decl(_dift_tag)
+class dift_expect;
+  bit [4:0]  rf_addr;
+  bit        expected_tag;
+  bit        expect_exception;
+endclass
 
 class soc_scoreboard extends uvm_scoreboard;
   `uvm_component_utils(soc_scoreboard)
 
-  uvm_analysis_imp_data_obi #(obi_seq_item, soc_scoreboard)      data_obi_imp;
-  uvm_analysis_imp_dift_tag #(dift_tag_seq_item, soc_scoreboard) dift_tag_imp;
+  uvm_analysis_imp_qspi   #(qspi_txn,          soc_scoreboard) qspi_export;
+  uvm_analysis_imp_apb    #(apb_txn,           soc_scoreboard) apb_export;
+  uvm_analysis_imp_addr   #(addr_decode_event, soc_scoreboard) addr_export;
+  uvm_analysis_imp_dift   #(dift_event,        soc_scoreboard) dift_export;
 
-  // Shadow memory model for 1-bit DIFT metadata tags (Key: Word Address)
-  bit shadow_tag_mem[bit [31:0]];
+  // pulled in via config_db, set per-test
+  byte           expected_flash_image[];        // full expected flash content, or empty = skip
+  byte           expected_uart_stream[$];        // expected TX bytes in order
+  dift_expect    expected_dift[$];               // expected tag events in order
 
-  int unsigned total_data_reads   = 0;
-  int unsigned total_data_writes  = 0;
-  int unsigned total_dift_tag_ops = 0;
-  int unsigned total_dift_alerts  = 0;
+  byte           observed_uart_stream[$];
+  int            dift_idx;
+  int            addr_decode_violations;
+  int            qspi_mismatches;
+  int            uart_mismatches;
+  int            dift_mismatches;
+
+  qspi_flash_bfm bfm_h;  // hierarchical handle set via config_db for peek_byte()
 
   function new(string name, uvm_component parent);
     super.new(name, parent);
-    data_obi_imp = new("data_obi_imp", this);
-    dift_tag_imp = new("dift_tag_imp", this);
+    qspi_export = new("qspi_export", this);
+    apb_export  = new("apb_export", this);
+    addr_export = new("addr_export", this);
+    dift_export = new("dift_export", this);
   endfunction
 
-  // Handle Data OBI transactions (CPU load/store operations)
-  function void write_data_obi(obi_seq_item item);
-    if (item.we == OBI_WRITE) begin
-      total_data_writes++;
-      `uvm_info("SCB_DATA", $sformatf("Data WRITE | Addr: 0x%0h | Data: 0x%0h", item.addr, item.wdata), UVM_HIGH)
-    end else begin
-      total_data_reads++;
-      `uvm_info("SCB_DATA", $sformatf("Data READ  | Addr: 0x%0h | Data: 0x%0h", item.addr, item.rdata), UVM_HIGH)
-    end
+  function void build_phase(uvm_phase phase);
+    super.build_phase(phase);
+    void'(uvm_config_db#(byte[])::get(this, "", "expected_flash_image", expected_flash_image));
+    // expected_uart_stream / expected_dift pushed by the test class directly
+    // via a handle grab, since queues of class objects don't marshal well
+    // through config_db by value.
+    if (!uvm_config_db#(qspi_flash_bfm)::get(this, "", "bfm_h", bfm_h))
+      `uvm_warning("SCB", "no flash BFM handle — QSPI data-integrity checks disabled")
   endfunction
 
-  // Handle DIFT Tag operations and policy checking
-  function void write_dift_tag(dift_tag_seq_item item);
-    total_dift_tag_ops++;
-
-    // Track DIFT Exception Interrupts
-    if (item.irq_dift) begin
-      total_dift_alerts++;
-      `uvm_warning("SCB_DIFT", $sformatf("DIFT Security Violation Alert Asserted! Addr: 0x%0h", item.tag_addr))
-    end
-
-    // Track/Check Shadow-RAM Taints
-    if (item.tag_we) begin
-      shadow_tag_mem[item.tag_addr] = item.tag_wdata[0];
-      `uvm_info("SCB_DIFT", $sformatf("DIFT Tag WRITE | Addr: 0x%0h | Tag: %0b", item.tag_addr, item.tag_wdata[0]), UVM_HIGH)
-    end else begin
-      if (shadow_tag_mem.exists(item.tag_addr)) begin
-        bit expected_tag = shadow_tag_mem[item.tag_addr];
-        if (item.tag_rdata[0] !== expected_tag) begin
-          `uvm_error("SCB_DIFT", $sformatf("DIFT Tag Mismatch at 0x%0h! Exp: %0b, Got: %0b",
-                                         item.tag_addr, expected_tag, item.tag_rdata[0]))
+  // --- QSPI: cross-check monitor-decoded read data against flash contents
+  function void write_qspi(qspi_txn t);
+    if (t.mode == 2'b10 || t.cmd inside {8'h03, 8'h0B, 8'h6B, 8'hEB}) begin // read-family opcodes; TODO confirm actual opcode map
+      if (bfm_h != null) begin
+        foreach (t.data[i]) begin
+          byte unsigned expected = bfm_h.peek_byte(t.addr + i);
+          if (t.data[i] !== expected) begin
+            qspi_mismatches++;
+            `uvm_error("SCB_QSPI", $sformatf("addr=0x%08h byte[%0d]: got 0x%02h expected 0x%02h",
+                                              t.addr, i, t.data[i], expected))
+          end
         end
       end
     end
   endfunction
 
-  function void report_phase(uvm_phase phase);
-    super.report_phase(phase);
-    `uvm_info("SCB_REPORT", "==================================================", UVM_LOW)
-    `uvm_info("SCB_REPORT", $sformatf("Total Data Read Trans  : %0d", total_data_reads), UVM_LOW)
-    `uvm_info("SCB_REPORT", $sformatf("Total Data Write Trans : %0d", total_data_writes), UVM_LOW)
-    `uvm_info("SCB_REPORT", $sformatf("Total DIFT Tag Ops     : %0d", total_dift_tag_ops), UVM_LOW)
-    `uvm_info("SCB_REPORT", $sformatf("Total DIFT Violations  : %0d", total_dift_alerts), UVM_LOW)
-    `uvm_info("SCB_REPORT", "==================================================", UVM_LOW)
+  // --- APB: currently pass-through logging; extend per-peripheral as needed
+  function void write_apb(apb_txn t);
+    if (t.pslverr)
+      `uvm_info("SCB_APB", $sformatf("%0s: PSLVERR at addr=0x%08h", t.periph, t.paddr), UVM_MEDIUM)
+    if (t.periph == "UART" && t.write && t.paddr[2:0] == 3'h0) // THR offset per session notes
+      observed_uart_stream.push_back(t.pdata[7:0]);
   endfunction
+
+  // --- addr decode: just aggregate, monitor already flags via uvm_error
+  function void write_addr(addr_decode_event e);
+    if (e.onehot_violation || e.region_mismatch) addr_decode_violations++;
+  endfunction
+
+  // --- DIFT: walk expected queue in order, tolerate exception events
+  // interrupting the normal sequence (an exception ends the propagation
+  // chain early by design)
+  function void write_dift(dift_event e);
+    if (dift_idx >= expected_dift.size()) return;
+    if (e.exception) begin
+      if (!expected_dift[dift_idx].expect_exception) begin
+        dift_mismatches++;
+        `uvm_error("SCB_DIFT", $sformatf("unexpected exception at pc=0x%08h (event #%0d)",
+                                          e.exception_pc, dift_idx))
+      end
+      dift_idx++;
+      return;
+    end
+    if (e.rf_addr != expected_dift[dift_idx].rf_addr ||
+        e.tag_in  != expected_dift[dift_idx].expected_tag) begin
+      dift_mismatches++;
+      `uvm_error("SCB_DIFT", $sformatf("event #%0d: rf_addr=%0d tag=%0b, expected rf_addr=%0d tag=%0b",
+                 dift_idx, e.rf_addr, e.tag_in,
+                 expected_dift[dift_idx].rf_addr, expected_dift[dift_idx].expected_tag))
+    end
+    dift_idx++;
+  endfunction
+
+  function void check_phase(uvm_phase phase);
+    super.check_phase(phase);
+    if (observed_uart_stream.size() != expected_uart_stream.size()) begin
+      uart_mismatches++;
+      `uvm_error("SCB_UART", $sformatf("length mismatch: got %0d bytes, expected %0d",
+                 observed_uart_stream.size(), expected_uart_stream.size()))
+    end else begin
+      foreach (observed_uart_stream[i])
+        if (observed_uart_stream[i] != expected_uart_stream[i]) begin
+          uart_mismatches++;
+          `uvm_error("SCB_UART", $sformatf("byte[%0d]: got 0x%02h expected 0x%02h",
+                     i, observed_uart_stream[i], expected_uart_stream[i]))
+        end
+    end
+    if (dift_idx < expected_dift.size())
+      `uvm_error("SCB_DIFT", $sformatf("only %0d/%0d expected DIFT events observed",
+                 dift_idx, expected_dift.size()))
+
+    `uvm_info("SCB_SUMMARY", $sformatf(
+      "qspi_mismatches=%0d uart_mismatches=%0d dift_mismatches=%0d addr_decode_violations=%0d",
+      qspi_mismatches, uart_mismatches, dift_mismatches, addr_decode_violations), UVM_LOW)
+  endfunction
+
 endclass
 
 `endif

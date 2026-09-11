@@ -11,10 +11,23 @@
 rtl/core/ibex_core/rtl/ibex_pkg.sv
 rtl/core/ibex_core/rtl/ibex_tracer_pkg.sv
 
+# -------------------------------------------------------
+# lowRISC prim packages (must come before ibex_core.f)
+# These are packages (not modules), so -y cannot auto-find them.
+# -------------------------------------------------------
+rtl/core/ibex_core/vendor/lowrisc_ip/ip/prim_generic/rtl/prim_pkg.sv
+rtl/core/ibex_core/vendor/lowrisc_ip/ip/prim_generic/rtl/prim_ram_1p_pkg.sv
+rtl/core/ibex_core/vendor/lowrisc_ip/ip/prim/rtl/prim_count_pkg.sv
+rtl/core/ibex_core/vendor/lowrisc_ip/ip/prim/rtl/prim_util_pkg.sv
+rtl/core/ibex_core/vendor/lowrisc_ip/ip/prim/rtl/prim_mubi_pkg.sv
+rtl/core/ibex_core/vendor/lowrisc_ip/ip/prim/rtl/prim_secded_pkg.sv
+
+# -y lets elaborator auto-resolve prim_buf, prim_flop, prim_ram_1p etc.
 -y rtl/core/ibex_core/vendor/lowrisc_ip/ip/prim/rtl
 -y rtl/core/ibex_core/vendor/lowrisc_ip/ip/prim_generic/rtl
 +libext+.sv+.svh
 
+# Explicit module needed for clock gating (generic implementation)
 rtl/core/ibex_core/vendor/lowrisc_ip/ip/prim_generic/rtl/prim_clock_gating.sv
 
 # DIFT modules
@@ -23,13 +36,10 @@ rtl/core/dift/ibex_dift_mem.sv
 rtl/core/dift/ibex_dift_tmu.sv
 rtl/core/dift/ibex_register_file_latch_tag.sv
 
-# ibex native compile order
+# ibex core compile order
 -f rtl/core/ibex_core/rtl/ibex_core.f
 
-rtl/core/ibex_core/vendor/lowrisc_ip/ip/prim_generic/rtl/prim_pkg.sv
-rtl/core/ibex_core/vendor/lowrisc_ip/ip/prim_generic/rtl/prim_ram_1p_pkg.sv
-rtl/core/ibex_core/vendor/lowrisc_ip/ip/prim/rtl/prim_secded_pkg.sv
-
+# ibex top-level (wraps ibex_core, uses prim_buf, prim_flop, prim_ram_1p_scr etc.)
 rtl/core/ibex_core/rtl/ibex_top.sv
 rtl/core/ibex_core/rtl/ibex_top_tracing.sv
 

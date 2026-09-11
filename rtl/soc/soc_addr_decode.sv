@@ -364,10 +364,10 @@ module soc_addr_decode #(
     else if ((data_addr_i & DSRAM_MASK)   == DSRAM_BASE)   data_sel = SEL_DSRAM;
     else if (priv_denied)                                  data_sel = SEL_ERR; // Req 1-3
     else if ((data_addr_i & CTRL_MASK)    == CTRL_BASE)    data_sel = SEL_CTRL;
-    else if ((data_addr_i & BUF_MASK)     == BUF_BASE)     data_sel = SEL_BUF;
-    else if ((data_addr_i & SHA_MASK)     == SHA_BASE)     data_sel = SEL_SHA;
-    else if ((data_addr_i & PLIC_MASK) == PLIC_BASE) data_sel = SEL_PLIC;
-    else if ((data_addr_i & DBG_MASK)     == DBG_BASE)     data_sel = SEL_DBG;
+    else if ((data_addr_i & BUF_MASK)     == BUF_BASE)     data_sel = SEL_ERR; // BUF unimplemented
+    else if ((data_addr_i & SHA_MASK)     == SHA_BASE)     data_sel = SEL_ERR; // SHA unimplemented
+    else if ((data_addr_i & PLIC_MASK) == PLIC_BASE)       data_sel = SEL_ERR; // PLIC unimplemented
+    else if ((data_addr_i & DBG_MASK)     == DBG_BASE)     data_sel = SEL_ERR; // DBG unimplemented
     else if ((data_addr_i & APB_MASK)     == APB_BASE)     data_sel = SEL_APB;
     else                                                    data_sel = SEL_ERR;
   end

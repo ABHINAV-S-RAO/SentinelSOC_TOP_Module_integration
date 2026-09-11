@@ -31,7 +31,7 @@ class dift_tag_monitor extends uvm_monitor;
 
   function void build_phase(uvm_phase phase);
     super.build_phase(phase);
-    if (!uvm_config_db#(virtual dift_if)::get(this, "", "vif", vif))
+    if (!uvm_config_db#(virtual dift_tag_if)::get(this, "", "vif", vif))
       `uvm_fatal("DIFT_MON", "vif not set")
   endfunction
 

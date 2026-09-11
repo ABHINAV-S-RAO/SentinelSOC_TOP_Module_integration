@@ -1,30 +1,16 @@
-`ifndef SOC_ENV_SV
-`define SOC_ENV_SV
-
-// Wires monitors -> scoreboard + coverage. sw_status_monitor.sv and
-// soc_addr_decode's virtual interfaces are assumed already bound in
-// soc_tb_top.sv (per session notes) — this env only ADDS the four new
-// monitors and the scoreboard/coverage upgrade, it doesn't replace your
-// existing objection-drop flow.
-//
-// vif binding: qspi_if / apb_if / addr_decode_if / dift_if are thin
-// interfaces you'll need to declare and instantiate in soc_tb_top.sv,
-// wired to the actual DUT nets (spi_*, paddr/psel_* per peripheral,
-// soc_addr_decode's select outputs, and the DIFT tag path signals flagged
-// as currently-unwired in the session notes — that wiring gap has to close
-// before dift_tag_monitor sees anything but zeros).
-
 class soc_env extends uvm_env;
   `uvm_component_utils(soc_env)
 
-  qspi_protocol_monitor qspi_mon;
-  apb_periph_monitor    apb_mon_uart;
-  apb_periph_monitor    apb_mon_qspi;
-  apb_periph_monitor    apb_mon_sysctrl;
-  addr_decode_monitor   addr_mon;
-  dift_tag_monitor      dift_mon;
-  soc_scoreboard        scb;
-  soc_coverage          cov;
+  obi_monitor            instr_mon;
+  obi_monitor            data_mon;
+  qspi_protocol_monitor  qspi_mon;
+  apb_periph_monitor     apb_mon_uart;
+  apb_periph_monitor     apb_mon_qspi;
+  apb_periph_monitor     apb_mon_sysctrl;
+  addr_decode_monitor    addr_mon;
+  dift_tag_monitor       dift_mon;
+  soc_scoreboard         scb;
+  soc_coverage           cov;
 
   function new(string name, uvm_component parent);
     super.new(name, parent);
@@ -32,6 +18,11 @@ class soc_env extends uvm_env;
 
   function void build_phase(uvm_phase phase);
     super.build_phase(phase);
+    uvm_config_db#(string)::set(this, "instr_mon", "vif_name", "instr_obi_vif");
+    uvm_config_db#(string)::set(this, "data_mon",  "vif_name", "data_obi_vif");
+
+    instr_mon       = obi_monitor::type_id::create("instr_mon", this);
+    data_mon        = obi_monitor::type_id::create("data_mon", this);
     qspi_mon        = qspi_protocol_monitor::type_id::create("qspi_mon", this);
     addr_mon        = addr_decode_monitor::type_id::create("addr_mon", this);
     dift_mon        = dift_tag_monitor::type_id::create("dift_mon", this);
@@ -48,6 +39,7 @@ class soc_env extends uvm_env;
 
   function void connect_phase(uvm_phase phase);
     super.connect_phase(phase);
+    data_mon.ap.connect(scb.data_obi_imp);
     qspi_mon.ap.connect(scb.qspi_export);
     qspi_mon.ap.connect(cov.qspi_imp);
     addr_mon.ap.connect(scb.addr_export);
@@ -61,5 +53,3 @@ class soc_env extends uvm_env;
   endfunction
 
 endclass
-
-`endif

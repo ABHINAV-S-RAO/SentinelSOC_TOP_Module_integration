@@ -2,10 +2,6 @@
     path = rtl/peripheral/apb_spi_master
     url = https://github.com
 
-[submodule "rtl/peripheral/apb_uart"]
-    path = rtl/peripheral/apb_uart
-    url = https://github.com
-
 [submodule "rtl/peripheral/apb_gpio"]
     path = rtl/peripheral/apb_gpio
     url = https://github.com

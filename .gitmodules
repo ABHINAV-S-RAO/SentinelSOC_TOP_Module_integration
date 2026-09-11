@@ -1,7 +1,7 @@
 [submodule "rtl/peripheral/apb_spi_master"]
     path = rtl/peripheral/apb_spi_master
-    url = https://github.com
+    url = https://github.com/pulp-platform/apb_spi_master.git
 
 [submodule "rtl/peripheral/apb_gpio"]
     path = rtl/peripheral/apb_gpio
-    url = https://github.com
+    url = https://github.com/pulp-platform/apb_gpio.git

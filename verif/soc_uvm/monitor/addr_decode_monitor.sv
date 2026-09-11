@@ -15,17 +15,49 @@
 //      selected -> silent hang, which is exactly Bug #2 you already hit
 //      once with BOOTROM/data-side).
 
+typedef enum int {
+  REGION_BOOTROM  = 0,
+  REGION_ISRAM    = 1,
+  REGION_DSRAM    = 2,
+  REGION_SYS_CTRL = 3,
+  REGION_BUFFER   = 4,
+  REGION_SHA512   = 5,
+  REGION_UART     = 6,
+  REGION_QSPI     = 7,
+  REGION_PLIC     = 8,
+  REGION_DBG      = 9,
+  REGION_UNMAPPED  = 10
+} region_e;
+
 class addr_decode_event extends uvm_sequence_item;
   `uvm_object_utils(addr_decode_event)
   bit [31:0] addr;
   bit        is_fetch;
   string     expected_region;
   string     actual_region;    // "" if nothing selected
+  region_e   region_id;        // integral version for coverpoints
   bit        onehot_violation;
   bit        region_mismatch;
 
   function new(string name = "addr_decode_event");
     super.new(name);
+  endfunction
+
+  // Call after setting actual_region to populate region_id
+  function void set_region_id();
+    case (actual_region)
+      "BOOTROM"  : region_id = REGION_BOOTROM;
+      "ISRAM"    : region_id = REGION_ISRAM;
+      "DSRAM"    : region_id = REGION_DSRAM;
+      "SYS_CTRL" : region_id = REGION_SYS_CTRL;
+      "BUFFER"   : region_id = REGION_BUFFER;
+      "SHA512"   : region_id = REGION_SHA512;
+      "UART"     : region_id = REGION_UART;
+      "QSPI"     : region_id = REGION_QSPI;
+      "PLIC"     : region_id = REGION_PLIC;
+      "DBG"      : region_id = REGION_DBG;
+      default    : region_id = REGION_UNMAPPED;
+    endcase
   endfunction
 endclass
 
@@ -106,6 +138,7 @@ class addr_decode_monitor extends uvm_monitor;
         `uvm_error("ADDR_MON", $sformatf("addr=0x%08h fetch=%0b expected=%s actual=%s",
                                           e.addr, e.is_fetch, e.expected_region, e.actual_region))
 
+      e.set_region_id();
       ap.write(e);
     end
   endtask

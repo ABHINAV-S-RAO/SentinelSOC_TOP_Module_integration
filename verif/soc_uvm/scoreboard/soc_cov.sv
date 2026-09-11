@@ -24,8 +24,10 @@ class soc_coverage extends uvm_component;
   // -- address decoder: every region, plus every region's boundary bytes
   covergroup addr_cg;
     option.per_instance = 1;
-    region: coverpoint a_ev.actual_region {
-      bins regions[] = {"BOOTROM","ISRAM","DSRAM","SYS_CTRL","BUFFER","SHA512","UART","QSPI","PLIC","DBG","UNMAPPED"};
+    region: coverpoint a_ev.region_id {
+      bins regions[] = {REGION_BOOTROM, REGION_ISRAM, REGION_DSRAM, REGION_SYS_CTRL,
+                        REGION_BUFFER, REGION_SHA512, REGION_UART, REGION_QSPI,
+                        REGION_PLIC, REGION_DBG, REGION_UNMAPPED};
     }
     fetch: coverpoint a_ev.is_fetch;
     boundary: coverpoint a_ev.addr {

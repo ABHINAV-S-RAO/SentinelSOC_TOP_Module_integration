@@ -326,10 +326,20 @@ qspi_flash_bfm #(
   assign addr_decode_vif.sel_sysctrl  = u_dut.u_soc_addr_decode.ctrl_req_o;
   assign addr_decode_vif.sel_buffer   = u_dut.u_soc_addr_decode.buf_req_o;
   assign addr_decode_vif.sel_sha      = u_dut.u_soc_addr_decode.sha_req_o;
-  assign addr_decode_vif.psel_uart    = 1'b0; // Handled inside APB subsystem
-  assign addr_decode_vif.psel_qspi    = 1'b0; // Handled inside APB subsystem
+  assign addr_decode_vif.psel_uart    = u_dut.psel_uart;  // driven inside basic_soc_top
+  assign addr_decode_vif.psel_qspi    = u_dut.psel_qspi;
   assign addr_decode_vif.psel_plic    = u_dut.u_soc_addr_decode.plic_req_o;
   assign addr_decode_vif.psel_dbg     = u_dut.u_soc_addr_decode.dbg_req_o;
+
+  // APB interface probes — wired to internal APB req/rsp struct
+  assign apb_vif.psel    = u_dut.psel_uart | u_dut.psel_qspi;
+  assign apb_vif.penable = u_dut.apb_req_struct.penable;
+  assign apb_vif.pwrite  = u_dut.apb_req_struct.pwrite;
+  assign apb_vif.paddr   = u_dut.apb_req_struct.paddr;
+  assign apb_vif.pwdata  = u_dut.apb_req_struct.pwdata;
+  assign apb_vif.prdata  = u_dut.apb_rsp_struct.prdata;
+  assign apb_vif.pready  = u_dut.apb_rsp_struct.pready;
+  assign apb_vif.pslverr = u_dut.apb_rsp_struct.pslverr;
 
   assign qspi_vif.spi_clk  = spi_clk_o;
   assign qspi_vif.spi_csn0 = spi_csn_o[0];

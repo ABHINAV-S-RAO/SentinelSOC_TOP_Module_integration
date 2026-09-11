@@ -11,8 +11,8 @@
 .equ DSRAM_BASE,    0x00020000
 .equ SENTINEL_ADDR, 0x00020008  # Pass/Fail code checked by sw_status_monitor
 .equ UART_BASE,     0x10000000  # APB UART Base
-.equ UART_THR,      0x00000000  # Transmit Holding Register
-.equ UART_LSR,      0x00000014  # Line Status Register (Offset 5 x 4)
+.equ UART_THR,      0x00000000  # Transmit Holding Register (byte offset 0)
+.equ UART_LSR,      0x00000005  # Line Status Register (byte offset 5, PADDR[2:0]=5)
 .equ QSPI_BASE,     0x10001000  # APB QSPI Master Base
 
 .equ TEST_PASS_CODE, 0xDEADBEEF

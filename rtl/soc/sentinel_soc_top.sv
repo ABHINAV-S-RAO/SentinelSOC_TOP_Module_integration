@@ -805,26 +805,28 @@ soc_addr_decode #(
   logic [31:0] otp_data;
   logic        crypto_boot_active;
 
-  sha_ed25519_obi_wrapper u_crypto (
-    .clk_i             (clk_i),
-    .rst_ni            (rst_ni),
+  top_most u_crypto (
+    .clk               (clk_i),
+    .rst_n             (rst_ni),
 
     // CSR slave port
-    .req_i             (buf_req),
-    .we_i              (buf_we),
-    .be_i              (buf_be),
-    .addr_i            (buf_addr),
-    .wdata_i           (buf_wdata),
-    .gnt_o             (buf_gnt),
-    .rvalid_o          (buf_rvalid),
-    .rdata_o           (buf_rdata),
-    .err_o             (buf_err),
+    .csr_req_i         (buf_req),
+    .csr_we_i          (buf_we),
+    .csr_be_i          (buf_be),
+    .csr_addr_i        (buf_addr),
+    .csr_wdata_i       (buf_wdata),
+    .csr_gnt_o         (buf_gnt),
+    .csr_rvalid_o      (buf_rvalid),
+    .csr_rdata_o       (buf_rdata),
+    .csr_err_o         (buf_err),
 
     .start_verify_i    (sha_start),
     .otp_addr_o        (otp_addr),
     .otp_rd_en_o       (otp_rd_en),
     .otp_data_i        (otp_data),
-    .boot_active_o     (crypto_boot_active)
+    .boot_active_o     (crypto_boot_active),
+    .verify_done_o     (sha_verify_done),
+    .signature_valid_o (sha_signature_valid)
   );
 
   otp #(

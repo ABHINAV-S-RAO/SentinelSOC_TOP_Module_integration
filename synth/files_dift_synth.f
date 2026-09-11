@@ -1,5 +1,6 @@
 +incdir+rtl/core/ibex_core/vendor/lowrisc_ip/ip/prim/rtl
 +incdir+rtl/core/ibex_core/vendor/lowrisc_ip/ip/prim_generic/rtl
++incdir+rtl/core/ibex_core/vendor/lowrisc_ip/dv/sv/dv_utils
 +incdir+.bender/git/checkouts/common_cells-229df333cc9dff23/include
 +incdir+.bender/git/checkouts/apb-1b178314edfb6925/include
 +incdir+.bender/git/checkouts/obi-75858655e8b256db/include

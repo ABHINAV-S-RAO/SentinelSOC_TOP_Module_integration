@@ -21,8 +21,12 @@ set TOP ibex_top
 # at wherever the sky130 PDK actually lives for THIS project/machine.
 set LIB "/home/ibexcore/project/test/skywater-pdk/libraries/sky130_fd_sc_hd/latest/timing/sky130_fd_sc_hd__tt_025C_1v80.lib"
 
-# Synthesis-only filelist (TB stripped out) -- see genus/files_dift_synth.f
-set FILELIST "genus/files_dift_synth.f"
+# Synthesis-only filelist (TB stripped out) -- see files_dift_synth.f
+# Resolved relative to THIS script's own location, so it works no
+# matter what directory you're in when you launch genus, and no
+# matter what the containing folder is named (genus/, synth/, etc).
+set SCRIPT_DIR [file dirname [file normalize [info script]]]
+set FILELIST "$SCRIPT_DIR/files_dift_synth.f"
 
 # -----------------------------
 # Library setup

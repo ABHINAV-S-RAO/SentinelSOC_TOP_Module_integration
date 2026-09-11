@@ -1,0 +1,1217 @@
+// =============================================================================
+// soc_top.sv
+// Top-level SoC wrapper
+// Core:       Ibex RV32IMC, no ICache, no SecureIbex, no PMP
+// Boot addr:  0x0000_0000 (BootROM)
+// Reset:      Active-low, synchronous
+// Clock:      Single domain — PLL/clock gen to be added later
+// =============================================================================
+
+`include "obi/typedef.svh"
+`include "obi/assign.svh"
+`include "apb/typedef.svh"
+
+module sentinel_soc_top (
+  // Clock and reset — raw pins for now, PLL stub to be added
+  input  logic clk_i,
+  input  logic rst_ni,
+
+  // QSPI — external flash
+  output logic       qspi_csn_o,
+  output logic       qspi_clk_o,
+  inout  logic [3:0] qspi_io_io,   // IO0-IO3 bidirectional
+
+  // SPI
+  output logic spi_csn_o,
+  output logic spi_clk_o,
+  output logic spi_mosi_o,
+  input  logic spi_miso_i,
+
+  // UART
+  output logic uart_tx_o,
+  input  logic uart_rx_i,
+
+  // GPIO — 32 pins bidirectional
+  inout  logic [31:0] gpio_io,
+
+  // JTAG debug
+  input  logic jtag_tck_i,
+  input  logic jtag_tms_i,
+  input  logic jtag_tdi_i,
+  output logic jtag_tdo_o,
+  input  logic jtag_trst_ni
+
+`ifdef DIFT
+  ,
+  // Hardware DIFT enable — 1=DIFT active, 0=fully bypassed
+  // Connect to a GPIO, test pad, fuse, or board pullup/pulldown.
+  input  logic dift_en_i
+`endif
+);
+
+  // ---------------------------------------------------------------------------
+  // Local parameters
+  // ---------------------------------------------------------------------------
+  localparam logic [31:0] BOOT_ADDR  = 32'h0000_0000;
+  localparam logic [31:0] HART_ID    = 32'h0000_0000;
+
+  // Memory sizes (parameterised — change here to resize)
+  localparam int unsigned BOOTROM_SIZE_WORDS = 1024; // 4KB
+  localparam int unsigned ISRAM_SIZE_WORDS   = 1024; // 4KB
+  localparam int unsigned DSRAM_SIZE_WORDS   = 1024; // 4KB
+
+  // ---------------------------------------------------------------------------
+  // OBI and APB type definitions for bridge
+  // ---------------------------------------------------------------------------
+  // OBI types — using default config (no optional fields)
+  `OBI_TYPEDEF_DEFAULT_ALL(obi_apb, obi_pkg::ObiDefaultConfig)
+
+  // APB types
+  typedef logic [31:0] apb_addr_t;
+  typedef logic [31:0] apb_data_t;
+  typedef logic [ 3:0] apb_strb_t;
+  `APB_TYPEDEF_ALL(apb, apb_addr_t, apb_data_t, apb_strb_t)
+
+  // Struct instances
+  obi_apb_req_t  apb_obi_req;
+  obi_apb_rsp_t  apb_obi_rsp;
+  apb_req_t      apb_req;
+  apb_resp_t     apb_rsp;
+
+  // PLIC register bus interface — simple valid/ready/addr/data/write
+typedef struct packed {
+  logic        valid;
+  logic        write;
+  logic [31:0] addr;
+  logic [31:0] wdata;
+  logic [ 3:0] wstrb;
+} plic_reg_req_t;
+
+typedef struct packed {
+  logic        ready;
+  logic        error;
+  logic [31:0] rdata;
+} plic_reg_rsp_t;
+
+  // ---------------------------------------------------------------------------
+  // Ibex ↔ decoder flat signals
+  // ---------------------------------------------------------------------------
+
+  // Instruction interface
+  logic        instr_req;
+  logic        instr_gnt;
+  logic        instr_rvalid;
+  logic [31:0] instr_addr;
+  logic [31:0] instr_rdata;
+  logic [ 6:0] instr_rdata_intg; // tied 0 — no ECC
+  logic        instr_err;
+
+  // Data interface
+  logic        data_req;
+  logic        data_gnt;
+  logic        data_rvalid;
+  logic        data_we;
+  logic [ 3:0] data_be;
+  logic [31:0] data_addr;
+  logic [31:0] data_wdata;
+  logic [ 6:0] data_wdata_intg; // tied 0 — no ECC
+  logic [31:0] data_rdata;
+  logic [ 6:0] data_rdata_intg; // tied 0
+  logic        data_err;
+
+  // Interrupt signals
+  logic        irq_software;
+  logic        irq_timer;
+  logic        irq_external;
+  logic        irq_nm;
+
+  // PLIC OBI slave signals
+  logic        plic_req;
+  logic        plic_gnt;
+  logic        plic_rvalid;
+  logic [31:0] plic_addr;
+  logic        plic_we;
+  logic [ 3:0] plic_be;
+  logic [31:0] plic_wdata;
+  logic [31:0] plic_rdata;
+  logic        plic_err;
+
+  // PLIC register bus
+  plic_reg_req_t plic_reg_req;
+  plic_reg_rsp_t plic_reg_rsp;
+
+  // Debug — stubbed until riscv_dbg is integrated
+    // Debug target interface (addr_decode → dm_top)
+  logic        dbg_req;
+  logic [31:0] dbg_addr;
+  logic        dbg_we;
+  logic [ 3:0] dbg_be;
+  logic [31:0] dbg_wdata;
+  logic        dbg_gnt;
+  logic        dbg_rvalid;
+  logic [31:0] dbg_rdata;
+
+  // CONFIRMED (read dm_top.sv/dm_mem.sv directly): the slave port has no
+  // gnt or rvalid at all — just slave_req_i/we_i/addr_i/be_i/wdata_i ->
+  // slave_rdata_o. dm_mem's read path (rdata_q/fwd_rom_q/word_enable32_q,
+  // all registered every cycle off req_i, no stall logic anywhere) is a
+  // fixed single-cycle-latency, always-accepted memory. So:
+  //   - dbg_gnt = 1'b1 is correct as-is, not a placeholder to replace.
+  //   - dbg_rvalid must be generated locally as dbg_req delayed by one
+  //     cycle (dm_top has no rvalid port to source it from).
+  assign dbg_gnt = 1'b1;
+
+  logic dbg_rvalid_q;
+  always_ff @(posedge clk_i or negedge rst_ni) begin
+    if (!rst_ni) dbg_rvalid_q <= 1'b0;
+    else         dbg_rvalid_q <= dbg_req;
+  end
+  assign dbg_rvalid = dbg_rvalid_q;
+
+  // Core-halted-in-debug-mode status, feeds soc_addr_decode.dbg_mode_i
+  // (Req 1-4 CSR/ISRAM-write gating). Sourced from dm_top's new halted_o
+  // port (added directly to dm_top.sv, wired from dm_mem's pre-existing
+  // internal halted signal — see dm_top.sv for the one-line addition).
+  logic        dm_halted;
+  logic        dbg_mode;
+  assign dbg_mode = dm_halted; // NrHarts=1, so this is hart 0's halted bit
+
+  // Debugger Signals 
+  logic        debug_req_raw;
+  logic        debug_req_gated;
+  logic        debug_disable;
+  logic        ndmreset; // Non-debug module reset (optional system reset)
+
+  // DMI (Debug Module Interface)
+  logic        dmi_req_valid, dmi_req_ready;
+  logic [40:0] dmi_req_data;
+  logic        dmi_resp_valid, dmi_resp_ready;
+  logic [33:0] dmi_resp_data;
+  // Glitch-free reset pulsed by dmi_jtag for one clk_i cycle on POR,
+  // TestLogicReset, or a dmihardreset DTMCS write. Must feed dm_top's
+  // dmi_rst_ni so a JTAG-side reset actually clears the DM's DMI-facing
+  // state — previously unconnected, with dm_top.dmi_rst_ni tied to the
+  // chip reset instead (see both instantiations below).
+  logic        dmi_rst_n;
+
+  // Security Gating: Tie to 0 for development. 
+  // Later, tie to SHA valid signal to block debug on boot.
+  assign debug_disable = 1'b0;
+  assign debug_req_gated = debug_req_raw & ~debug_disable;
+  
+  // ---------------------------------------------------------------------------
+  // Decoder ↔ slave flat signals
+  // ---------------------------------------------------------------------------
+
+  // BootROM
+  logic        bootrom_req;
+  logic        bootrom_gnt;
+  logic        bootrom_rvalid;
+  logic [31:0] bootrom_addr;
+  logic        bootrom_we;
+  logic [ 3:0] bootrom_be;
+  logic [31:0] bootrom_wdata;
+  logic [31:0] bootrom_rdata;
+  logic        bootrom_err;
+
+  // ISRAM
+  logic        isram_req;
+  logic        isram_gnt;
+  logic        isram_rvalid;
+  logic [31:0] isram_addr;
+  logic        isram_we;
+  logic [ 3:0] isram_be;
+  logic [31:0] isram_wdata;
+  logic [31:0] isram_rdata;
+  logic        isram_err;
+
+  // DSRAM
+  logic        dsram_req;
+  logic        dsram_gnt;
+  logic        dsram_rvalid;
+  logic [31:0] dsram_addr;
+  logic        dsram_we;
+  logic [ 3:0] dsram_be;
+  logic [31:0] dsram_wdata;
+  logic [31:0] dsram_rdata;
+  logic        dsram_err;
+
+  // Control registers
+  logic        ctrl_req;
+  logic        ctrl_gnt;
+  logic        ctrl_rvalid;
+  logic [31:0] ctrl_addr;
+  logic        ctrl_we;
+  logic [ 3:0] ctrl_be;
+  logic [31:0] ctrl_wdata;
+  logic [31:0] ctrl_rdata;
+  logic        ctrl_err;
+
+  // Buffer CSR
+  logic        buf_req;
+  logic        buf_gnt;
+  logic        buf_rvalid;
+  logic [31:0] buf_addr;
+  logic        buf_we;
+  logic [ 3:0] buf_be;
+  logic [31:0] buf_wdata;
+  logic [31:0] buf_rdata;
+  logic        buf_err;
+
+  // SHA + ED25519 CSR
+  logic        sha_req;
+  logic        sha_gnt;
+  logic        sha_rvalid;
+  logic [31:0] sha_addr;
+  logic        sha_we;
+  logic [ 3:0] sha_be;
+  logic [31:0] sha_wdata;
+  logic [31:0] sha_rdata;
+  logic        sha_err;
+  //interconnect
+  logic [31:0] accel_data;
+  logic [ 5:0] accel_addr;
+  logic        accel_valid;
+
+  logic        sha_verify_done;
+  logic        sha_signature_valid;
+  logic        sha_start;
+
+  // APB bridge OBI side
+  logic        apb_bridge_req;
+  logic        apb_bridge_gnt;
+  logic        apb_bridge_rvalid;
+  logic [31:0] apb_bridge_addr;
+  logic        apb_bridge_we;
+  logic [ 3:0] apb_bridge_be;
+  logic [31:0] apb_bridge_wdata;
+  logic [31:0] apb_bridge_rdata;
+  logic        apb_bridge_err;
+
+  // ISRAM write lock from control registers
+  logic        ctrl_isram_lock;
+  logic ctrl_boot_done;
+
+  // ---------------------------------------------------------------------------
+  // IRQ lines from peripherals to PLIC
+  // (PLIC → irq_external, CLINT → irq_timer + irq_software)
+  // Peripheral IRQ lines — to be connected when PLIC is instantiated
+  // ---------------------------------------------------------------------------
+  logic        irq_uart;
+  logic        irq_spi;
+  logic        irq_qspi;
+  logic        irq_gpio;
+  logic        irq_timer_periph;
+  logic        irq_buf;          // buffer full / stream done
+  logic        irq_sha;          // crypto done / error
+
+  // ---------------------------------------------------------------------------
+  // DIFT additions — intermediate wires between ibex_top and soc_addr_decode
+  // ibex_top drives core_*, dift_obi_ctrl consumes them and drives instr_*/data_*
+  // ---------------------------------------------------------------------------
+  logic        irq_dift; // DIFT violation IRQ → PLIC irq_sources[7]
+
+  logic        core_instr_req, core_instr_gnt, core_instr_rvalid, core_instr_err;
+  logic [31:0] core_instr_addr, core_instr_rdata;
+
+  logic        core_data_req, core_data_gnt, core_data_rvalid, core_data_we, core_data_err;
+  logic [ 3:0] core_data_be;
+  logic [31:0] core_data_addr, core_data_wdata, core_data_rdata;
+
+  // Tag shadow RAM interface (driven by dift_obi_ctrl)
+  logic        tag_req_core, tag_we;
+  logic [29:0] tag_addr;
+  logic        tag_wdata, tag_rdata;
+
+`ifdef DIFT
+  logic data_rdata_tag;
+  logic data_wdata_tag;
+  logic dift_exception;
+`endif
+
+  // ---------------------------------------------------------------------------
+  // Tie-offs for unused Ibex inputs
+  // ---------------------------------------------------------------------------
+  assign instr_rdata_intg = 7'h0;
+  assign data_rdata_intg  = 7'h0;
+  assign irq_nm           = 1'b0;
+
+  // ---------------------------------------------------------------------------
+  // Ibex RV32IMC instantiation
+  // ---------------------------------------------------------------------------
+  ibex_top #(
+    .PMPEnable        ( 1'b0          ),
+    .RV32E            ( 1'b0          ),
+    .RV32M            ( ibex_pkg::RV32MFast ),
+    .RV32B            ( ibex_pkg::RV32BNone ),
+    .RegFile          ( ibex_pkg::RegFileFF ),
+    .BranchTargetALU  ( 1'b0          ),
+    .WritebackStage   ( 1'b1          ),
+    .ICache           ( 1'b0          ),
+    .BranchPredictor  ( 1'b0          ),
+    .DbgTriggerEn     ( 1'b0          ),
+    .SecureIbex       ( 1'b0          ),
+    .DmHaltAddr       ( 32'h1A110800  ), // = DmBaseAddress + dm::HaltAddress (0x800)
+    // CONFIRMED against dm_pkg.sv: HaltAddress=0x800, ResumeAddress=
+    // HaltAddress+8=0x808, ExceptionAddress=HaltAddress+16=0x810. This was
+    // previously wired to 0x808 (ResumeAddress) instead of 0x810
+    // (ExceptionAddress) — an exception taken during a program-buffer/
+    // abstract-command sequence would have jumped into the Resume entry
+    // point instead of the Exception handler.
+    .DmExceptionAddr  ( 32'h1A110810  )
+  ) u_ibex_top (
+    .clk_i                      ( clk_i            ),
+    .rst_ni                     ( rst_ni            ),
+
+    .test_en_i                  ( 1'b0              ),
+    .ram_cfg_icache_tag_i       ( '0                ),
+    .ram_cfg_icache_data_i      ( '0                ),
+    .ram_cfg_rsp_icache_tag_o   (                   ),
+    .ram_cfg_rsp_icache_data_o  (                   ),
+
+    .hart_id_i                  ( HART_ID           ),
+    .boot_addr_i                ( BOOT_ADDR         ),
+
+    // Instruction interface — routed via dift_obi_ctrl (DIFT bus intercept)
+    .instr_req_o                ( core_instr_req    ),
+    .instr_gnt_i                ( core_instr_gnt    ),
+    .instr_rvalid_i             ( core_instr_rvalid ),
+    .instr_addr_o               ( core_instr_addr   ),
+    .instr_rdata_i              ( core_instr_rdata  ),
+    .instr_rdata_intg_i         ( instr_rdata_intg  ),
+    .instr_err_i                ( core_instr_err    ),
+
+    // Data interface — routed via dift_obi_ctrl (DIFT bus intercept)
+    .data_req_o                 ( core_data_req     ),
+    .data_gnt_i                 ( core_data_gnt     ),
+    .data_rvalid_i              ( core_data_rvalid  ),
+    .data_we_o                  ( core_data_we      ),
+    .data_be_o                  ( core_data_be      ),
+    .data_addr_o                ( core_data_addr    ),
+    .data_wdata_o               ( core_data_wdata   ),
+    .data_wdata_intg_o          ( data_wdata_intg   ),
+    .data_rdata_i               ( core_data_rdata   ),
+    .data_rdata_intg_i          ( data_rdata_intg   ),
+    .data_err_i                 ( core_data_err     ),
+
+    // Interrupts
+    .irq_software_i             ( irq_software      ),
+    .irq_timer_i                ( irq_timer         ),
+    .irq_external_i             ( irq_external      ),
+    .irq_fast_i                 ( 15'h0             ),
+    .irq_nm_i                   ( irq_nm            ),
+
+    // Scrambling — unused
+    .scramble_key_valid_i       ( 1'b0              ),
+    .scramble_key_i             ( '0                ),
+    .scramble_nonce_i           ( '0                ),
+    .scramble_req_o             (                   ),
+
+    // Debug
+    .debug_req_i                (debug_req_gated),
+    .crash_dump_o               (                   ),
+    .double_fault_seen_o        (                   ),
+
+    // CPU control
+    .fetch_enable_i             ( ibex_pkg::IbexMuBiOn ),
+    .alert_minor_o              (                   ),
+    .alert_major_internal_o     (                   ),
+    .alert_major_bus_o          (                   ),
+    .core_sleep_o               (                   ),
+
+    // DFT
+    .scan_rst_ni                ( 1'b1              ),
+
+    // Lockstep — disabled
+    .lockstep_cmp_en_o          (                   ),
+    .data_req_shadow_o          (                   ),
+    .data_we_shadow_o           (                   ),
+    .data_be_shadow_o           (                   ),
+    .data_addr_shadow_o         (                   ),
+    .data_wdata_shadow_o        (                   ),
+    .data_wdata_intg_shadow_o   (                   ),
+    .instr_req_shadow_o         (                   ),
+    .instr_addr_shadow_o        (                   )
+`ifdef DIFT
+  ,
+    .data_rdata_tag_i           ( data_rdata_tag    ),
+    .data_wdata_tag_o           ( data_wdata_tag    ),
+    .dift_exception_o           ( dift_exception    ),
+    .dift_en_i                  ( dift_en_i         )
+`endif
+  );
+
+  // ---------------------------------------------------------------------------
+  // DIFT — dift_obi_ctrl: bus intercept between ibex_top and soc_addr_decode
+  //
+  // ibex_top does not expose data_rdata_tag_i / data_wdata_tag_o /
+  // dift_exception_o (ibex_core-only ports). dift_obi_ctrl intercepts every
+  // data transaction, maintains the tag shadow RAM, and passes ibex_core's
+  // dift_exception_o through as irq_dift → PLIC irq_sources[7].
+  //   core_data_wdata_tag_i → 1'b0 : no core-side taint injection
+  //   dift_exception_i      → 1'b0 : ctrl detects violations bus-side
+  // ---------------------------------------------------------------------------
+  dift_obi_ctrl #(
+    .ObiCfg (obi_pkg::ObiDefaultConfig)
+  ) u_dift_obi_ctrl (
+    .clk_i  (clk_i),
+    .rst_ni (rst_ni),
+
+    // Instruction bus from ibex_top
+    .core_instr_req_i    (core_instr_req),
+    .core_instr_gnt_o    (core_instr_gnt),
+    .core_instr_rvalid_o (core_instr_rvalid),
+    .core_instr_addr_i   (core_instr_addr),
+    .core_instr_rdata_o  (core_instr_rdata),
+    .core_instr_err_o    (core_instr_err),
+
+    // Data bus from ibex_top
+    .core_data_req_i     (core_data_req),
+    .core_data_gnt_o     (core_data_gnt),
+    .core_data_rvalid_o  (core_data_rvalid),
+    .core_data_we_i      (core_data_we),
+    .core_data_be_i      (core_data_be),
+    .core_data_addr_i    (core_data_addr),
+    .core_data_wdata_i   (core_data_wdata),
+    .core_data_rdata_o   (core_data_rdata),
+    .core_data_err_o     (core_data_err),
+
+    // DIFT tag sideband
+`ifdef DIFT
+    .core_data_wdata_tag_i (data_wdata_tag),
+    .core_data_rdata_tag_o (data_rdata_tag),
+    .dift_exception_i      (dift_exception),
+    .dift_en_i             (dift_en_i),
+`else
+    .core_data_wdata_tag_i (1'b0),
+    .core_data_rdata_tag_o (),
+    .dift_exception_i      (1'b0),
+    .dift_en_i             (1'b0),
+`endif
+
+    // Instruction port → soc_addr_decode (drives existing instr_* signals)
+    .instr_obi_req_o    (instr_req),
+    .instr_obi_addr_o   (instr_addr),
+    .instr_obi_we_o     (),
+    .instr_obi_be_o     (),
+    .instr_obi_wdata_o  (),
+    .instr_obi_aid_o    (),
+    .instr_obi_gnt_i    (instr_gnt),
+    .instr_obi_rvalid_i (instr_rvalid),
+    .instr_obi_rdata_i  (instr_rdata),
+    .instr_obi_rid_i    (1'b0),
+    .instr_obi_err_i    (instr_err),
+
+    // Data port → soc_addr_decode (drives existing data_* signals)
+    .data_obi_req_o    (data_req),
+    .data_obi_addr_o   (data_addr),
+    .data_obi_we_o     (data_we),
+    .data_obi_be_o     (data_be),
+    .data_obi_wdata_o  (data_wdata),
+    .data_obi_aid_o    (),
+    .data_obi_gnt_i    (data_gnt),
+    .data_obi_rvalid_i (data_rvalid),
+    .data_obi_rdata_i  (data_rdata),
+    .data_obi_rid_i    (1'b0),
+    .data_obi_err_i    (data_err),
+
+    // Shadow tag RAM interface
+    .tag_req_o   (tag_req_core),
+    .tag_we_o    (tag_we),
+    .tag_addr_o  (tag_addr),
+    .tag_wdata_o (tag_wdata),
+    .tag_rdata_i (tag_rdata),
+    .tag_gnt_i   (1'b1),
+
+    // Exception passthrough → PLIC (irq_dift)
+    .dift_exception_o (irq_dift)
+  );
+
+  // ---------------------------------------------------------------------------
+  // DIFT Tag Shadow RAM (compiled only when `DIFT is defined)
+  // Mirrors DSRAM word-for-word. tag_rdata = 0 (clean) in non-DIFT builds.
+  // ---------------------------------------------------------------------------
+`ifdef DIFT
+  localparam int unsigned TAG_AW = $clog2(DSRAM_SIZE_WORDS);
+
+  logic tag_mem [DSRAM_SIZE_WORDS];
+  logic [TAG_AW-1:0] tag_rd_addr_q;
+  logic              is_data_sram_q;
+
+  logic is_data_sram;
+  assign is_data_sram = (data_addr >= 32'h0002_0000) &&
+                        (data_addr < (32'h0002_0000 + (DSRAM_SIZE_WORDS * 4)));
+
+  always_ff @(posedge clk_i or negedge rst_ni) begin
+    if (!rst_ni) begin
+      tag_rd_addr_q  <= '0;
+      is_data_sram_q <= 1'b0;
+    end else if (tag_req_core) begin
+      tag_rd_addr_q  <= tag_addr[TAG_AW-1:0];
+      is_data_sram_q <= is_data_sram;
+    end
+  end
+
+  always_ff @(posedge clk_i) begin
+    if (tag_req_core && tag_we)
+      tag_mem[tag_addr[TAG_AW-1:0]] <= tag_wdata;
+  end
+
+  // Out-of-DSRAM addresses return 1 (tainted — safe default)
+  assign tag_rdata = is_data_sram_q ? tag_mem[tag_rd_addr_q] : 1'b1;
+`else
+  assign tag_rdata = 1'b0;
+`endif
+
+  // ---------------------------------------------------------------------------
+  // Address decoder + fetch demux
+  // ---------------------------------------------------------------------------
+soc_addr_decode #(
+  .BOOTROM_BASE ( 32'h0000_0000 ),
+  .BOOTROM_MASK ( 32'hFFFF_F000 ),
+  .ISRAM_BASE   ( 32'h0001_0000 ),
+  .ISRAM_MASK   ( 32'hFFFF_F000 ),
+  .DSRAM_BASE   ( 32'h0002_0000 ),
+  .DSRAM_MASK   ( 32'hFFFF_F000 ),
+  .CTRL_BASE    ( 32'h0003_0000 ),
+  .CTRL_MASK    ( 32'hFFFF_F000 ),
+  .BUF_BASE     ( 32'h0004_0000 ),
+  .BUF_MASK     ( 32'hFFFF_F000 ),
+  .SHA_BASE     ( 32'h0005_0000 ),
+  .SHA_MASK     ( 32'hFFFF_F000 ),
+  .PLIC_BASE    ( 32'h0C00_0000 ),   
+  .PLIC_MASK    ( 32'hFFC0_0000 ),   
+  .DBG_BASE     ( 32'h1A11_0000 ),
+  .DBG_MASK     ( 32'hFFFF_0000 ),
+  .APB_BASE     ( 32'h1000_0000 ),
+  .APB_MASK     ( 32'hF000_0000 ),
+  .NumMaxTrans  ( 2 )
+) u_addr_decode (
+  .clk_i  ( clk_i  ),
+  .rst_ni ( rst_ni ),
+
+  // Ibex instruction fetch
+  .instr_req_i    ( instr_req    ),
+  .instr_gnt_o    ( instr_gnt    ),
+  .instr_rvalid_o ( instr_rvalid ),
+  .instr_addr_i   ( instr_addr   ),
+  .instr_rdata_o  ( instr_rdata  ),
+  .instr_err_o    ( instr_err    ),
+
+  // Ibex data
+  .data_req_i    ( data_req    ),
+  .data_gnt_o    ( data_gnt    ),
+  .data_rvalid_o ( data_rvalid ),
+  .data_we_i     ( data_we     ),
+  .data_be_i     ( data_be     ),
+  .data_addr_i   ( data_addr   ),
+  .data_wdata_i  ( data_wdata  ),
+  .data_rdata_o  ( data_rdata  ),
+  .data_err_o    ( data_err    ),
+
+  // BootROM
+  .bootrom_req_o    ( bootrom_req    ),
+  .bootrom_gnt_i    ( bootrom_gnt    ),
+  .bootrom_rvalid_i ( bootrom_rvalid ),
+  .bootrom_addr_o   ( bootrom_addr   ),
+  .bootrom_we_o     ( bootrom_we     ),
+  .bootrom_be_o     ( bootrom_be     ),
+  .bootrom_wdata_o  ( bootrom_wdata  ),
+  .bootrom_rdata_i  ( bootrom_rdata  ),
+  .bootrom_err_i    ( bootrom_err    ),
+
+  // ISRAM
+  .isram_req_o       ( isram_req    ),
+  .isram_gnt_i       ( isram_gnt    ),
+  .isram_rvalid_i    ( isram_rvalid ),
+  .isram_addr_o      ( isram_addr   ),
+  .isram_we_o        ( isram_we     ),
+  .isram_be_o        ( isram_be     ),
+  .isram_wdata_o     ( isram_wdata  ),
+  .isram_rdata_i     ( isram_rdata  ),
+  .isram_err_i       ( isram_err    ),
+  .ctrl_isram_lock_i ( ctrl_isram_lock ),
+
+  // Access-control inputs — NEW connections, not present in the
+  // instantiation shown earlier; needed for priv-gating (CTRL/BUF/SHA)
+  // and ISRAM fetch-verification to actually function.
+  .boot_done_i  ( ctrl_boot_done   ), 
+  .dbg_mode_i   ( dbg_mode         ), 
+  .fw_verified_i ( sha_signature_valid ),
+
+  // DSRAM
+  .dsram_req_o    ( dsram_req    ),
+  .dsram_gnt_i    ( dsram_gnt    ),
+  .dsram_rvalid_i ( dsram_rvalid ),
+  .dsram_addr_o   ( dsram_addr   ),
+  .dsram_we_o     ( dsram_we     ),
+  .dsram_be_o     ( dsram_be     ),
+  .dsram_wdata_o  ( dsram_wdata  ),
+  .dsram_rdata_i  ( dsram_rdata  ),
+  .dsram_err_i    ( dsram_err    ),
+
+  // Control Registers (privileged)
+  .ctrl_req_o    ( ctrl_req    ),
+  .ctrl_gnt_i    ( ctrl_gnt    ),
+  .ctrl_rvalid_i ( ctrl_rvalid ),
+  .ctrl_addr_o   ( ctrl_addr   ),
+  .ctrl_we_o     ( ctrl_we     ),
+  .ctrl_be_o     ( ctrl_be     ),
+  .ctrl_wdata_o  ( ctrl_wdata  ),
+  .ctrl_rdata_i  ( ctrl_rdata  ),
+  .ctrl_err_i    ( ctrl_err    ),
+
+  // Buffer CSR (privileged)
+  .buf_req_o    ( buf_req    ),
+  .buf_gnt_i    ( buf_gnt    ),
+  .buf_rvalid_i ( buf_rvalid ),
+  .buf_addr_o   ( buf_addr   ),
+  .buf_we_o     ( buf_we     ),
+  .buf_be_o     ( buf_be     ),
+  .buf_wdata_o  ( buf_wdata  ),
+  .buf_rdata_i  ( buf_rdata  ),
+  .buf_err_i    ( buf_err    ),
+
+  // SHA + ED25519 CSR (privileged)
+  .sha_req_o    ( sha_req    ),
+  .sha_gnt_i    ( sha_gnt    ),
+  .sha_rvalid_i ( sha_rvalid ),
+  .sha_addr_o   ( sha_addr   ),
+  .sha_we_o     ( sha_we     ),
+  .sha_be_o     ( sha_be     ),
+  .sha_wdata_o  ( sha_wdata  ),
+  .sha_rdata_i  ( sha_rdata  ),
+  .sha_err_i    ( sha_err    ),
+
+  //PLIC
+  .plic_req_o    ( plic_req    ),
+  .plic_gnt_i    ( plic_gnt    ),
+  .plic_rvalid_i ( plic_rvalid ),
+  .plic_addr_o   ( plic_addr   ),
+  .plic_we_o     ( plic_we     ),
+  .plic_be_o     ( plic_be     ),
+  .plic_wdata_o  ( plic_wdata  ),
+  .plic_rdata_i  ( plic_rdata  ),
+  .plic_err_i    ( plic_err    ),
+
+  // OBI-to-APB bridge
+  .apb_req_o    ( apb_bridge_req    ),
+  .apb_gnt_i    ( apb_bridge_gnt    ),
+  .apb_rvalid_i ( apb_bridge_rvalid ),
+  .apb_addr_o   ( apb_bridge_addr   ),
+  .apb_we_o     ( apb_bridge_we     ),
+  .apb_be_o     ( apb_bridge_be     ),
+  .apb_wdata_o  ( apb_bridge_wdata  ),
+  .apb_rdata_i  ( apb_bridge_rdata  ),
+  .apb_err_i    ( apb_bridge_err    ),
+
+  // Debug target interface (dm_top slave port)
+  .dbg_req_o    ( dbg_req    ),
+  .dbg_addr_o   ( dbg_addr   ),
+  .dbg_we_o     ( dbg_we     ),
+  .dbg_be_o     ( dbg_be     ),
+  .dbg_wdata_o  ( dbg_wdata  ),
+  .dbg_gnt_i    ( dbg_gnt    ),
+  .dbg_rvalid_i ( dbg_rvalid ),
+  .dbg_rdata_i  ( dbg_rdata  )
+);
+
+  // ---------------------------------------------------------------------------
+  // BootROM — read-only, initialised from bootrom.hex at synthesis
+  // ---------------------------------------------------------------------------
+  // TODO: replace with foundry SRAM macro when available
+  soc_bootrom #(
+    .NumWords ( BOOTROM_SIZE_WORDS )
+  ) u_bootrom (
+    .clk_i    ( clk_i         ),
+    .rst_ni   ( rst_ni        ),
+    .req_i    ( bootrom_req   ),
+    .addr_i   ( bootrom_addr  ),
+    .rdata_o  ( bootrom_rdata ),
+    .rvalid_o ( bootrom_rvalid),
+    .gnt_o    ( bootrom_gnt   ),
+    .err_o    ( bootrom_err   )
+  );
+
+  // BootROM is read-only — write signals intentionally unconnected
+  // bootrom_we and bootrom_wdata are decoder outputs that go nowhere here
+
+  // ---------------------------------------------------------------------------
+  // ISRAM — instruction SRAM, write port gated by decoder
+  // ---------------------------------------------------------------------------
+  // TODO: replace with foundry SRAM macro when available
+  soc_sram #(
+    .NumWords  ( ISRAM_SIZE_WORDS )
+  ) u_isram (
+    .clk_i    ( clk_i        ),
+    .rst_ni   ( rst_ni       ),
+    .req_i    ( isram_req    ),
+    .we_i     ( isram_we     ),
+    .be_i     ( isram_be     ),
+    .addr_i   ( isram_addr   ),
+    .wdata_i  ( isram_wdata  ),
+    .rdata_o  ( isram_rdata  ),
+    .rvalid_o ( isram_rvalid ),
+    .gnt_o    ( isram_gnt    ),
+    .err_o    ( isram_err    )
+  );
+
+  // ---------------------------------------------------------------------------
+  // DSRAM — data SRAM
+  // ---------------------------------------------------------------------------
+  // TODO: replace with foundry SRAM macro when available
+  soc_sram #(
+    .NumWords  ( DSRAM_SIZE_WORDS )
+  ) u_dsram (
+    .clk_i    ( clk_i        ),
+    .rst_ni   ( rst_ni       ),
+    .req_i    ( dsram_req    ),
+    .we_i     ( dsram_we     ),
+    .be_i     ( dsram_be     ),
+    .addr_i   ( dsram_addr   ),
+    .wdata_i  ( dsram_wdata  ),
+    .rdata_o  ( dsram_rdata  ),
+    .rvalid_o ( dsram_rvalid ),
+    .gnt_o    ( dsram_gnt    ),
+    .err_o    ( dsram_err    )
+  );
+
+  // ---------------------------------------------------------------------------
+  // Control Registers block
+  // ---------------------------------------------------------------------------
+  soc_ctrl_regs u_ctrl_regs (
+    .clk_i          ( clk_i           ),
+    .rst_ni         ( rst_ni          ),
+
+    // OBI slave port
+    .req_i          ( ctrl_req        ),
+    .we_i           ( ctrl_we         ),
+    .be_i           ( ctrl_be         ),
+    .addr_i         ( ctrl_addr       ),
+    .wdata_i        ( ctrl_wdata      ),
+    .gnt_o          ( ctrl_gnt        ),
+    .rvalid_o       ( ctrl_rvalid     ),
+    .rdata_o        ( ctrl_rdata      ),
+    .err_o          ( ctrl_err        ),
+    .crypto_verified_i ( sha_signature_valid ),
+    // Control outputs
+    .boot_done_o    ( ctrl_boot_done ),
+    .isram_lock_o   ( ctrl_isram_lock )
+  );
+
+
+  logic [2:0]  otp_addr;
+  logic        otp_rd_en;
+  logic [31:0] otp_data;
+  logic        crypto_boot_active;
+
+  top_most u_crypto (
+    .clk               (clk_i),
+    .rst_n             (rst_ni),
+
+    // CSR slave port — repointed from soc_buffer onto the existing
+    // buf_* decoder output (address range, byte enables, etc. unchanged)
+    .csr_req_i         (buf_req),
+    .csr_we_i          (buf_we),
+    .csr_be_i          (buf_be),
+    .csr_addr_i        (buf_addr),
+    .csr_wdata_i       (buf_wdata),
+    .csr_gnt_o         (buf_gnt),
+    .csr_rvalid_o      (buf_rvalid),
+    .csr_rdata_o       (buf_rdata),
+    .csr_err_o         (buf_err),
+
+    .start_verify_i    (sha_start),
+    .otp_addr_o        (otp_addr),
+    .otp_rd_en_o       (otp_rd_en),
+    .otp_data_i        (otp_data),
+    .boot_active_o     (crypto_boot_active),
+    .verify_done_o     (sha_verify_done),
+    .signature_valid_o (sha_signature_valid)
+  );
+
+  otp #(
+    .RD_ADDRW    (3),
+    .PUB_KEY_BITS(256)
+  ) u_otp (
+    .clk         (clk_i),
+    .rst         (~rst_ni),
+    .boot_active (crypto_boot_active),
+    .rd_en       (otp_rd_en),
+    .rd_addr     (otp_addr),
+    .rd_data     (otp_data),
+    .prog_en     (1'b0),
+    .prog_addr   ('0),
+    .prog_data   (1'b0),
+    .test_mode   (1'b0),
+    .otp_lock    ()
+  );
+
+  // ---------------------------------------------------------------------------
+  // OBI → APB bridge
+  // ---------------------------------------------------------------------------
+  // TODO: instantiate obi_to_apb here with correct apb_req_t / apb_rsp_t types
+  // and connect to APB peripheral mux below
+  // Stubbed for now — returns error on all accesses
+  // Pack flat apb_bridge_* signals into OBI request struct
+  assign apb_obi_req.req     = apb_bridge_req;
+  assign apb_obi_req.a.addr  = apb_bridge_addr;
+  assign apb_obi_req.a.we    = apb_bridge_we;
+  assign apb_obi_req.a.be    = apb_bridge_be;
+  assign apb_obi_req.a.wdata = apb_bridge_wdata;
+  assign apb_obi_req.a.aid   = '0;
+
+  // Unpack OBI response struct into flat signals
+  assign apb_bridge_gnt    = apb_obi_rsp.gnt;
+  assign apb_bridge_rvalid = apb_obi_rsp.rvalid;
+  assign apb_bridge_rdata  = apb_obi_rsp.r.rdata;
+  assign apb_bridge_err    = apb_obi_rsp.r.err;
+
+  // OBI to APB bridge — converts OBI requests to APB transactions
+  obi_to_apb #(
+    .ObiCfg            (obi_pkg::ObiDefaultConfig),
+    .obi_req_t         (obi_apb_req_t),
+    .obi_rsp_t         (obi_apb_rsp_t),
+    .apb_req_t         (apb_req_t),
+    .apb_rsp_t         (apb_resp_t),
+    .EnableSameCycleRsp(1'b0)
+  ) u_obi_to_apb (
+    .clk_i      (clk_i),
+    .rst_ni     (rst_ni),
+    .obi_req_i  (apb_obi_req),
+    .obi_rsp_o  (apb_obi_rsp),
+    .apb_req_o  (apb_req),
+    .apb_rsp_i  (apb_rsp)
+  );
+
+  // ---------------------------------------------------------------------------
+  // APB Address Decoder & Peripheral Response Mux
+  // ---------------------------------------------------------------------------
+  logic psel_uart, psel_timer, psel_spi, psel_qspi, psel_gpio;
+  logic [31:0] prdata_uart, prdata_timer, prdata_spi, prdata_qspi, prdata_gpio;
+  logic pready_uart, pready_timer, pready_spi, pready_qspi, pready_gpio;
+  logic pslverr_uart, pslverr_timer, pslverr_spi, pslverr_qspi, pslverr_gpio;
+
+  // APB peripheral select decoding
+  assign psel_uart  = apb_req.psel && (apb_req.paddr >= 32'h1050_3000 && apb_req.paddr < 32'h1050_4000);
+  assign psel_timer = apb_req.psel && (apb_req.paddr >= 32'h1050_1000 && apb_req.paddr < 32'h1050_2000);
+  assign psel_qspi  = apb_req.psel && (apb_req.paddr >= 32'h1050_0000 && apb_req.paddr < 32'h1050_1000);
+  assign psel_spi   = apb_req.psel && (apb_req.paddr >= 32'h1050_2000 && apb_req.paddr < 32'h1050_3000);
+  assign psel_gpio  = apb_req.psel && (apb_req.paddr >= 32'h1060_0000 && apb_req.paddr < 32'h1060_1000);
+
+  // APB response mux — combine responses from all peripherals
+  always_comb begin
+    apb_rsp.prdata  = 32'h0;
+    apb_rsp.pready  = 1'b1;
+    apb_rsp.pslverr = 1'b0;
+    if (psel_uart) begin
+      apb_rsp.prdata  = prdata_uart;
+      apb_rsp.pready  = pready_uart;
+      apb_rsp.pslverr = pslverr_uart;
+    end
+    if (psel_timer) begin
+      apb_rsp.prdata  = prdata_timer;
+      apb_rsp.pready  = pready_timer;
+      apb_rsp.pslverr = pslverr_timer;
+    end
+    if (psel_qspi) begin
+      apb_rsp.prdata  = prdata_qspi;
+      apb_rsp.pready  = pready_qspi;
+      apb_rsp.pslverr = pslverr_qspi;
+    end
+    if (psel_spi) begin
+      apb_rsp.prdata  = prdata_spi;
+      apb_rsp.pready  = pready_spi;
+      apb_rsp.pslverr = pslverr_spi;
+    end
+    if (psel_gpio) begin
+      apb_rsp.prdata  = prdata_gpio;
+      apb_rsp.pready  = pready_gpio;
+      apb_rsp.pslverr = pslverr_gpio;
+    end
+  end
+
+  // ---------------------------------------------------------------------------
+  // APB peripheral stubs
+  // TODO: replace each with actual CrocSoC IP instantiation
+  // ---------------------------------------------------------------------------
+
+  // UART
+  // u_apb_uart : apb_uart #(...) (...)
+// UART
+  apb_uart_sv #(
+    .APB_ADDR_WIDTH ( 12 )
+  ) u_apb_uart (
+    .CLK (clk_i),
+    .RSTN (rst_ni),
+    .PADDR (apb_req.paddr[11:0]),
+    .PWDATA (apb_req.pwdata),
+    .PWRITE (apb_req.pwrite),
+    .PSEL (psel_uart),
+    .PENABLE (apb_req.penable),
+    .PRDATA (prdata_uart),
+    .PREADY (pready_uart),
+    .PSLVERR (pslverr_uart),
+    .rx_i (uart_rx_i),
+    .tx_o (uart_tx_o),
+    .event_o (irq_uart)
+  );
+
+  // SPI
+  // u_apb_spi : apb_spi_master #(...) (...)
+  assign spi_csn_o   = 1'b1;
+  assign spi_clk_o   = 1'b0;
+  assign spi_mosi_o  = 1'b0;
+  assign irq_spi     = 1'b0;
+
+  // QSPI
+  logic [1:0] qspi_events;
+  assign irq_qspi = qspi_events[0]; // events_o[0] handles the RX/TX interrupts
+
+  apb_spi_master #(
+    .BUFFER_DEPTH   ( 10 ),
+    .APB_ADDR_WIDTH ( 12 )
+  ) u_apb_qspi (
+    .HCLK     ( clk_i ),
+    .HRESETn  ( rst_ni ),
+
+    // APB Bus Interface
+    .PADDR    ( apb_req.paddr[11:0] ),
+    .PWDATA   ( apb_req.pwdata ),
+    .PWRITE   ( apb_req.pwrite ),
+    .PSEL     ( psel_qspi ),
+    .PENABLE  ( apb_req.penable ),
+    .PRDATA   ( prdata_qspi ),
+    .PREADY   ( pready_qspi ),
+    .PSLVERR  ( pslverr_qspi ),
+
+    // Interrupts
+    .events_o ( qspi_events ),
+
+    // Physical SPI Interface
+    .spi_clk  ( qspi_clk_o ),
+    .spi_csn0 ( qspi_csn_o ),
+    .spi_csn1 ( ),
+    .spi_csn2 ( ),
+    .spi_csn3 ( ),
+    .spi_mode ( ), // Usually routed to external tech-specific pad macros
+
+    // Data Lines mapped directly to the top-level bidirectional array
+    .spi_sdo0 ( qspi_io_io[0] ),
+    .spi_sdo1 ( qspi_io_io[1] ),
+    .spi_sdo2 ( qspi_io_io[2] ),
+    .spi_sdo3 ( qspi_io_io[3] ),
+    .spi_sdi0 ( qspi_io_io[0] ),
+    .spi_sdi1 ( qspi_io_io[1] ),
+    .spi_sdi2 ( qspi_io_io[2] ),
+    .spi_sdi3 ( qspi_io_io[3] )
+  );
+
+  logic [31:0] gpio_out_sig;
+  logic [31:0] gpio_dir_sig;
+  logic [31:0] gpio_in_sig;
+
+  generate
+    for (genvar i = 0; i < 32; i++) begin : gen_gpio_pads
+      assign gpio_io[i] = gpio_dir_sig[i] ? gpio_out_sig[i] : 1'bz;
+    end
+  endgenerate
+  assign gpio_in_sig = gpio_io;
+
+  // GPIO
+  apb_gpio #(
+    .APB_ADDR_WIDTH ( 12 ),
+    .PAD_NUM        ( 32 )
+  ) u_apb_gpio (
+    .HCLK              (clk_i),
+    .HRESETn           (rst_ni),
+    .dft_cg_enable_i   (1'b0),
+    .PADDR             (apb_req.paddr[11:0]),
+    .PWDATA            (apb_req.pwdata),
+    .PWRITE            (apb_req.pwrite),
+    .PSEL              (psel_gpio),
+    .PENABLE           (apb_req.penable),
+    .PRDATA            (prdata_gpio),
+    .PREADY            (pready_gpio),
+    .PSLVERR           (pslverr_gpio),
+    .gpio_in           (gpio_in_sig),
+    .gpio_in_sync      (), 
+    .gpio_out          (gpio_out_sig),
+    .gpio_dir          (gpio_dir_sig),
+    .gpio_padcfg       (), 
+    .interrupt         (irq_gpio)
+  );
+
+  // Timer
+  // u_apb_timer : apb_timer #(...) (...)
+  assign irq_timer_periph = 1'b0;
+
+  // OBI -> PLIC reg adapter
+  // OBI is req/gnt/rvalid, reg bus is valid/ready/rdata
+  // Grant immediately, rvalid one cycle later
+  assign plic_gnt            = plic_req;
+  assign plic_reg_req.valid  = plic_req;
+  assign plic_reg_req.write  = plic_we;
+  assign plic_reg_req.addr   = plic_addr;
+  assign plic_reg_req.wdata  = plic_wdata;
+  assign plic_reg_req.wstrb  = plic_be;
+
+  always_ff @(posedge clk_i or negedge rst_ni) begin
+    if (!rst_ni) plic_rvalid <= 1'b0;
+    else         plic_rvalid <= plic_req & plic_gnt;
+  end
+
+  assign plic_rdata = plic_reg_rsp.rdata;
+  assign plic_err   = plic_reg_rsp.error;
+
+  plic_top #(
+    .N_SOURCE (12),
+    .N_TARGET (1),
+    .MAX_PRIO (3),
+    .reg_req_t (plic_reg_req_t),
+    .reg_rsp_t (plic_reg_rsp_t)
+  ) u_plic (
+    .clk_i(clk_i),
+    .rst_ni(rst_ni),
+    .req_i(plic_reg_req),
+    .resp_o(plic_reg_rsp),
+    .le_i(12'h0), // all level-triggered
+    .irq_sources_i({4'h0, irq_dift, irq_sha, irq_buf, irq_timer_periph, irq_gpio, irq_qspi, irq_spi, irq_uart} ),
+    .eip_targets_o(irq_external)  // Ibex irq_external_i
+  );
+
+  // ---------------------------------------------------------------------------
+  // CLINT stub
+  // TODO: instantiate CLINT and connect mtime/mtimecmp registers
+  // CLINT outputs → irq_timer, irq_software
+  // ---------------------------------------------------------------------------
+  assign irq_timer    = 1'b0;
+  assign irq_software = 1'b0;
+
+  // ---------------------------------------------------------------------------
+  // JTAG debug stub
+  // TODO: instantiate riscv_dbg and connect to:
+  //   - jtag_tck_i, jtag_tms_i, jtag_tdi_i, jtag_tdo_o, jtag_trst_ni
+  //   - Ibex debug_req_i
+  //   - dm_* OBI/memory interface for debug module access
+  // ---------------------------------------------------------------------------
+  // ---------------------------------------------------------------------------
+  // JTAG DTM (Debug Transport Module)
+  // ---------------------------------------------------------------------------
+  dmi_jtag u_dmi_jtag (
+    .clk_i            (clk_i),
+    .rst_ni           (rst_ni),
+    .testmode_i       (1'b0),
+    .dmi_rst_no       (dmi_rst_n),
+    
+    // JTAG pins
+    .tck_i            (jtag_tck_i),
+    .tms_i            (jtag_tms_i),
+    .trst_ni          (jtag_trst_ni),
+    .td_i             (jtag_tdi_i),
+    .td_o             (jtag_tdo_o),
+    .tdo_oe_o         (), // Leave disconnected if using simple inout/output
+    
+    // DMI Interface
+    .dmi_req_o        (dmi_req_data),
+    .dmi_req_valid_o  (dmi_req_valid),
+    .dmi_req_ready_i  (dmi_req_ready),
+    .dmi_resp_i       (dmi_resp_data),
+    .dmi_resp_valid_i (dmi_resp_valid),
+    .dmi_resp_ready_o (dmi_resp_ready)
+  );
+
+  // ---------------------------------------------------------------------------
+  // RISC-V Debug Module (DM)
+  // ---------------------------------------------------------------------------
+  
+  dm::hartinfo_t [0:0] hartinfo_arr;  
+    assign hartinfo_arr[0] = '{nscratch: 4'd2, dataaccess: 1'b1,
+                             datasize: dm::DataCount, dataaddr: dm::DataAddr,
+                             default: '0};
+ 
+  dm_top #(
+    .NrHarts       ( 1              ),
+    .BusWidth      ( 32             ),
+    // CONFIRMED against dm_pkg.sv: HaltAddress=0x800, ResumeAddress=0x808,
+    // ExceptionAddress=0x810, all relative to DmBaseAddress — so this must
+    // be 0x1A11_0000 to match DBG_BASE in soc_addr_decode and
+    // DmHaltAddr/DmExceptionAddr on the Ibex side above.
+    .DmBaseAddress ( 32'h1A11_0000  )
+  ) u_dm_top (
+    .clk_i            (clk_i),
+    .rst_ni           (rst_ni),
+    .testmode_i       (1'b0),
+    .next_dm_addr_i   (32'h0),
+    .ndmreset_o       (ndmreset),
+    // FIX: was left unconnected — required input, causes X-propagation
+    // through the ndmreset handshake in i_dm_csrs. Tied to 1'b1 (ack
+    // always asserted) as a placeholder since this SoC doesn't yet have
+    // a dedicated reset controller generating a real ack pulse. Revisit
+    // once/if one exists — a real ack should follow the actual duration
+    // of your non-debug-module reset, not be permanently asserted.
+    .ndmreset_ack_i   (1'b1),
+    .dmactive_o       (),
+    .debug_req_o      (debug_req_raw),
+    // New port added to dm_top.sv: per-hart halted status, sourced from
+    // dm_mem's pre-existing internal halted signal. Feeds dbg_mode above.
+    .halted_o         (dm_halted),
+    .unavailable_i    (1'b0),
+    // CONFIRMED against dm_pkg.sv/dm_mem.sv: dm_mem itself doesn't consume
+    // hartinfo_i for the abstract-command flow (HasSndScratch is derived
+    // locally from DmBaseAddress != 0), so this only matters for what
+    // OpenOCD reads back via the Hartinfo CSR. Values below match the
+    // HasSndScratch=1 config actually in use (DmBaseAddress=0x1A110000):
+    // nscratch=2 (dscratch0/dscratch1 both used), dataaccess=1 (data
+    // registers are memory-mapped, not CSR-shadowed), datasize=
+    // dm::DataCount, dataaddr=dm::DataAddr.
+    .hartinfo_i       (hartinfo_arr),
+
+    // DMI Interface
+    .dmi_req_i        (dmi_req_data),
+    .dmi_req_valid_i  (dmi_req_valid),
+    .dmi_req_ready_o  (dmi_req_ready),
+    .dmi_resp_o       (dmi_resp_data),
+    .dmi_resp_valid_o (dmi_resp_valid),
+    .dmi_resp_ready_i (dmi_resp_ready),
+    .dmi_rst_ni       (dmi_rst_n),
+
+    // Target Memory Interface — routed through soc_addr_decode's
+    // DBG range (0x1A11_0000, see u_addr_decode below). Shared between
+    // fetch-path (debug ROM / program buffer instruction fetch) and
+    // data-path (abstract data registers) via the dbg arbiter in
+    // soc_addr_decode — see that file for details.
+    //
+    // CONFIRMED: dm_top's slave port has no gnt/rvalid at all (just
+    // slave_req_i/we_i/addr_i/be_i/wdata_i -> slave_rdata_o). dbg_rvalid
+    // is generated locally above (dbg_req delayed one cycle, matching
+    // dm_mem's fixed single-cycle read latency); dbg_gnt is tied to 1
+    // above for the same reason.
+    .slave_req_i    ( dbg_req    ),
+    .slave_we_i     ( dbg_we     ),
+    .slave_addr_i   ( dbg_addr   ),
+    .slave_wdata_i  ( dbg_wdata  ),
+    .slave_be_i     ( dbg_be     ),
+    .slave_rdata_o  ( dbg_rdata  ),
+
+    // SBA Master Interface — deliberately tied off (see earlier
+    // discussion: leaving SBA disabled is the intended security posture
+    // for this SoC, not a stopgap). master_r_err_i/master_r_other_err_i
+    // are required inputs and were previously left unconnected — tied
+    // to 1'b0 here; harmless since the port is otherwise fully disabled
+    // (master_gnt_i=0 means dm_sba never proceeds far enough to sample
+    // these in practice, but leaving them floating is still bad
+    // practice / X-propagation risk).
+    .master_req_o          (),
+    .master_add_o          (),
+    .master_we_o           (),
+    .master_wdata_o        (),
+    .master_be_o           (),
+    .master_gnt_i          (1'b0),
+    .master_r_valid_i      (1'b0),
+    .master_r_err_i        (1'b0),
+    .master_r_other_err_i  (1'b0),
+    .master_r_rdata_i      (32'h0)
+  );
+
+endmodule : sentinel_soc_top

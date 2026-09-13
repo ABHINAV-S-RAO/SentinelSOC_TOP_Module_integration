@@ -28,10 +28,11 @@ When writing UVM sequences for the `obi_cpu_agent`, use the following base addre
 
 | Peripheral | Base Address  | Description / Notes |
 |------------|--------------|---------------------|
-| **UART**   | `0x1050_0000`| APB UART. TXDATA is at offset `0x00`. RXDATA at `0x04`. |
-| **SPI**    | `0x1050_1000`| APB SPI Master. STATUS at offset `0x00`. CLKDIV at `0x04`. |
-| **GPIO**   | `0x1050_2000`| APB GPIO. Direction at offset `0x00`. Output at `0x04`. |
-| **TIMER**  | `0x1050_3000`| APB Timer (Note: Currently disabled in RTL). |
+| **QSPI**   | `0x1050_0000`| APB QSPI Controller. |
+| **TIMER**  | `0x1050_1000`| APB Timer (Note: Currently disabled in RTL). |
+| **SPI**    | `0x1050_2000`| APB SPI Master. STATUS at offset `0x00`. CLKDIV at `0x04`. |
+| **UART**   | `0x1050_3000`| APB UART. TXDATA is at offset `0x00`. RXDATA at `0x04`. |
+| **GPIO**   | `0x1060_0000`| APB GPIO. Direction at offset `0x00`. Output at `0x04`. |
 
 ## Available Tests / Sequences
 

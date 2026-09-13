@@ -124,7 +124,7 @@ module sentinel_soc_vip_uvm_top;
     uvm_config_db#(virtual gpio_if)::set(null, "uvm_test_top.*", "vif_gpio", u_gpio_if);
     uvm_config_db#(virtual timer_irq_if)::set(null, "uvm_test_top.*", "vif_timer", u_timer_if);
     
-    run_test("sentinel_soc_vip_base_test");
+    run_test();
   end
 
   // ---------------------------------------------------------------------------

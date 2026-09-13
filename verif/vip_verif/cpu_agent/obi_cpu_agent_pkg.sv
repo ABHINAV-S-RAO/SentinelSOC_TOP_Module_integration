@@ -43,9 +43,11 @@ package obi_cpu_agent_pkg;
       vif.wdata <= 0;
       vif.be <= 0;
       @(posedge vif.rst_ni);
+      `uvm_info("OBI_DRV", "Out of reset, waiting for items...", UVM_LOW)
       
       forever begin
         seq_item_port.get_next_item(req);
+        `uvm_info("OBI_DRV", $sformatf("Driving req to addr 0x%0h", req.addr), UVM_LOW)
         
         @(posedge vif.clk_i);
         vif.req <= 1;
@@ -54,11 +56,14 @@ package obi_cpu_agent_pkg;
         vif.wdata <= req.data;
         vif.be <= req.be;
         
+        `uvm_info("OBI_DRV", "Waiting for gnt==1", UVM_LOW)
         @(posedge vif.clk_i iff vif.gnt == 1);
+        `uvm_info("OBI_DRV", "Got gnt==1, waiting for rvalid==1", UVM_LOW)
         vif.req <= 0;
         
         // Wait for rvalid (OBI asserts rvalid for both reads and writes to signal completion)
         @(posedge vif.clk_i iff vif.rvalid == 1);
+        `uvm_info("OBI_DRV", "Got rvalid==1, finishing item", UVM_LOW)
         if (!req.we) begin
           req.data = vif.rdata;
         end

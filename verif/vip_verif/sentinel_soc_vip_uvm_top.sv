@@ -151,13 +151,11 @@ module sentinel_soc_vip_uvm_top;
   always @(posedge clk_i) begin
     // Only print when there's an active request or a valid response to avoid flooding the terminal
     if (u_obi_if.req || u_dut.apb_bridge_req || u_dut.core_data_rvalid || u_dut.apb_bridge_rvalid) begin
-      $display("[HW_TRACE] %0t: req=%b core_req=%b addr=%h core_addr=%h sel=%d inflight=%b gnt=%b demux_gnt=%b rvalid=%b | apb_req=%b apb_gnt=%b apb_rvalid=%b | pready=%b", 
+      $display("[HW_TRACE] %0t: core_req=%b sbr_req=%b mgr_req7=%b | sel=%d inflight=%b | demux_gnt=%b apb_req=%b apb_gnt=%b", 
         $time, 
-        u_obi_if.req, u_dut.core_data_req, u_obi_if.addr, u_dut.core_data_addr, 
+        u_dut.core_data_req, u_dut.u_addr_decode.data_req_s.req, u_dut.u_addr_decode.u_data_demux.mgr_ports_req_o[7].req,
         u_dut.u_addr_decode.data_sel, u_dut.u_addr_decode.u_data_demux.in_flight,
-        u_dut.core_data_gnt, u_dut.u_addr_decode.u_data_demux.sbr_port_gnt, u_dut.core_data_rvalid,
-        u_dut.apb_bridge_req, u_dut.apb_bridge_gnt, u_dut.apb_bridge_rvalid,
-        u_dut.apb_rsp.pready
+        u_dut.u_addr_decode.u_data_demux.sbr_port_gnt, u_dut.apb_bridge_req, u_dut.apb_bridge_gnt
       );
     end
   end

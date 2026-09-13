@@ -37,11 +37,11 @@ package obi_cpu_agent_pkg;
     endfunction
 
     task run_phase(uvm_phase phase);
-      vif.req <= 0;
-      vif.we <= 0;
-      vif.addr <= 0;
-      vif.wdata <= 0;
-      vif.be <= 0;
+      vif.req = 0;
+      vif.we = 0;
+      vif.addr = 0;
+      vif.wdata = 0;
+      vif.be = 0;
       @(posedge vif.rst_ni);
       `uvm_info("OBI_DRV", "Out of reset, waiting for items...", UVM_LOW)
       
@@ -50,22 +50,25 @@ package obi_cpu_agent_pkg;
         `uvm_info("OBI_DRV", $sformatf("Driving req to addr 0x%0h", req.addr), UVM_LOW)
         
         @(posedge vif.clk_i);
-        vif.req <= 1;
-        vif.we <= req.we;
-        vif.addr <= req.addr;
-        vif.wdata <= req.data;
-        vif.be <= req.be;
+        #1ps;
+        vif.req = 1;
+        vif.we = req.we;
+        vif.addr = req.addr;
+        vif.wdata = req.data;
+        vif.be = req.be;
         
         `uvm_info("OBI_DRV", "Waiting for gnt==1", UVM_LOW)
         do begin
           @(posedge vif.clk_i);
+          #1ps;
         end while (vif.gnt !== 1'b1);
         `uvm_info("OBI_DRV", "Got gnt==1, waiting for rvalid==1", UVM_LOW)
-        vif.req <= 0;
+        vif.req = 0;
         
         // Wait for rvalid (OBI asserts rvalid for both reads and writes to signal completion)
         do begin
           @(posedge vif.clk_i);
+          #1ps;
         end while (vif.rvalid !== 1'b1);
         `uvm_info("OBI_DRV", "Got rvalid==1, finishing item", UVM_LOW)
         if (!req.we) begin

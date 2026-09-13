@@ -154,8 +154,8 @@ module sentinel_soc_vip_uvm_top;
       $display("[HW_TRACE] %0t: req=%b core_req=%b addr=%h core_addr=%h sel=%d inflight=%b gnt=%b demux_gnt=%b rvalid=%b | apb_req=%b apb_gnt=%b apb_rvalid=%b | pready=%b", 
         $time, 
         u_obi_if.req, u_dut.core_data_req, u_obi_if.addr, u_dut.core_data_addr, 
-        u_dut.u_soc_addr_decode.data_sel, u_dut.u_soc_addr_decode.u_data_demux.in_flight,
-        u_dut.core_data_gnt, u_dut.u_soc_addr_decode.u_data_demux.sbr_port_gnt, u_dut.core_data_rvalid,
+        u_dut.u_addr_decode.data_sel, u_dut.u_addr_decode.u_data_demux.in_flight,
+        u_dut.core_data_gnt, u_dut.u_addr_decode.u_data_demux.sbr_port_gnt, u_dut.core_data_rvalid,
         u_dut.apb_bridge_req, u_dut.apb_bridge_gnt, u_dut.apb_bridge_rvalid,
         u_dut.apb_rsp.pready
       );

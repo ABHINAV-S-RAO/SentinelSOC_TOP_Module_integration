@@ -12,7 +12,7 @@ XRUN = xrun
 XRUN_OPTS = -uvm -access +rw +define+NO_CORE
 
 # The Master File List (You can edit this .f file to add/remove VIPs to save memory)
-FILE_LIST = sentinel_soc_vip_files.f
+FILE_LIST = verif/vip_verif/sentinel_soc_vip_files.f
 
 .PHONY: all clean test_reg test_uart test_spi test_qspi test_gpio test_jtag test_timer
 
@@ -24,31 +24,31 @@ all: test_reg
 
 # Basic Address Decoding Test (Proves OBI Agent can route to APB)
 test_reg:
-	$(XRUN) -f $(FILE_LIST) $(XRUN_OPTS) +UVM_TESTNAME=sentinel_soc_vip_base_test
+	cd ../.. && $(XRUN) -f $(FILE_LIST) $(XRUN_OPTS) +UVM_TESTNAME=sentinel_soc_vip_base_test
 
 # UART Traffic Test (Uses UART AVIP)
 test_uart:
-	$(XRUN) -f $(FILE_LIST) $(XRUN_OPTS) +UVM_TESTNAME=sentinel_soc_vip_uart_test
+	cd ../.. && $(XRUN) -f $(FILE_LIST) $(XRUN_OPTS) +UVM_TESTNAME=sentinel_soc_vip_uart_test
 
 # SPI Master Test (Uses SPI AVIP)
 test_spi:
-	$(XRUN) -f $(FILE_LIST) $(XRUN_OPTS) +UVM_TESTNAME=sentinel_soc_vip_spi_test
+	cd ../.. && $(XRUN) -f $(FILE_LIST) $(XRUN_OPTS) +UVM_TESTNAME=sentinel_soc_vip_spi_test
 
 # QSPI Flash Test (Uses QSPI BFM)
 test_qspi:
-	$(XRUN) -f $(FILE_LIST) $(XRUN_OPTS) +UVM_TESTNAME=sentinel_soc_vip_qspi_test
+	cd ../.. && $(XRUN) -f $(FILE_LIST) $(XRUN_OPTS) +UVM_TESTNAME=sentinel_soc_vip_qspi_test
 
 # GPIO Toggle Test (Uses GPIO IF)
 test_gpio:
-	$(XRUN) -f $(FILE_LIST) $(XRUN_OPTS) +UVM_TESTNAME=sentinel_soc_vip_gpio_test
+	cd ../.. && $(XRUN) -f $(FILE_LIST) $(XRUN_OPTS) +UVM_TESTNAME=sentinel_soc_vip_gpio_test
 
 # JTAG Debug Test (Uses JTAG AVIP)
 test_jtag:
-	$(XRUN) -f $(FILE_LIST) $(XRUN_OPTS) +UVM_TESTNAME=sentinel_soc_vip_jtag_test
+	cd ../.. && $(XRUN) -f $(FILE_LIST) $(XRUN_OPTS) +UVM_TESTNAME=sentinel_soc_vip_jtag_test
 
 # Timer Interrupt Test (Uses Timer IRQ IF)
 test_timer:
-	$(XRUN) -f $(FILE_LIST) $(XRUN_OPTS) +UVM_TESTNAME=sentinel_soc_vip_timer_test
+	cd ../.. && $(XRUN) -f $(FILE_LIST) $(XRUN_OPTS) +UVM_TESTNAME=sentinel_soc_vip_timer_test
 
 # -----------------------------------------------------------------------------
 # Cleanup

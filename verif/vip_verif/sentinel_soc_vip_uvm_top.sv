@@ -41,12 +41,21 @@ module sentinel_soc_vip_uvm_top;
   // Timer IRQ Interface
   timer_irq_if u_timer_if(clk_i, rst_ni);
 
+  logic qspi_sdi0, qspi_sdi1, qspi_sdi2, qspi_sdi3;
+  
   // QSPI BFM Instantiation
   qspi_flash_bfm u_qspi_bfm (
-    .clk_i(vif.qspi_clk),
-    .rst_ni(rst_ni),
-    .csn_i(vif.qspi_csn),
-    .data_io(vif.qspi_io)
+    .spi_clk (vif.qspi_clk),
+    .spi_csn0(vif.qspi_csn),
+    .spi_mode(2'b00),
+    .spi_sdo0(vif.qspi_io[0]),
+    .spi_sdo1(vif.qspi_io[1]),
+    .spi_sdo2(vif.qspi_io[2]),
+    .spi_sdo3(vif.qspi_io[3]),
+    .spi_sdi0(qspi_sdi0),
+    .spi_sdi1(qspi_sdi1),
+    .spi_sdi2(qspi_sdi2),
+    .spi_sdi3(qspi_sdi3)
   );
 
   // ---------------------------------------------------------------------------

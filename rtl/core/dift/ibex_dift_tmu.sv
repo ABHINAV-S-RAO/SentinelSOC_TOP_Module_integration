@@ -14,10 +14,7 @@
 // timescale removed
 
 // --- MODULE 1: CHECK TAG DECODER ---
-module ibex_dift_tmu
-(
-  import ibex_pkg::*;
-
+module ibex_dift_tmu import ibex_pkg::*; (
   input  logic [31:0] instr_rdata_i,
   input  logic [31:0] tcr_i,
   output logic        source_1_o,
@@ -229,8 +226,7 @@ module ibex_dift_tmu
 endmodule
 
 // --- MODULE 2: LOAD CHECK UNIT ---
-module riscv_load_check
-(
+module riscv_load_check import ibex_pkg::*; (
   input  logic        regfile_wdata_wb_i_tag,
   input  logic        rs1_i_tag,
   input  logic        regfile_dest_tag,
@@ -261,8 +257,7 @@ module riscv_load_check
 endmodule
 
 // --- MODULE 3: LOAD PROPAGATION UNIT ---
-module riscv_load_propagation
-(
+module riscv_load_propagation import ibex_pkg::*; (
   input  logic        regfile_wdata_wb_i_tag,
   input  logic        rs1_i_tag,
   input  logic        regfile_we_wb_i,
@@ -303,8 +298,7 @@ module riscv_load_propagation
 endmodule
 
 // --- MODULE 4: MODE TAG DECODER ---
-module riscv_mode_tag
-(
+module riscv_mode_tag import ibex_pkg::*; (
   input  logic [31:0] instr_rdata_i,
   input  logic [31:0] tpr_i,
   output logic [ALU_MODE_WIDTH-1:0] alu_operator_o_mode,
@@ -386,8 +380,7 @@ module riscv_mode_tag
 endmodule
 
 // --- MODULE 5: ENABLE TAG DECODER ---
-module riscv_enable_tag
-(
+module riscv_enable_tag import ibex_pkg::*; (
   input  logic [31:0] instr_rdata_i,
   input  logic [31:0] tpr_i,
   output logic        is_store_o,

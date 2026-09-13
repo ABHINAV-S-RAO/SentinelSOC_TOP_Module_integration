@@ -78,6 +78,8 @@ package sentinel_soc_vip_uvm_pkg;
       uart_cfg.hasScoreboard = 1;
       
       uvm_config_db#(UartEnvConfig)::set(this, "*", "uartEnvConfig", uart_cfg);
+      uvm_config_db#(UartTxAgentConfig)::set(this, "*", "uartTxAgentConfig", uart_cfg.uartTxAgentConfig);
+      uvm_config_db#(UartRxAgentConfig)::set(this, "*", "uartRxAgentConfig", uart_cfg.uartRxAgentConfig);
 
       // Create Envs/Agents
       uart_env = UartEnv::type_id::create("uart_env", this);

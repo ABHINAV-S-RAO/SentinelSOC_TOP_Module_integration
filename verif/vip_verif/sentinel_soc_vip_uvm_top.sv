@@ -110,8 +110,11 @@ module sentinel_soc_vip_uvm_top;
   // ---------------------------------------------------------------------------
 `ifdef NO_CORE
   initial begin
-    // Force Ibex fetch disable so it doesn't do anything
-    force u_dut.u_ibex_top.fetch_enable_i = 1'b0;
+    // Force Ibex fetch disable — IbexMuBiOff = 4'b1010 (NOT 1'b0!)
+    force u_dut.u_ibex_top.fetch_enable_i = 4'b1010;
+    
+    // Fully silence Ibex's instruction bus
+    force u_dut.core_instr_req = 1'b0;
     
     // Force OBI signals from our obi_if into the crossbar/dift_obi_ctrl
     force u_dut.core_data_req   = u_obi_if.req;

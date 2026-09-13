@@ -118,14 +118,27 @@ module sentinel_soc_vip_uvm_top;
   end
 
   // Continuously force OBI signals from our obi_if into the crossbar/dift_obi_ctrl.
-  // Using always_comb ensures the force tracks changes from the UVM driver,
-  // whereas force in an initial block evaluates only once at time zero!
-  always_comb begin
-    force u_dut.core_data_req   = u_obi_if.req;
-    force u_dut.core_data_we    = u_obi_if.we;
-    force u_dut.core_data_addr  = u_obi_if.addr;
-    force u_dut.core_data_wdata = u_obi_if.wdata;
-    force u_dut.core_data_be    = u_obi_if.be;
+  // In SystemVerilog, force inside an initial block with a variable on the RHS evaluates once.
+  // BUT if the RHS is a single net (wire), the simulator sets up continuous tracking!
+  wire        tb_req   = u_obi_if.req;
+  wire        tb_we    = u_obi_if.we;
+  wire [31:0] tb_addr  = u_obi_if.addr;
+  wire [31:0] tb_wdata = u_obi_if.wdata;
+  wire [ 3:0] tb_be    = u_obi_if.be;
+
+  initial begin
+    // Force Ibex fetch disable so it doesn't do anything
+    force u_dut.u_ibex_top.fetch_enable_i = 4'b1010;
+    
+    // Fully silence Ibex's instruction bus
+    force u_dut.core_instr_req = 1'b0;
+
+    // Force data bus to track testbench wires continuously
+    force u_dut.core_data_req   = tb_req;
+    force u_dut.core_data_we    = tb_we;
+    force u_dut.core_data_addr  = tb_addr;
+    force u_dut.core_data_wdata = tb_wdata;
+    force u_dut.core_data_be    = tb_be;
   end
 
   // Assign monitor signals back to obi_if
@@ -138,9 +151,9 @@ module sentinel_soc_vip_uvm_top;
   always @(posedge clk_i) begin
     // Only print when there's an active request or a valid response to avoid flooding the terminal
     if (u_obi_if.req || u_dut.apb_bridge_req || u_dut.core_data_rvalid || u_dut.apb_bridge_rvalid) begin
-      $display("[HW_TRACE] %0t: req=%b gnt=%b rvalid=%b | apb_req=%b apb_gnt=%b apb_rvalid=%b | pready=%b psel_uart=%b", 
+      $display("[HW_TRACE] %0t: u_obi_req=%b core_req=%b gnt=%b rvalid=%b | apb_req=%b apb_gnt=%b apb_rvalid=%b | pready=%b psel_uart=%b", 
         $time, 
-        u_obi_if.req, u_dut.core_data_gnt, u_dut.core_data_rvalid,
+        u_obi_if.req, u_dut.core_data_req, u_dut.core_data_gnt, u_dut.core_data_rvalid,
         u_dut.apb_bridge_req, u_dut.apb_bridge_gnt, u_dut.apb_bridge_rvalid,
         u_dut.apb_rsp.pready, u_dut.psel_uart
       );

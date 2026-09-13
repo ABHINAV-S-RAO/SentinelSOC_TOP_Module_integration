@@ -1,0 +1,103 @@
+#ifndef SOC_H
+#define SOC_H
+
+#include <stdint.h>
+
+#define REG32(addr) (*(volatile uint32_t *)(addr))
+
+// Memory Map
+#define BOOTROM_BASE 0x00000000
+#define ISRAM_BASE   0x00010000
+#define DSRAM_BASE   0x00020000
+#define CTRL_BASE    0x00030000
+#define BUF_BASE     0x00040000
+#define CRYPTO_BASE  0x00050000
+#define PLIC_BASE    0x0C000000
+#define APB_QSPI_BASE 0x10500000
+#define APB_SPI_BASE  0x10502000
+#define APB_UART_BASE 0x10503000
+#define APB_GPIO_BASE 0x10600000
+
+// CTRL Registers (0x00030000)
+#define CTRL_CTRL0       REG32(CTRL_BASE + 0x00)
+#define CTRL_STATUS0     REG32(CTRL_BASE + 0x04)
+#define CTRL_BOOT_STATUS REG32(CTRL_BASE + 0x08)
+#define CTRL_CTRL1       REG32(CTRL_BASE + 0x0C)
+
+#define CTRL_CTRL0_ISRAM_LOCK_BIT 0
+#define CTRL_STATUS0_CRYPTO_VERIFIED_BIT 0
+#define CTRL_STATUS0_ISRAM_LOCKED_BIT 1
+#define CTRL_BOOT_STATUS_BOOT_DONE_BIT 0
+#define CTRL_CTRL1_BOOT_DONE_SET_BIT 0
+
+// BUF Registers (0x00040000)
+#define BUF_CTRL       REG32(BUF_BASE + 0x00)
+#define BUF_STATUS     REG32(BUF_BASE + 0x04)
+#define BUF_FILL_LVL   REG32(BUF_BASE + 0x08)
+#define BUF_BLK_SIZE   REG32(BUF_BASE + 0x0C)
+#define BUF_IRQ_EN     REG32(BUF_BASE + 0x10)
+#define BUF_IRQ_STAT   REG32(BUF_BASE + 0x14)
+#define BUF_ACCEL_CTRL REG32(BUF_BASE + 0x18)
+#define BUF_MSG_LEN    REG32(BUF_BASE + 0x1C)
+#define BUF_DATA_FIFO  (BUF_BASE + 0x100) // Write to any address in 0x100-0x17F
+#define BUF_ACCEL_OUT  (BUF_BASE + 0x200) // Read from 0x200-0x23F
+
+// CRYPTO Registers (0x00050000)
+#define CRYPTO_CTRL    REG32(CRYPTO_BASE + 0x00)
+#define CRYPTO_STATUS  REG32(CRYPTO_BASE + 0x04)
+#define CRYPTO_MSG_LEN REG32(CRYPTO_BASE + 0x08)
+#define CRYPTO_R_IN    REG32(CRYPTO_BASE + 0x0C)
+#define CRYPTO_S_IN    REG32(CRYPTO_BASE + 0x10)
+#define CRYPTO_DATA_IN REG32(CRYPTO_BASE + 0x14)
+
+#define CRYPTO_CTRL_START_BIT   0
+#define CRYPTO_CTRL_ABORT_BIT   1
+#define CRYPTO_CTRL_SOFTRST_BIT 2
+
+#define CRYPTO_STATUS_BUSY_BIT  0
+#define CRYPTO_STATUS_READY_BIT 1
+#define CRYPTO_STATUS_DONE_BIT  2
+#define CRYPTO_STATUS_VALID_BIT 3
+
+// APB UART Registers (0x10503000)
+#define UART_THR REG32(APB_UART_BASE + 0x00) // When LCR[7] == 0
+#define UART_RBR REG32(APB_UART_BASE + 0x00) // When LCR[7] == 0
+#define UART_DLL REG32(APB_UART_BASE + 0x00) // When LCR[7] == 1
+#define UART_IER REG32(APB_UART_BASE + 0x04) // When LCR[7] == 0
+#define UART_DLM REG32(APB_UART_BASE + 0x04) // When LCR[7] == 1
+#define UART_IIR REG32(APB_UART_BASE + 0x08)
+#define UART_LCR REG32(APB_UART_BASE + 0x0C)
+#define UART_LSR REG32(APB_UART_BASE + 0x14)
+
+#define UART_LCR_DLAB (1 << 7)
+#define UART_LSR_THRE (1 << 5)
+#define UART_LSR_TEMT (1 << 6)
+#define UART_IER_THRE (1 << 1)
+
+// APB GPIO Registers (0x10600000)
+#define GPIO_PADDIR REG32(APB_GPIO_BASE + 0x00)
+#define GPIO_PADIN  REG32(APB_GPIO_BASE + 0x04)
+#define GPIO_PADOUT REG32(APB_GPIO_BASE + 0x08)
+
+// PLIC Registers
+#define PLIC_PRIO(irq)   REG32(PLIC_BASE + (irq) * 4)
+#define PLIC_IP          REG32(PLIC_BASE + 0x1000)
+#define PLIC_IE0         REG32(PLIC_BASE + 0x2000)
+#define PLIC_THRESHOLD0  REG32(PLIC_BASE + 0x200000)
+#define PLIC_CC0         REG32(PLIC_BASE + 0x200004)
+
+// IRQ Sources
+#define IRQ_UART  1
+#define IRQ_SPI   2
+#define IRQ_QSPI  3
+#define IRQ_GPIO  4
+#define IRQ_TIMER 5
+#define IRQ_BUF   6
+#define IRQ_SHA   7
+#define IRQ_DIFT  8
+
+// Test Signature
+#define TEST_PASS 0xB007B007
+#define TEST_FAIL 0xDEAD0000 // Add specific error code in lower 16 bits
+
+#endif // SOC_H

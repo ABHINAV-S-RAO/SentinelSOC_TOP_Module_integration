@@ -12,9 +12,7 @@ rtl/core/ibex_core/rtl/ibex_pkg.sv
 rtl/core/ibex_core/rtl/ibex_tracer_pkg.sv
 
 # -------------------------------------------------------
-# lowRISC prim packages (must come before ibex_core.f)
-# These are packages (not modules), so -y cannot auto-find them.
-# Add ALL prim packages upfront to avoid any missing pkg errors.
+# lowRISC prim packages
 # -------------------------------------------------------
 rtl/core/ibex_core/vendor/lowrisc_ip/ip/prim_generic/rtl/prim_pkg.sv
 rtl/core/ibex_core/vendor/lowrisc_ip/ip/prim_generic/rtl/prim_ram_1p_pkg.sv
@@ -30,12 +28,10 @@ rtl/core/ibex_core/vendor/lowrisc_ip/ip/prim/rtl/prim_secded_pkg.sv
 rtl/core/ibex_core/vendor/lowrisc_ip/ip/prim/rtl/prim_subreg_pkg.sv
 rtl/core/ibex_core/vendor/lowrisc_ip/ip/prim/rtl/prim_util_pkg.sv
 
-# -y lets elaborator auto-resolve prim_buf, prim_flop, prim_ram_1p etc.
 -y rtl/core/ibex_core/vendor/lowrisc_ip/ip/prim/rtl
 -y rtl/core/ibex_core/vendor/lowrisc_ip/ip/prim_generic/rtl
 +libext+.sv+.svh
 
-# Explicit module needed for clock gating (generic implementation)
 rtl/core/ibex_core/vendor/lowrisc_ip/ip/prim_generic/rtl/prim_clock_gating.sv
 
 # DIFT modules
@@ -44,14 +40,11 @@ rtl/core/dift/ibex_dift_mem.sv
 rtl/core/dift/ibex_dift_tmu.sv
 rtl/core/dift/ibex_register_file_latch_tag.sv
 
-# ibex core compile order
 -f rtl/core/ibex_core/rtl/ibex_core.f
 
-# ibex top-level (wraps ibex_core, uses prim_buf, prim_flop, prim_ram_1p_scr etc.)
 rtl/core/ibex_core/rtl/ibex_top.sv
 rtl/core/ibex_core/rtl/ibex_top_tracing.sv
 
-# DIFT OBI Wrapper
 rtl/obi_wrapper/dift_obi/dift_obi_pkg.sv
 rtl/obi_wrapper/dift_obi/dift_obi_ctrl.sv
 rtl/obi_wrapper/dift_obi/dift_tag_sram_shim.sv
@@ -61,12 +54,9 @@ rtl/peripheral/apb_uart/uart_rx.sv
 rtl/peripheral/apb_uart/uart_tx.sv
 rtl/peripheral/apb_uart/uart_interrupt.sv
 rtl/peripheral/apb_uart/apb_uart.sv
-#rtl/peripheral/apb_uart/apb_uart_sv.sv
 
-# GPIO (NEW)
 rtl/peripheral/apb_gpio/rtl/apb_gpio.sv
 
-# QSPI
 rtl/peripheral/apb_spi_master/apb_spi_master.sv
 rtl/peripheral/apb_spi_master/spi_master_apb_if.sv
 rtl/peripheral/apb_spi_master/spi_master_clkgen.sv
@@ -100,8 +90,6 @@ rtl/soc/soc_bootrom.sv
 rtl/soc/soc_sram.sv
 rtl/crypto/otp.sv
 
-# riscv-dbg: dm_top+dmi_jtag are instantiated in sentinel_soc_top,
-# so these must be compiled even though the debugger is not being tested.
 rtl/riscv-dbg/src/dm_pkg.sv
 rtl/riscv-dbg/debug_rom/debug_rom.sv
 rtl/riscv-dbg/debug_rom/debug_rom_one_scratch.sv
@@ -118,11 +106,50 @@ rtl/riscv-dbg/src/dmi_intf.sv
 rtl/soc/soc_addr_decode.sv
 rtl/soc/soc_ctrl_regs.sv
 rtl/soc/soc_buffer.sv
-
-# Sentinel SoC Top
 rtl/soc/sentinel_soc_top.sv
 
-# Sentinel SoC UVM Testbench
+# -----------------------------------------------------------------------------
+# VIP Integration
+# -----------------------------------------------------------------------------
+# UART AVIP
++incdir+verif/vip/uart_avip/src/hvlTop/uartTxAgent/uartTxSequences/
++incdir+verif/vip/uart_avip/src/hvlTop/uartTxAgent/
++incdir+verif/vip/uart_avip/src/hvlTop/uartEnv/virtualSequencer/
++incdir+verif/vip/uart_avip/src/hvlTop/tb/uartVirtualSequences/
++incdir+verif/vip/uart_avip/src/hvlTop/uartEnv
++incdir+verif/vip/uart_avip/src/hvlTop/uartRxAgent
++incdir+verif/vip/uart_avip/src/hvlTop/uartRxAgent/uartRxSequences/
++incdir+verif/vip/uart_avip/src/hvlTop/tb
+verif/vip/uart_avip/src/globals/UartGlobalPkg.sv
+verif/vip/uart_avip/src/hvlTop/uartTxAgent/UartTxPkg.sv
+verif/vip/uart_avip/src/hvlTop/uartRxAgent/UartRxPkg.sv
+verif/vip/uart_avip/src/hvlTop/uartTxAgent/uartTxSequences/UartTxSequencePkg.sv
+verif/vip/uart_avip/src/hvlTop/uartRxAgent/uartRxSequences/UartRxSequencePkg.sv
+verif/vip/uart_avip/src/hvlTop/uartEnv/UartEnvPkg.sv
+verif/vip/uart_avip/src/hvlTop/tb/uartVirtualSequences/UartVirtualSequencePkg.sv
+verif/vip/uart_avip/src/hvlTop/tb/UartBaseTestPkg.sv
+verif/vip/uart_avip/src/hdlTop/uartInterface/UartInterface.sv
+verif/vip/uart_avip/src/hdlTop/uartTxAgentBfm/UartTxDriverBfm.sv
+verif/vip/uart_avip/src/hdlTop/uartTxAgentBfm/UartTxMonitorBfm.sv
+verif/vip/uart_avip/src/hdlTop/uartTxAgentBfm/UartTxAgentBfm.sv
+verif/vip/uart_avip/src/hdlTop/uartTxAgentBfm/UartTxAssertions.sv
+verif/vip/uart_avip/src/hdlTop/uartRxAgentBfm/UartRxDriverBfm.sv
+verif/vip/uart_avip/src/hdlTop/uartRxAgentBfm/UartRxAssertions.sv
+verif/vip/uart_avip/src/hdlTop/uartRxAgentBfm/UartRxMonitorBfm.sv
+verif/vip/uart_avip/src/hdlTop/uartRxAgentBfm/UartRxAgentBfm.sv
+verif/vip/uart_avip/src/hdlTop/UartHdlTop.sv
+verif/vip/uart_avip/src/hvlTop/UartHvlTop.sv
+
+# -----------------------------------------------------------------------------
+# New Dedicated VIP Testbench
+# -----------------------------------------------------------------------------
+verif/vip_verif/cpu_agent/obi_if.sv
+verif/vip_verif/cpu_agent/obi_cpu_agent_pkg.sv
+
+verif/vip_verif/qspi_vip/qspi_flash_bfm.sv
+verif/vip_verif/gpio_vip/gpio_if.sv
+verif/vip_verif/timer_vip/timer_irq_if.sv
+
 verif/soc_verif/sentinel_soc_if.sv
-verif/soc_verif/sentinel_soc_uvm_pkg.sv
-verif/soc_verif/sentinel_soc_uvm_top.sv
+verif/vip_verif/sentinel_soc_vip_uvm_pkg.sv
+verif/vip_verif/sentinel_soc_vip_uvm_top.sv

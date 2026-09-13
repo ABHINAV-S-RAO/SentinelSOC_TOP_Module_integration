@@ -5,3 +5,12 @@
 [submodule "rtl/peripheral/apb_gpio"]
     path = rtl/peripheral/apb_gpio
     url = https://github.com/pulp-platform/apb_gpio.git
+[submodule "verif/vip/uart_avip"]
+	path = verif/vip/uart_avip
+	url = https://github.com/mbits-mirafra/uart_avip.git
+[submodule "verif/vip/spi_avip"]
+	path = verif/vip/spi_avip
+	url = https://github.com/mbits-mirafra/spi_avip.git
+[submodule "verif/vip/jtag_avip"]
+	path = verif/vip/jtag_avip
+	url = https://github.com/mbits-mirafra/jtag_avip.git

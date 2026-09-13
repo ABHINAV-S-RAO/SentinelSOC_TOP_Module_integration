@@ -1,23 +1,38 @@
-# Sentinel SoC Bare-Metal Makefile
-TOOLCHAIN_PREFIX = riscv64-unknown-elf-
-CC = $(TOOLCHAIN_PREFIX)gcc
-OBJCOPY = $(TOOLCHAIN_PREFIX)objcopy
+# software/Makefile - Build SentinelSOC BootROM firmware
+# Usage: make        (builds all hex files)
+#        make clean  (remove build artifacts)
 
-# RV32IMC for Ibex, ILP32 ABI, optimized for size, bare-metal flags
-CFLAGS = -march=rv32imc -mabi=ilp32 -Os -nostartfiles -nostdlib -ffreestanding
+CROSS   ?= riscv32-unknown-elf
+CC       = $(CROSS)-gcc
+OBJCOPY  = $(CROSS)-objcopy
+OBJDUMP  = $(CROSS)-objdump
 
-# Base addresses mapped from soc_addr_decode.sv
-BOOTROM_BASE = 0x00000000
-ISRAM_BASE   = 0x00010000
+ARCH_FLAGS = -march=rv32imc -mabi=ilp32
 
-all: bootrom.hex
+CFLAGS  = $(ARCH_FLAGS) -nostdlib -nostartfiles -static -I. -O2
+LDFLAGS = -T crt0.ld
 
-# Compile BootROM (starts at 0x00000000)
-bootrom.elf: bootrom.c
-	$(CC) $(CFLAGS) -Wl,-Ttext=$(BOOTROM_BASE) bootrom.c -o bootrom.elf
+TESTS = tests/test_uart_boot tests/test_crypto_accelerator tests/test_plic_interrupts tests/test_access_control tests/test_dift_integration tests/test_soc_buffer_stream
 
-bootrom.hex: bootrom.elf
-	$(OBJCOPY) -O verilog bootrom.elf bootrom.hex
+all: $(addsuffix .hex, $(TESTS)) $(addsuffix .dump, $(TESTS)) bootrom.hex
+
+# Original bootrom.S
+bootrom.elf: bootrom.S bootrom.ld
+	$(CC) $(ARCH_FLAGS) -nostdlib -nostartfiles -static -T bootrom.ld -o bootrom.elf bootrom.S
+
+# C tests
+%.elf: %.c crt0.S crt0.ld soc.h test_utils.h
+	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ crt0.S $<
+
+%.hex: %.elf
+	$(OBJCOPY) -O binary $< $*.bin
+	python3 bin2hex.py $*.bin $@
+
+%.dump: %.elf
+	$(OBJDUMP) -d -M no-aliases $< > $@
 
 clean:
-	rm -f *.elf *.hex *.bin
+	rm -f bootrom.elf bootrom.bin bootrom.hex bootrom.dump
+	rm -f tests/*.elf tests/*.bin tests/*.hex tests/*.dump
+
+.PHONY: all clean

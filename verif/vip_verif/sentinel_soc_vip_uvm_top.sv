@@ -1,8 +1,8 @@
 `timescale 1ns/1ps
 
-module sentinel_soc_uvm_top;
+module sentinel_soc_vip_uvm_top;
   import uvm_pkg::*;
-  import sentinel_soc_uvm_pkg::*;
+  import sentinel_soc_vip_uvm_pkg::*;
 
   // ---------------------------------------------------------------------------
   // Clock & Reset
@@ -25,9 +25,27 @@ module sentinel_soc_uvm_top;
   // Interface Instantiation
   // ---------------------------------------------------------------------------
   sentinel_soc_if vif(clk_i, rst_ni);
-
-  // Enable DIFT
   initial vif.dift_en = 1'b1;
+
+  // AVIP Interfaces
+  UartIf u_uart_if(clk_i, rst_ni);
+  
+  // CPU Agent Interface
+  obi_if u_obi_if(clk_i, rst_ni);
+  
+  // GPIO Interface
+  gpio_if u_gpio_if(clk_i, rst_ni);
+  
+  // Timer IRQ Interface
+  timer_irq_if u_timer_if(clk_i, rst_ni);
+
+  // QSPI BFM Instantiation
+  qspi_flash_bfm u_qspi_bfm (
+    .clk_i(vif.qspi_clk),
+    .rst_ni(rst_ni),
+    .csn_i(vif.qspi_csn),
+    .data_io(vif.qspi_io)
+  );
 
   // ---------------------------------------------------------------------------
   // DUT Instantiation
@@ -48,8 +66,8 @@ module sentinel_soc_uvm_top;
     .spi_miso_i         ( vif.spi_miso ),
 
     // UART
-    .uart_tx_o          ( vif.uart_tx ),
-    .uart_rx_i          ( vif.uart_rx ),
+    .uart_tx_o          ( u_uart_if.rx ), // DUT TX goes to VIP RX
+    .uart_rx_i          ( u_uart_if.tx ), // VIP TX goes to DUT RX
 
     // GPIO
     .gpio_io            ( vif.gpio ),
@@ -66,31 +84,34 @@ module sentinel_soc_uvm_top;
 `endif
   );
 
+  // ---------------------------------------------------------------------------
   // Load Firmware
-  string firmware_file;
+  // ---------------------------------------------------------------------------
   initial begin
-    if ($value$plusargs("FIRMWARE=%s", firmware_file)) begin
-      $display("[TB] Loading firmware from: %s", firmware_file);
-      $readmemh(firmware_file, u_dut.u_bootrom.mem);
-    end else begin
-      $display("[TB] Loading default firmware: software/bootrom.hex");
-      $readmemh("software/bootrom.hex", u_dut.u_bootrom.mem);
-    end
-
-    // Backdoor OTP Programming for test_crypto_accelerator sig_valid check
-    // 256-bit dummy key
-    u_dut.u_top_most.u_otp.otp_mem = 256'hDEADBEEF_CAFEBABE_B007B007_12345678_87654321_09876543_AAAABBBB_CCCCDDDD;
+    $display("[VIP-TB] Loading default firmware: software/bootrom.hex");
+    $readmemh("software/bootrom.hex", u_dut.u_bootrom.mem);
   end
 
   // ---------------------------------------------------------------------------
-  // Interface Configuration
+  // NoCore Bypassing (CPU Agent Injection)
   // ---------------------------------------------------------------------------
-  int dift_en_arg;
   initial begin
-    if (!$value$plusargs("DIFT_EN=%d", dift_en_arg)) begin
-      dift_en_arg = 1; // Default DIFT ON
-    end
-    vif.dift_en = dift_en_arg[0];
+`ifdef NO_CORE
+    // Force Ibex fetch disable so it doesn't do anything
+    force u_dut.u_ibex_top.fetch_enable_i = 1'b0;
+    
+    // Force OBI signals from our obi_if into the crossbar/dift_obi_ctrl
+    force u_dut.core_data_req   = u_obi_if.req;
+    force u_dut.core_data_we    = u_obi_if.we;
+    force u_dut.core_data_addr  = u_obi_if.addr;
+    force u_dut.core_data_wdata = u_obi_if.wdata;
+    force u_dut.core_data_be    = u_obi_if.be;
+    
+    // Assign monitor signals back to obi_if
+    assign u_obi_if.gnt    = u_dut.core_data_gnt;
+    assign u_obi_if.rvalid = u_dut.core_data_rvalid;
+    assign u_obi_if.rdata  = u_dut.core_data_rdata;
+`endif
   end
 
   // ---------------------------------------------------------------------------
@@ -98,15 +119,19 @@ module sentinel_soc_uvm_top;
   // ---------------------------------------------------------------------------
   initial begin
     uvm_config_db#(virtual sentinel_soc_if)::set(null, "uvm_test_top.*", "vif", vif);
-    uvm_config_db#(virtual sentinel_soc_if)::set(null, "uvm_test_top.env", "vif", vif); 
-    run_test("sentinel_soc_base_test");
+    uvm_config_db#(virtual UartIf)::set(null, "uvm_test_top.*", "vif_uart", u_uart_if);
+    uvm_config_db#(virtual obi_if)::set(null, "uvm_test_top.*", "vif_obi", u_obi_if);
+    uvm_config_db#(virtual gpio_if)::set(null, "uvm_test_top.*", "vif_gpio", u_gpio_if);
+    uvm_config_db#(virtual timer_irq_if)::set(null, "uvm_test_top.*", "vif_timer", u_timer_if);
+    
+    run_test("sentinel_soc_vip_base_test");
   end
 
   // ---------------------------------------------------------------------------
   // Waveform Dumping
   // ---------------------------------------------------------------------------
   initial begin
-    $shm_open("waves.shm");
+    $shm_open("waves_vip.shm");
     $shm_probe("ACMT");
   end
 

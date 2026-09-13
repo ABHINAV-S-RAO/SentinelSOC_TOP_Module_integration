@@ -128,13 +128,12 @@ module sentinel_soc_vip_uvm_top;
 
   // DEBUG MONITOR
   always @(posedge clk_i) begin
-    if (u_obi_if.req || u_dut.core_data_gnt || u_dut.core_data_rvalid || u_dut.u_obi_to_apb.tsxn_in_progress) begin
-      $display("[HW_TRACE] %0t: req=%b gnt=%b rvalid=%b | demux_req=%b demux_gnt=%b demux_sel=%0d | apb_req=%b apb_gnt=%b apb_rvalid=%b | tsxn=%b pready=%b psel_uart=%b", 
+    if (u_obi_if.req || u_dut.core_data_gnt || u_dut.core_data_rvalid || u_dut.apb_bridge_req || u_dut.apb_bridge_gnt || u_dut.apb_bridge_rvalid || u_dut.apb_rsp.pready) begin
+      $display("[HW_TRACE] %0t: req=%b gnt=%b rvalid=%b | apb_req=%b apb_gnt=%b apb_rvalid=%b | pready=%b psel_uart=%b", 
         $time, 
         u_obi_if.req, u_dut.core_data_gnt, u_dut.core_data_rvalid,
-        u_dut.u_addr_decode.data_req_s.req, u_dut.u_addr_decode.data_gnt_o, u_dut.u_addr_decode.data_sel_q,
         u_dut.apb_bridge_req, u_dut.apb_bridge_gnt, u_dut.apb_bridge_rvalid,
-        u_dut.u_obi_to_apb.tsxn_in_progress, u_dut.apb_rsp.pready, u_dut.psel_uart
+        u_dut.apb_rsp.pready, u_dut.psel_uart
       );
     end
   end

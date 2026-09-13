@@ -128,7 +128,7 @@ module sentinel_soc_vip_uvm_top;
 
   // DEBUG MONITOR
   always @(posedge clk_i) begin
-    if (u_obi_if.req || u_dut.core_data_gnt || u_dut.core_data_rvalid || u_dut.apb_bridge_req || u_dut.apb_bridge_gnt || u_dut.apb_bridge_rvalid || u_dut.apb_rsp.pready) begin
+    if ($time > 150000 && $time < 500000) begin
       $display("[HW_TRACE] %0t: req=%b gnt=%b rvalid=%b | apb_req=%b apb_gnt=%b apb_rvalid=%b | pready=%b psel_uart=%b", 
         $time, 
         u_obi_if.req, u_dut.core_data_gnt, u_dut.core_data_rvalid,

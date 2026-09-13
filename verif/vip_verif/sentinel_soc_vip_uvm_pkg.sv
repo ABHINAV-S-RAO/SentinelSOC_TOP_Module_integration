@@ -77,7 +77,7 @@ package sentinel_soc_vip_uvm_pkg;
       uart_cfg.uartRxAgentConfig.is_active = UVM_PASSIVE;
       uart_cfg.hasScoreboard = 1;
       
-      uvm_config_db#(UartEnvConfig)::set(this, "*", "UartEnvConfig", uart_cfg);
+      uvm_config_db#(UartEnvConfig)::set(this, "*", "uartEnvConfig", uart_cfg);
 
       // Create Envs/Agents
       uart_env = UartEnv::type_id::create("uart_env", this);

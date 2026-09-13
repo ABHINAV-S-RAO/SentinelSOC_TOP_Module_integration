@@ -140,11 +140,11 @@ module sentinel_soc_vip_uvm_top;
   // UVM Initialization
   // ---------------------------------------------------------------------------
   initial begin
-    uvm_config_db#(virtual sentinel_soc_if)::set(null, "uvm_test_top.*", "vif", vif);
-    uvm_config_db#(virtual UartIf)::set(null, "uvm_test_top.*", "vif_uart", u_uart_if);
-    uvm_config_db#(virtual obi_if)::set(null, "uvm_test_top.*", "vif_obi", u_obi_if);
-    uvm_config_db#(virtual gpio_if)::set(null, "uvm_test_top.*", "vif_gpio", u_gpio_if);
-    uvm_config_db#(virtual timer_irq_if)::set(null, "uvm_test_top.*", "vif_timer", u_timer_if);
+    uvm_config_db#(virtual sentinel_soc_if)::set(null, "*", "vif", vif);
+    uvm_config_db#(virtual UartIf)::set(null, "*", "vif_uart", u_uart_if);
+    uvm_config_db#(virtual obi_if)::set(null, "*", "vif_obi", u_obi_if);
+    uvm_config_db#(virtual gpio_if)::set(null, "*", "vif_gpio", u_gpio_if);
+    uvm_config_db#(virtual timer_irq_if)::set(null, "*", "vif_timer", u_timer_if);
     
     run_test();
   end

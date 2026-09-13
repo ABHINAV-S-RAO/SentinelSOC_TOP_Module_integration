@@ -110,13 +110,17 @@ module sentinel_soc_vip_uvm_top;
   // ---------------------------------------------------------------------------
 `ifdef NO_CORE
   initial begin
-    // Force Ibex fetch disable — IbexMuBiOff = 4'b1010 (NOT 1'b0!)
+    // Force Ibex fetch disable so it doesn't do anything
     force u_dut.u_ibex_top.fetch_enable_i = 4'b1010;
     
     // Fully silence Ibex's instruction bus
     force u_dut.core_instr_req = 1'b0;
-    
-    // Force OBI signals from our obi_if into the crossbar/dift_obi_ctrl
+  end
+
+  // Continuously force OBI signals from our obi_if into the crossbar/dift_obi_ctrl.
+  // Using always_comb ensures the force tracks changes from the UVM driver,
+  // whereas force in an initial block evaluates only once at time zero!
+  always_comb begin
     force u_dut.core_data_req   = u_obi_if.req;
     force u_dut.core_data_we    = u_obi_if.we;
     force u_dut.core_data_addr  = u_obi_if.addr;
@@ -134,9 +138,10 @@ module sentinel_soc_vip_uvm_top;
   always @(posedge clk_i) begin
     // Only print when there's an active request or a valid response to avoid flooding the terminal
     if (u_obi_if.req || u_dut.apb_bridge_req || u_dut.core_data_rvalid || u_dut.apb_bridge_rvalid) begin
-      $display("[HW_TRACE] %0t: req=%b gnt=%b rvalid=%b | apb_req=%b apb_gnt=%b apb_rvalid=%b | pready=%b psel_uart=%b", 
+      $display("[HW_TRACE] %0t: req=%b gnt=%b rvalid=%b | sel=%0d in_flight=%0d | apb_req=%b apb_gnt=%b apb_rvalid=%b | pready=%b psel_uart=%b", 
         $time, 
         u_obi_if.req, u_dut.core_data_gnt, u_dut.core_data_rvalid,
+        u_dut.u_soc_addr_decode.data_sel, u_dut.u_soc_addr_decode.u_data_demux.in_flight,
         u_dut.apb_bridge_req, u_dut.apb_bridge_gnt, u_dut.apb_bridge_rvalid,
         u_dut.apb_rsp.pready, u_dut.psel_uart
       );

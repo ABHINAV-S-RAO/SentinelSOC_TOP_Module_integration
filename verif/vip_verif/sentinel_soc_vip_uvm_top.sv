@@ -108,8 +108,8 @@ module sentinel_soc_vip_uvm_top;
   // ---------------------------------------------------------------------------
   // NoCore Bypassing (CPU Agent Injection)
   // ---------------------------------------------------------------------------
-  initial begin
 `ifdef NO_CORE
+  initial begin
     // Force Ibex fetch disable so it doesn't do anything
     force u_dut.u_ibex_top.fetch_enable_i = 1'b0;
     
@@ -119,13 +119,13 @@ module sentinel_soc_vip_uvm_top;
     force u_dut.core_data_addr  = u_obi_if.addr;
     force u_dut.core_data_wdata = u_obi_if.wdata;
     force u_dut.core_data_be    = u_obi_if.be;
-    
-    // Assign monitor signals back to obi_if
-    assign u_obi_if.gnt    = u_dut.core_data_gnt;
-    assign u_obi_if.rvalid = u_dut.core_data_rvalid;
-    assign u_obi_if.rdata  = u_dut.core_data_rdata;
-`endif
   end
+
+  // Assign monitor signals back to obi_if
+  assign u_obi_if.gnt    = u_dut.core_data_gnt;
+  assign u_obi_if.rvalid = u_dut.core_data_rvalid;
+  assign u_obi_if.rdata  = u_dut.core_data_rdata;
+`endif
 
   // ---------------------------------------------------------------------------
   // UART VIP Multiple-Driver Workaround

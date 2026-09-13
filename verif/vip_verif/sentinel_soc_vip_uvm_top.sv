@@ -29,6 +29,8 @@ module sentinel_soc_vip_uvm_top;
 
   // AVIP Interfaces
   UartIf u_uart_if(clk_i, rst_ni);
+  UartTxAgentBfm u_uart_tx_bfm(u_uart_if);
+  UartRxAgentBfm u_uart_rx_bfm(u_uart_if);
   
   // CPU Agent Interface
   obi_if u_obi_if(clk_i, rst_ni);

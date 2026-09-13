@@ -71,8 +71,11 @@ package sentinel_soc_vip_uvm_pkg;
 
       // Setup Config
       uart_cfg = UartEnvConfig::type_id::create("uart_cfg");
-      uart_cfg.has_tx_agent = 1;
-      uart_cfg.has_rx_agent = 1;
+      uart_cfg.uartTxAgentConfig = UartTxAgentConfig::type_id::create("uartTxAgentConfig");
+      uart_cfg.uartRxAgentConfig = UartRxAgentConfig::type_id::create("uartRxAgentConfig");
+      uart_cfg.uartTxAgentConfig.is_active = UVM_PASSIVE;
+      uart_cfg.uartRxAgentConfig.is_active = UVM_PASSIVE;
+      uart_cfg.hasScoreboard = 1;
       
       uvm_config_db#(UartEnvConfig)::set(this, "*", "UartEnvConfig", uart_cfg);
 

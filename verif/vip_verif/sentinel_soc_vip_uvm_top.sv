@@ -128,6 +128,7 @@ module sentinel_soc_vip_uvm_top;
   assign u_obi_if.gnt    = u_dut.core_data_gnt;
   assign u_obi_if.rvalid = u_dut.core_data_rvalid;
   assign u_obi_if.rdata  = u_dut.core_data_rdata;
+  assign u_obi_if.err    = u_dut.core_data_err;
 
   // DEBUG MONITOR
   always @(posedge clk_i) begin

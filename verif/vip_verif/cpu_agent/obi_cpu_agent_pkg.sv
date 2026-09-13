@@ -57,12 +57,16 @@ package obi_cpu_agent_pkg;
         vif.be <= req.be;
         
         `uvm_info("OBI_DRV", "Waiting for gnt==1", UVM_LOW)
-        @(posedge vif.clk_i iff vif.gnt == 1);
+        do begin
+          @(posedge vif.clk_i);
+        end while (vif.gnt !== 1'b1);
         `uvm_info("OBI_DRV", "Got gnt==1, waiting for rvalid==1", UVM_LOW)
         vif.req <= 0;
         
         // Wait for rvalid (OBI asserts rvalid for both reads and writes to signal completion)
-        @(posedge vif.clk_i iff vif.rvalid == 1);
+        do begin
+          @(posedge vif.clk_i);
+        end while (vif.rvalid !== 1'b1);
         `uvm_info("OBI_DRV", "Got rvalid==1, finishing item", UVM_LOW)
         if (!req.we) begin
           req.data = vif.rdata;

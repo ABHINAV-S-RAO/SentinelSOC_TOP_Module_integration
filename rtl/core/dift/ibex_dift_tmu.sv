@@ -13,11 +13,11 @@
 
 // timescale removed
 
-import ibex_pkg::*;
-
 // --- MODULE 1: CHECK TAG DECODER ---
 module ibex_dift_tmu
 (
+  import ibex_pkg::*;
+
   input  logic [31:0] instr_rdata_i,
   input  logic [31:0] tcr_i,
   output logic        source_1_o,

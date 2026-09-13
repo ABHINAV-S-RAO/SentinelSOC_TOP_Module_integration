@@ -1,9 +1,8 @@
 // timescale removed
 
-import ibex_pkg::*; // change to ibex_pkg
-
 module ibex_dift_logic
 (
+  import ibex_pkg::*; // Scoped to module
   // Propagation Interface
   input  logic [ALU_MODE_WIDTH-1:0] operator_i,      // From Tag Propagation Register
   input  logic                      operand_a_tag_i, // Tag of Source 1

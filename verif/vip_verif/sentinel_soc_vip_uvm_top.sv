@@ -61,6 +61,8 @@ module sentinel_soc_vip_uvm_top;
   // ---------------------------------------------------------------------------
   // DUT Instantiation
   // ---------------------------------------------------------------------------
+  logic dut_uart_tx;
+
   sentinel_soc_top u_dut (
     .clk_i              ( vif.clk ),
     .rst_ni             ( vif.rst_n ),
@@ -77,7 +79,7 @@ module sentinel_soc_vip_uvm_top;
     .spi_miso_i         ( vif.spi_miso ),
 
     // UART
-    .uart_tx_o          ( u_uart_if.rx ), // DUT TX goes to VIP RX
+    .uart_tx_o          ( dut_uart_tx ), // DUT TX goes to VIP RX
     .uart_rx_i          ( u_uart_if.tx ), // VIP TX goes to DUT RX
 
     // GPIO
@@ -123,6 +125,15 @@ module sentinel_soc_vip_uvm_top;
     assign u_obi_if.rvalid = u_dut.core_data_rvalid;
     assign u_obi_if.rdata  = u_dut.core_data_rdata;
 `endif
+  end
+
+  // ---------------------------------------------------------------------------
+  // UART VIP Multiple-Driver Workaround
+  // ---------------------------------------------------------------------------
+  // UartRxDriverBfm actively drives rx to 1. To prevent a multiple-driver 
+  // collision with the DUT's tx output, we force the rx line instead.
+  initial begin
+    force u_uart_if.rx = dut_uart_tx;
   end
 
   // ---------------------------------------------------------------------------

@@ -63,10 +63,13 @@ package obi_cpu_agent_pkg;
         while (vif.gnt !== 1'b1) begin
           @(posedge vif.clk_i);
         end
-        `uvm_info("OBI_DRV", "Got gnt==1, waiting for rvalid==1", UVM_LOW)
+        `uvm_info("OBI_DRV", "Got gnt==1, dropping req and waiting for rvalid==1", UVM_LOW)
+        
+        // Drop req immediately after gnt is sampled high (clean de-assertion to prevent multiple txns)
+        vif.req = 0;
 
-        // Keep req high — wait for rvalid at posedge
-        @(posedge vif.clk_i);
+        // Keep waiting for rvalid at posedge
+        // The driver sampled gnt==1 on this clock edge. Rvalid could be 1 in the same cycle or later.
         while (vif.rvalid !== 1'b1) begin
           @(posedge vif.clk_i);
         end
@@ -75,9 +78,8 @@ package obi_cpu_agent_pkg;
           req.data = vif.rdata;
         end
         
-        // Drop req at negedge (clean de-assertion)
+        // Wait till next negedge to cleanly finish cycle before next item
         @(negedge vif.clk_i);
-        vif.req = 0;
         
         seq_item_port.item_done();
       end

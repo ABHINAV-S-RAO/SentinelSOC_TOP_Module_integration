@@ -309,13 +309,10 @@ module soc_addr_decode #(
     data_req_s.a.aid   = '0;
   end
 
-  // --------------------------------------------------------------------------
-  // Output Mux (Bypass integration for APB)
-  // --------------------------------------------------------------------------
-  assign data_gnt_o    = (data_sel == SEL_APB) ? apb_gnt_i    : data_rsp_s.gnt;
-  assign data_rvalid_o = (data_sel == SEL_APB) ? apb_rvalid_i : data_rsp_s.rvalid;
-  assign data_rdata_o  = (data_sel == SEL_APB) ? apb_rdata_i  : data_rsp_s.r.rdata;
-  assign data_err_o    = (data_sel == SEL_APB) ? apb_err_i    : data_rsp_s.r.err;
+  assign data_gnt_o    = data_rsp_s.gnt;
+  assign data_rvalid_o = data_rsp_s.rvalid;
+  assign data_rdata_o  = data_rsp_s.r.rdata;
+  assign data_err_o    = data_rsp_s.r.err;
 
   // --------------------------------------------------------------------------
   // Pack Ibex flat instruction signals into OBI request struct
@@ -394,7 +391,7 @@ module soc_addr_decode #(
   soc_obi_req_t [DataNumMgrPorts-1:0] data_mgr_req;
   soc_obi_rsp_t [DataNumMgrPorts-1:0] data_mgr_rsp;
 
-  obi_demux #(
+  soc_obi_demux #(
     .ObiCfg      ( SocObiCfg       ),
     .obi_req_t   ( soc_obi_req_t   ),
     .obi_rsp_t   ( soc_obi_rsp_t   ),
@@ -419,7 +416,7 @@ module soc_addr_decode #(
   soc_obi_req_t [FetchNumMgrPorts-1:0] fetch_mgr_req;
   soc_obi_rsp_t [FetchNumMgrPorts-1:0] fetch_mgr_rsp;
 
-  obi_demux #(
+  soc_obi_demux #(
     .ObiCfg      ( SocObiCfg        ),
     .obi_req_t   ( soc_obi_req_t    ),
     .obi_rsp_t   ( soc_obi_rsp_t    ),

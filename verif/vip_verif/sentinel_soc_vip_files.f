@@ -103,6 +103,7 @@ rtl/riscv-dbg/src/dmi_jtag_tap.sv
 rtl/riscv-dbg/src/dmi_jtag.sv
 rtl/riscv-dbg/src/dmi_intf.sv
 
+rtl/soc/soc_obi_demux.sv
 rtl/soc/soc_addr_decode.sv
 rtl/soc/soc_ctrl_regs.sv
 rtl/soc/soc_buffer.sv

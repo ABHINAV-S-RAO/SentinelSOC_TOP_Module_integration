@@ -41,7 +41,8 @@ rtl/peripheral/apb_uart/uart_rx.sv
 rtl/peripheral/apb_uart/uart_tx.sv
 rtl/peripheral/apb_uart/uart_interrupt.sv
 # DUPLICATE of apb_uart_sv.sv, same module name, not instantiated anywhere -- rtl/peripheral/apb_uart/apb_uart.sv
-rtl/peripheral/apb_uart/apb_uart.svrtl/peripheral/apb_spi_master/spi_master_fifo.sv
+rtl/peripheral/apb_uart/apb_uart.sv
+rtl/peripheral/apb_spi_master/spi_master_fifo.sv
 rtl/peripheral/apb_spi_master/spi_master_clkgen.sv
 rtl/peripheral/apb_spi_master/spi_master_tx.sv
 rtl/peripheral/apb_spi_master/spi_master_rx.sv

@@ -9,7 +9,7 @@ XRUN = xrun
 #   -uvm: Enable UVM
 #   -access +rw: Enable read/write access for waveform dumping and force statements
 #   +define+NO_CORE: Tells our UVM Top to disable the Ibex CPU and enable the CPU Agent
-XRUN_OPTS = -uvm -access +rw +define+NO_CORE -top sentinel_soc_vip_uvm_top -timescale 1ns/1ps
+XRUN_OPTS = -uvm -access +rw +define+NO_CORE +define+RVFI -top sentinel_soc_vip_uvm_top -timescale 1ns/1ps
 
 # The Master File List (You can edit this .f file to add/remove VIPs to save memory)
 FILE_LIST = verif/vip_verif/sentinel_soc_vip_files.f

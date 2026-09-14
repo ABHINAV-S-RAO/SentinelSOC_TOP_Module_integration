@@ -391,7 +391,7 @@ module soc_addr_decode #(
   soc_obi_req_t [DataNumMgrPorts-1:0] data_mgr_req;
   soc_obi_rsp_t [DataNumMgrPorts-1:0] data_mgr_rsp;
 
-  soc_obi_demux #(
+  obi_demux #(
     .ObiCfg      ( SocObiCfg       ),
     .obi_req_t   ( soc_obi_req_t   ),
     .obi_rsp_t   ( soc_obi_rsp_t   ),
@@ -416,7 +416,7 @@ module soc_addr_decode #(
   soc_obi_req_t [FetchNumMgrPorts-1:0] fetch_mgr_req;
   soc_obi_rsp_t [FetchNumMgrPorts-1:0] fetch_mgr_rsp;
 
-  soc_obi_demux #(
+  obi_demux #(
     .ObiCfg      ( SocObiCfg        ),
     .obi_req_t   ( soc_obi_req_t    ),
     .obi_rsp_t   ( soc_obi_rsp_t    ),

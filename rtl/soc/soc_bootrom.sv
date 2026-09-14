@@ -30,11 +30,12 @@ module soc_bootrom #(
   logic [31:0] mem [NumWords];
 
   initial begin
-    if (InitFile != "") begin
-      $display("[soc_bootrom] Loading firmware from %s", InitFile);
-      $readmemh(InitFile, mem);
-    end
+  for (int i = 0; i < NumWords; i++) mem[i] = 32'h0000006f; // j . — safe default
+  if (InitFile != "") begin
+    $display("[soc_bootrom] Loading firmware from %s", InitFile);
+    $readmemh(InitFile, mem);
   end
+end
 
   // Word-aligned index from byte address
   wire [AddrBits-1:0] word_idx = addr_i[AddrBits+1:2];

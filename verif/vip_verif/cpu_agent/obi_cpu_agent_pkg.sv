@@ -36,7 +36,7 @@ package obi_cpu_agent_pkg;
         `uvm_fatal("NO_VIF", "obi_if not found")
     endfunction
 
-    task run_phase(uvm_phase phase);
+        task run_phase(uvm_phase phase);
       vif.req   <= 0;
       vif.we    <= 0;
       vif.addr  <= 0;
@@ -49,7 +49,6 @@ package obi_cpu_agent_pkg;
         seq_item_port.get_next_item(req);
         `uvm_info("OBI_DRV", $sformatf("Driving req to addr 0x%0h", req.addr), UVM_LOW)
         
-        // Drive at posedge using NBA to prevent delta-cycle races with RTL
         @(posedge vif.clk_i);
         vif.req   <= 1;
         vif.we    <= req.we;
@@ -57,27 +56,30 @@ package obi_cpu_agent_pkg;
         vif.wdata <= req.data;
         vif.be    <= req.be;
         
-        // Wait for gnt
-        `uvm_info("OBI_DRV", "Waiting for gnt==1", UVM_LOW)
-        do begin
-          @(posedge vif.clk_i);
-          #1ps; // Wait for combinational logic to settle before sampling
-        end while (vif.gnt !== 1'b1);
+        // Wait for gnt with timeout
+        begin : gnt_wait
+          // Wait for gnt
+          `uvm_info("OBI_DRV", "Waiting for gnt==1", UVM_LOW)
+          do begin
+            @(negedge vif.clk_i);
+          end while (vif.gnt !== 1'b1);
+        end
         `uvm_info("OBI_DRV", "Got gnt==1, dropping req and waiting for rvalid==1", UVM_LOW)
         
-        // Drop req at posedge using NBA
+        // Drop req at next posedge using NBA
+        @(posedge vif.clk_i);
         vif.req <= 0;
 
-        // Keep waiting for rvalid (check immediately since it could be 1 in same cycle)
-        while (vif.rvalid !== 1'b1) begin
-          @(posedge vif.clk_i);
-          #1ps; // Wait for combinational logic to settle before sampling
-        end
-        `uvm_info("OBI_DRV", "Got rvalid==1, finishing item", UVM_LOW)
-        if (!req.we) begin
-          req.data = vif.rdata;
-        end
+        // Keep waiting for rvalid (sample at negedge to avoid races)
+        do begin
+          @(negedge vif.clk_i);
+        end while (vif.rvalid !== 1'b1);
         
+        // Align to posedge before finishing item
+        @(posedge vif.clk_i);
+
+        `uvm_info("OBI_DRV", "Got rvalid==1, finishing item", UVM_LOW)
+        if (!req.we) req.data = vif.rdata;
         seq_item_port.item_done();
       end
     endtask

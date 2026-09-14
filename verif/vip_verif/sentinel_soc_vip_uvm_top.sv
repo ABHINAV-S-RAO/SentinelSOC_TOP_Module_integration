@@ -151,12 +151,12 @@ module sentinel_soc_vip_uvm_top;
   always @(posedge clk_i) begin
     // Only print when there's an active request or a valid response to avoid flooding the terminal
     if (u_obi_if.req || u_dut.apb_bridge_req || u_dut.core_data_rvalid || u_dut.apb_bridge_rvalid) begin
-      $display("[HW_TRACE] %0t: core_req=%b sbr_req=%b sbr_port_req=%b mgr_req7=%b | sel=%d inflight=%b | demux_gnt=%b apb_req=%b", 
-        $time, 
-        u_dut.core_data_req, u_dut.u_addr_decode.data_req_s.req, u_dut.u_addr_decode.u_data_demux.sbr_port_req_i.req, u_dut.u_addr_decode.u_data_demux.mgr_ports_req_o[7].req,
-        u_dut.u_addr_decode.data_sel, u_dut.u_addr_decode.u_data_demux.in_flight,
-        u_dut.u_addr_decode.u_data_demux.sbr_port_gnt, u_dut.apb_bridge_req
-      );
+      // $display("[HW_TRACE] %0t: core_req=%b sbr_req=%b sbr_port_req=%b mgr_req7=%b | sel=%d inflight=%b | demux_gnt=%b apb_req=%b", 
+      //   $time, 
+      //   u_dut.core_data_req, u_dut.u_addr_decode.data_req_s.req, u_dut.u_addr_decode.u_data_demux.sbr_port_req_i.req, u_dut.u_addr_decode.u_data_demux.mgr_ports_req_o[7].req,
+      //   u_dut.u_addr_decode.data_sel, u_dut.u_addr_decode.u_data_demux.in_flight,
+      //   u_dut.u_addr_decode.u_data_demux.sbr_port_gnt, u_dut.apb_bridge_req
+      // );
     end
   end
 `endif

@@ -1,0 +1,24 @@
++define+SYNTHESIS
++define+DIFT
++incdir+rtl/core/ibex_core/vendor/lowrisc_ip/ip/prim/rtl
++incdir+rtl/core/ibex_core/vendor/lowrisc_ip/ip/prim_generic/rtl
++incdir+rtl/core/ibex_core/vendor/lowrisc_ip/dv/sv/dv_utils
++incdir+.bender/git/checkouts/common_cells-229df333cc9dff23/include
++incdir+.bender/git/checkouts/apb-1b178314edfb6925/include
++incdir+.bender/git/checkouts/obi-75858655e8b256db/include
+
+rtl/core/ibex_core/rtl/ibex_pkg.sv
+rtl/core/ibex_core/rtl/ibex_tracer_pkg.sv
+
+rtl/core/ibex_core/vendor/lowrisc_ip/ip/prim_generic/rtl/prim_clock_gating.sv
+
+rtl/core/dift/ibex_dift_logic.sv
+rtl/core/dift/ibex_dift_mem.sv
+rtl/core/dift/ibex_dift_tmu.sv
+rtl/core/dift/ibex_register_file_latch_tag.sv
+
+rtl/core/ibex_core/vendor/lowrisc_ip/ip/prim_generic/rtl/prim_ram_1p_pkg.sv
+rtl/core/ibex_core/vendor/lowrisc_ip/ip/prim/rtl/prim_secded_pkg.sv
+
+-f rtl/core/ibex_core/rtl/ibex_core.f
+rtl/core/ibex_core/rtl/ibex_top.sv

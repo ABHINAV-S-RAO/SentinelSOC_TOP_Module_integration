@@ -381,6 +381,7 @@ initial begin : tb_main
     uart_rx_i  = 1;
 
     hard_reset();
+    jtag_goto_rti();
     $display("\n=== RESET COMPLETE ===\n");
     //--- NEW: halt the core immediately, before it can fetch from
     //     empty memory and fall into an illegal-instruction trap loop.

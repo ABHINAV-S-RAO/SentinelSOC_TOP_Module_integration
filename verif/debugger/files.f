@@ -1,3 +1,4 @@
+-timescale 1ns/1ps
 +define+DIFT
 +incdir+rtl/core/ibex_core/vendor/lowrisc_ip/dv/sv/dv_utils
 +incdir+rtl/core/ibex_core/vendor/lowrisc_ip/ip/prim/rtl

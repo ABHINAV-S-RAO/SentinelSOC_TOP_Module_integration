@@ -41,7 +41,7 @@ rtl/peripheral/apb_uart/uart_rx.sv
 rtl/peripheral/apb_uart/uart_tx.sv
 rtl/peripheral/apb_uart/uart_interrupt.sv
 # DUPLICATE of apb_uart_sv.sv, same module name, not instantiated anywhere -- rtl/peripheral/apb_uart/apb_uart.sv
-rtl/peripheral/apb_uart/apb_uart_sv.sv
+rtl/peripheral/apb_uart/apb_uart.sv
 
 rtl/Interrupts/plic/plic_regmap.sv
 rtl/Interrupts/plic/rv_plic_gateway.sv

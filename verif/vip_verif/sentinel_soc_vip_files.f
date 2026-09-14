@@ -10,6 +10,7 @@
 
 rtl/core/ibex_core/rtl/ibex_pkg.sv
 rtl/core/ibex_core/rtl/ibex_tracer_pkg.sv
+rtl/core/ibex_core/rtl/ibex_tracer.sv
 
 # -------------------------------------------------------
 # lowRISC prim packages
@@ -138,8 +139,74 @@ verif/vip/uart_avip/src/hdlTop/uartRxAgentBfm/UartRxDriverBfm.sv
 verif/vip/uart_avip/src/hdlTop/uartRxAgentBfm/UartRxAssertions.sv
 verif/vip/uart_avip/src/hdlTop/uartRxAgentBfm/UartRxMonitorBfm.sv
 verif/vip/uart_avip/src/hdlTop/uartRxAgentBfm/UartRxAgentBfm.sv
-verif/vip/uart_avip/src/hdlTop/UartHdlTop.sv
-verif/vip/uart_avip/src/hvlTop/UartHvlTop.sv
+
+# -----------------------------------------------------------------------------
+# SPI AVIP
+# -----------------------------------------------------------------------------
++incdir+verif/vip/spi_avip/src/hvlTop/spiMaster/spiMasterSequences
++incdir+verif/vip/spi_avip/src/hvlTop/spiMaster
++incdir+verif/vip/spi_avip/src/hvlTop/spiSlave/spiSlaveSequences
++incdir+verif/vip/spi_avip/src/hvlTop/spiSlave
++incdir+verif/vip/spi_avip/src/hvlTop/spiEnv/virtualSequencer
++incdir+verif/vip/spi_avip/src/hvlTop/spiEnv
++incdir+verif/vip/spi_avip/src/hvlTop/tb/virtualSequences
++incdir+verif/vip/spi_avip/src/hvlTop/tb/test
++incdir+verif/vip/spi_avip/src/hvlTop/tb
+
+verif/vip/spi_avip/src/globals/SpiGlobalsPkg.sv
+
+verif/vip/spi_avip/src/hvlTop/spiMaster/SpiMasterPkg.sv
+verif/vip/spi_avip/src/hvlTop/spiMaster/spiMasterSequences/SpiMasterSeqPkg.sv
+verif/vip/spi_avip/src/hvlTop/spiSlave/SpiSlavePkg.sv
+verif/vip/spi_avip/src/hvlTop/spiSlave/spiSlaveSequences/SpiSlaveSeqPkg.sv
+verif/vip/spi_avip/src/hvlTop/spiEnv/SpiEnvPkg.sv
+verif/vip/spi_avip/src/hvlTop/tb/virtualSequences/SpiVirtualSeqPkg.sv
+verif/vip/spi_avip/src/hvlTop/tb/test/SpiTestPkg.sv
+
+verif/vip/spi_avip/src/hdlTop/spiInterface/SpiInterface.sv
+verif/vip/spi_avip/src/hdlTop/masterAgentBFM/SpiMasterDriverBFM.sv
+verif/vip/spi_avip/src/hdlTop/masterAgentBFM/SpiMasterMonitorBFM.sv
+verif/vip/spi_avip/src/hdlTop/masterAgentBFM/SpiMasterAgentBFM.sv
+verif/vip/spi_avip/src/hdlTop/slaveAgentBFM/SpiSlaveDriverBFM.sv
+verif/vip/spi_avip/src/hdlTop/slaveAgentBFM/SpiSlaveMonitorBFM.sv
+verif/vip/spi_avip/src/hdlTop/slaveAgentBFM/SpiSlaveAgentBFM.sv
+verif/vip/spi_avip/src/hdlTop/SpiMasterAssertions.sv
+verif/vip/spi_avip/src/hdlTop/SpiMasterAssertionsTB.sv
+verif/vip/spi_avip/src/hdlTop/SpiSlaveAssertions.sv
+verif/vip/spi_avip/src/hdlTop/SpiSlaveAssertionsTB.sv
+
+# -----------------------------------------------------------------------------
+# JTAG AVIP
+# -----------------------------------------------------------------------------
++incdir+verif/vip/jtag_avip/src/hvlTop/jtagControllerDeviceAgent/jtagControllerDeviceSequences
++incdir+verif/vip/jtag_avip/src/hvlTop/jtagControllerDeviceAgent
++incdir+verif/vip/jtag_avip/src/hvlTop/jtagTargetDeviceAgent/jtagTargetDeviceSequences
++incdir+verif/vip/jtag_avip/src/hvlTop/jtagTargetDeviceAgent
++incdir+verif/vip/jtag_avip/src/hvlTop/jtagEnv/virtualSequencer
++incdir+verif/vip/jtag_avip/src/hvlTop/jtagEnv
++incdir+verif/vip/jtag_avip/src/hvlTop/tb/jtagVirtualSequences
++incdir+verif/vip/jtag_avip/src/hvlTop/tb/test
++incdir+verif/vip/jtag_avip/src/hvlTop/tb
+
+verif/vip/jtag_avip/src/globals/JtagGlobalPkg.sv
+
+verif/vip/jtag_avip/src/hvlTop/jtagControllerDeviceAgent/JtagControllerDevicePkg.sv
+verif/vip/jtag_avip/src/hvlTop/jtagControllerDeviceAgent/jtagControllerDeviceSequences/JtagControllerDeviceSequencePkg.sv
+verif/vip/jtag_avip/src/hvlTop/jtagTargetDeviceAgent/JtagTargetDevicePkg.sv
+verif/vip/jtag_avip/src/hvlTop/jtagTargetDeviceAgent/jtagTargetDeviceSequences/JtagTargetDeviceSequencePkg.sv
+verif/vip/jtag_avip/src/hvlTop/jtagEnv/JtagEnvPkg.sv
+verif/vip/jtag_avip/src/hvlTop/tb/jtagVirtualSequences/JtagVirtualSequencePkg.sv
+verif/vip/jtag_avip/src/hvlTop/tb/test/JtagBaseTestPkg.sv
+
+verif/vip/jtag_avip/src/hdlTop/jtagInterface/JtagInterface.sv
+verif/vip/jtag_avip/src/hdlTop/jtagControllerDeviceAgentBfm/JtagControllerDeviceDriverBfm.sv
+verif/vip/jtag_avip/src/hdlTop/jtagControllerDeviceAgentBfm/JtagControllerDeviceMonitorBfm.sv
+verif/vip/jtag_avip/src/hdlTop/jtagControllerDeviceAgentBfm/JtagControllerDeviceAgentBfm.sv
+verif/vip/jtag_avip/src/hdlTop/jtagControllerDeviceAgentBfm/JtagControllerDeviceAssertions.sv
+verif/vip/jtag_avip/src/hdlTop/jtagTargetDeviceAgentBfm/JtagTargetDeviceDriverBfm.sv
+verif/vip/jtag_avip/src/hdlTop/jtagTargetDeviceAgentBfm/JtagTargetDeviceMonitorBfm.sv
+verif/vip/jtag_avip/src/hdlTop/jtagTargetDeviceAgentBfm/JtagTargetDeviceAgentBfm.sv
+verif/vip/jtag_avip/src/hdlTop/jtagTargetDeviceAgentBfm/JtagTargetDeviceAssertions.sv
 
 # -----------------------------------------------------------------------------
 # New Dedicated VIP Testbench

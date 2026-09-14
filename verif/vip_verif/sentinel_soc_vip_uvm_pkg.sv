@@ -7,7 +7,17 @@ package sentinel_soc_vip_uvm_pkg;
   import UartTxPkg::*;
   import UartRxPkg::*;
   import UartEnvPkg::*;
-  
+
+  import SpiGlobalsPkg::*;
+  import SpiMasterPkg::*;
+  import SpiSlavePkg::*;
+  import SpiEnvPkg::*;
+
+  import JtagGlobalPkg::*;
+  import JtagControllerDevicePkg::*;
+  import JtagTargetDevicePkg::*;
+  import JtagEnvPkg::*;
+
   import obi_cpu_agent_pkg::*;
 
   // -------------------------------------------------------------------------
@@ -80,6 +90,9 @@ package sentinel_soc_vip_uvm_pkg;
       uvm_config_db#(UartEnvConfig)::set(this, "*", "uartEnvConfig", uart_cfg);
       uvm_config_db#(UartTxAgentConfig)::set(this, "*", "uartTxAgentConfig", uart_cfg.uartTxAgentConfig);
       uvm_config_db#(UartRxAgentConfig)::set(this, "*", "uartRxAgentConfig", uart_cfg.uartRxAgentConfig);
+
+      uvm_config_db#(virtual UartIf)::set(this, "uart_env", "vif", vif_uart);
+      uvm_config_db#(virtual UartIf)::set(this, "uart_env.*", "vif", vif_uart);
 
       // Create Envs/Agents
       uart_env = UartEnv::type_id::create("uart_env", this);
@@ -183,7 +196,34 @@ package sentinel_soc_vip_uvm_pkg;
 
   class sentinel_soc_vip_spi_test extends sentinel_soc_vip_base_test;
     `uvm_component_utils(sentinel_soc_vip_spi_test)
+
+    SpiEnvConfig  spi_cfg;
+    SpiEnv        spi_env;
+    virtual SpiInterface vif_spi;
+
     function new(string name, uvm_component parent); super.new(name, parent); endfunction
+
+    function void build_phase(uvm_phase phase);
+      super.build_phase(phase);
+      if (!uvm_config_db#(virtual SpiInterface)::get(this, "", "vif_spi", vif_spi))
+        `uvm_fatal("SPI_TEST", "Could not get vif_spi from config DB")
+
+      spi_cfg = SpiEnvConfig::type_id::create("spi_cfg");
+      spi_cfg.noOfSlaves = 1;                    // single spi_csn_o/miso_i/mosi_o on the DUT
+      spi_cfg.spiSlaveAgentConfig = new[1];      // must allocate before indexing — dynamic array starts empty
+
+      spi_cfg.spiMasterAgentConfig = SpiMasterAgentConfig::type_id::create("spiMasterAgentConfig");
+      spi_cfg.spiMasterAgentConfig.isActive = UVM_PASSIVE;  // DUT is the real master; VIP master side only monitors
+
+      spi_cfg.spiSlaveAgentConfig[0] = SpiSlaveAgentConfig::type_id::create("spiSlaveAgentConfig0");
+      spi_cfg.spiSlaveAgentConfig[0].isActive = UVM_ACTIVE; // VIP plays the external slave the DUT is talking to
+
+      uvm_config_db#(SpiEnvConfig)::set(this, "*", "SpiEnvConfig", spi_cfg);
+
+      spi_env = SpiEnv::type_id::create("spi_env", this);
+      uvm_config_db#(virtual SpiInterface)::set(this, "spi_env.*", "vif", vif_spi);
+    endfunction
+
     task run_phase(uvm_phase phase);
       soc_spi_traffic_seq seq;
       phase.raise_objection(this);
@@ -254,16 +294,43 @@ package sentinel_soc_vip_uvm_pkg;
   // -------------------------------------------------------------------------
   class sentinel_soc_vip_jtag_test extends sentinel_soc_vip_base_test;
     `uvm_component_utils(sentinel_soc_vip_jtag_test)
+
+    JtagEnvConfig  jtag_cfg;
+    JtagEnv        jtag_env;
+    virtual JtagIf vif_jtag;
+
     function new(string name, uvm_component parent); super.new(name, parent); endfunction
+
+    function void build_phase(uvm_phase phase);
+      super.build_phase(phase);
+      if (!uvm_config_db#(virtual JtagIf)::get(this, "", "vif_jtag", vif_jtag))
+        `uvm_fatal("JTAG_TEST", "Could not get vif_jtag from config DB")
+    
+      jtag_cfg = JtagEnvConfig::type_id::create("jtag_cfg");
+      jtag_cfg.jtagControllerDeviceAgentConfig = JtagControllerDeviceAgentConfig::type_id::create("jtagControllerDeviceAgentConfig");
+      jtag_cfg.jtagControllerDeviceAgentConfig.is_active = UVM_ACTIVE;
+    
+      jtag_cfg.jtagTargetDeviceAgentConfig = JtagTargetDeviceAgentConfig::type_id::create("jtagTargetDeviceAgentConfig");
+      jtag_cfg.jtagTargetDeviceAgentConfig.is_active = UVM_PASSIVE;
+    
+      uvm_config_db#(JtagEnvConfig)::set(this, "*", "jtagEnvConfig", jtag_cfg);
+    
+      jtag_env = JtagEnv::type_id::create("jtag_env", this);
+      uvm_config_db#(virtual JtagIf)::set(this, "jtag_env.*", "vif", vif_jtag);
+    endfunction
+
     task run_phase(uvm_phase phase);
+      // TODO: replace with an actual JtagControllerDevice sequence
+      // (e.g. JtagControllerDevicePatternBasedSequence) started on
+      // jtag_env's controller sequencer, once a concrete debug
+      // operation (DMI read/write, halt/resume) is decided
       phase.raise_objection(this);
       `uvm_info("JTAG_TEST", "Running SoC JTAG Traffic Test...", UVM_LOW)
-      // JTAG acts as master, so it drives the debug module instead of CPU agent
       #50000;
       phase.drop_objection(this);
     endtask
   endclass
-  
+
   // -------------------------------------------------------------------------
   // TIMER VIP Integration Test
   // -------------------------------------------------------------------------

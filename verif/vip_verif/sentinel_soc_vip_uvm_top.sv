@@ -31,6 +31,9 @@ module sentinel_soc_vip_uvm_top;
   UartIf u_uart_if(clk_i, rst_ni);
   UartTxAgentBfm u_uart_tx_bfm(u_uart_if);
   UartRxAgentBfm u_uart_rx_bfm(u_uart_if);
+
+  SpiInterface  u_spi_if(clk_i, rst_ni);
+  JtagIf u_jtag_if(clk_i, rst_ni);
   
   // CPU Agent Interface
   obi_if u_obi_if(clk_i, rst_ni);
@@ -72,12 +75,6 @@ module sentinel_soc_vip_uvm_top;
     .qspi_clk_o         ( vif.qspi_clk ),
     .qspi_io_io         ( vif.qspi_io ),
 
-    // SPI
-    .spi_csn_o          ( vif.spi_csn ),
-    .spi_clk_o          ( vif.spi_clk ),
-    .spi_mosi_o         ( vif.spi_mosi ),
-    .spi_miso_i         ( vif.spi_miso ),
-
     // UART
     .uart_tx_o          ( dut_uart_tx ), // DUT TX goes to VIP RX
     .uart_rx_i          ( u_uart_if.tx ), // VIP TX goes to DUT RX
@@ -85,14 +82,21 @@ module sentinel_soc_vip_uvm_top;
     // GPIO
     .gpio_io            ( vif.gpio ),
 
+    // SPI
+    .spi_csn_o          ( u_spi_if.cs[0] ),
+    .spi_clk_o          ( u_spi_if.sclk ),
+    .spi_mosi_o         ( u_spi_if.mosi0 ),
+    .spi_miso_i         ( u_spi_if.miso0),
+    
     // JTAG
-    .jtag_tck_i         ( vif.jtag_tck ),
-    .jtag_tms_i         ( vif.jtag_tms ),
-    .jtag_tdi_i         ( vif.jtag_tdi ),
-    .jtag_tdo_o         ( vif.jtag_tdo ),
-    .jtag_trst_ni       ( vif.jtag_trst_n ),
+    .jtag_tck_i         ( clk_i ),
+    .jtag_tms_i         ( u_jtag_if.Tms ),
+    .jtag_tdi_i         ( u_jtag_if.Tdi ),
+    .jtag_tdo_o         ( u_jtag_if.Tdo ),
+    .jtag_trst_ni       ( u_jtag_if.Trst)
 
 `ifdef DIFT
+    ,
     .dift_en_i          ( vif.dift_en )
 `endif
   );
@@ -179,6 +183,8 @@ module sentinel_soc_vip_uvm_top;
     uvm_config_db#(virtual obi_if)::set(null, "*", "vif_obi", u_obi_if);
     uvm_config_db#(virtual gpio_if)::set(null, "*", "vif_gpio", u_gpio_if);
     uvm_config_db#(virtual timer_irq_if)::set(null, "*", "vif_timer", u_timer_if);
+    uvm_config_db#(virtual SpiInterface)::set(null, "*", "vif_spi", u_spi_if);
+    uvm_config_db#(virtual JtagIf)::set(null, "*", "vif_jtag", u_jtag_if);
     
     run_test();
   end

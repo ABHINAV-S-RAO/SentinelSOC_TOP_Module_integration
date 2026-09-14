@@ -41,7 +41,15 @@ rtl/peripheral/apb_uart/uart_rx.sv
 rtl/peripheral/apb_uart/uart_tx.sv
 rtl/peripheral/apb_uart/uart_interrupt.sv
 # DUPLICATE of apb_uart_sv.sv, same module name, not instantiated anywhere -- rtl/peripheral/apb_uart/apb_uart.sv
-rtl/peripheral/apb_uart/apb_uart.sv
+rtl/peripheral/apb_uart/apb_uart.svrtl/peripheral/apb_spi_master/spi_master_fifo.sv
+rtl/peripheral/apb_spi_master/spi_master_clkgen.sv
+rtl/peripheral/apb_spi_master/spi_master_tx.sv
+rtl/peripheral/apb_spi_master/spi_master_rx.sv
+rtl/peripheral/apb_spi_master/spi_master_apb_if.sv
+rtl/peripheral/apb_spi_master/spi_master_controller.sv
+rtl/peripheral/apb_spi_master/apb_spi_master.sv
+
+
 
 rtl/Interrupts/plic/plic_regmap.sv
 rtl/Interrupts/plic/rv_plic_gateway.sv
@@ -57,21 +65,21 @@ rtl/Interrupts/plic/plic_top.sv
 # verif/plic_verif/plic_tb_pkg.sv
 # verif/plic_verif/tb_plic_top.sv
 
-+rtl/crypto/SHA/sha512_pkg.sv
-+rtl/crypto/ALU/pseudo_mersenne.sv
-+rtl/crypto/ALU/multiplier.sv
-+rtl/crypto/ALU/alu.sv
-+rtl/crypto/ALU/alu_top.sv
-+rtl/crypto/SHA/sha512_msg_sched.sv
-+rtl/crypto/SHA/sha512_padder.sv
-+rtl/crypto/SHA/sha512_round.sv
-+rtl/crypto/SHA/sha512_top.sv
-+rtl/crypto/ed/reg_file.sv
-+rtl/crypto/ed/micro_seq.sv
-+rtl/crypto/ed/master_fsm.sv
-+rtl/crypto/ed/top_ed25519.sv
-+rtl/crypto/otp.sv
-+rtl/crypto/top_most.sv
+rtl/crypto/SHA/sha512_pkg.sv
+rtl/crypto/ALU/pseudo_mersenne.sv
+rtl/crypto/ALU/multiplier.sv
+rtl/crypto/ALU/alu.sv
+rtl/crypto/ALU/alu_top.sv
+rtl/crypto/SHA/sha512_msg_sched.sv
+rtl/crypto/SHA/sha512_padder.sv
+rtl/crypto/SHA/sha512_round.sv
+rtl/crypto/SHA/sha512_top.sv
+rtl/crypto/ed/reg_file.sv
+rtl/crypto/ed/micro_seq.sv
+rtl/crypto/ed/master_fsm.sv
+rtl/crypto/ed/top_ed25519.sv
+rtl/crypto/otp.sv
+rtl/crypto/top_most.sv
 
 
 rtl/crypto/top_most.sv

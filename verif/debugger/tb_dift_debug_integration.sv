@@ -265,15 +265,17 @@ endtask
 task automatic dm_halt_hart0();
     logic [31:0] st;
     dmi_write(DM_DMCONTROL, 32'h8000_0001);
-    repeat(500) begin
+    repeat(100) begin              // was 500 — plenty given each iter's real cost
         @(posedge clk_i);
         dmi_read(DM_DMSTATUS, st);
-        if (st[9]) break;
+        if (st[9]) begin
+            $display("dm_halt_hart0: halted after poll, dmstatus=%h @ %0t", st, $time);
+            return;
+        end
     end
-    if (!probe_dm_halted)
-        $display("WARNING: dm_halt_hart0 timed out");
+    $display("dm_halt_hart0: TIMEOUT — dmstatus=%h, dbg_req=%b dbg_gnt=%b dbg_rvalid=%b debug_req_raw=%b @ %0t",
+              st, dut.dbg_req, dut.dbg_gnt, dut.dbg_rvalid, dut.debug_req_raw, $time);
 endtask
-
 task automatic dm_resume_hart0();
     logic [31:0] st;
     dmi_write(DM_DMCONTROL, 32'h4000_0001);

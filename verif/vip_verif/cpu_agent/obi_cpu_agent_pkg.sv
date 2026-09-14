@@ -61,6 +61,7 @@ package obi_cpu_agent_pkg;
         `uvm_info("OBI_DRV", "Waiting for gnt==1", UVM_LOW)
         do begin
           @(posedge vif.clk_i);
+          #1ps; // Wait for combinational logic to settle before sampling
         end while (vif.gnt !== 1'b1);
         `uvm_info("OBI_DRV", "Got gnt==1, dropping req and waiting for rvalid==1", UVM_LOW)
         
@@ -70,6 +71,7 @@ package obi_cpu_agent_pkg;
         // Keep waiting for rvalid (check immediately since it could be 1 in same cycle)
         while (vif.rvalid !== 1'b1) begin
           @(posedge vif.clk_i);
+          #1ps; // Wait for combinational logic to settle before sampling
         end
         `uvm_info("OBI_DRV", "Got rvalid==1, finishing item", UVM_LOW)
         if (!req.we) begin

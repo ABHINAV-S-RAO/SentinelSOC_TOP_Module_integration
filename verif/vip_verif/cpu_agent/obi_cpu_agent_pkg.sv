@@ -37,11 +37,11 @@ package obi_cpu_agent_pkg;
     endfunction
 
     task run_phase(uvm_phase phase);
-      vif.req   = 0;
-      vif.we    = 0;
-      vif.addr  = 0;
-      vif.wdata = 0;
-      vif.be    = 0;
+      vif.req   <= 0;
+      vif.we    <= 0;
+      vif.addr  <= 0;
+      vif.wdata <= 0;
+      vif.be    <= 0;
       @(posedge vif.rst_ni);
       `uvm_info("OBI_DRV", "Out of reset, waiting for items...", UVM_LOW)
       
@@ -49,28 +49,27 @@ package obi_cpu_agent_pkg;
         seq_item_port.get_next_item(req);
         `uvm_info("OBI_DRV", $sformatf("Driving req to addr 0x%0h", req.addr), UVM_LOW)
         
-        // Drive at negedge — signals settle before next posedge
-        @(negedge vif.clk_i);
-        vif.req   = 1;
-        vif.we    = req.we;
-        vif.addr  = req.addr;
-        vif.wdata = req.data;
-        vif.be    = req.be;
+        // Drive at posedge using NBA to prevent delta-cycle races with RTL
+        @(posedge vif.clk_i);
+        vif.req   <= 1;
+        vif.we    <= req.we;
+        vif.addr  <= req.addr;
+        vif.wdata <= req.data;
+        vif.be    <= req.be;
         
-        // Wait for gnt at negedge to ensure signals have settled from the posedge transitions
+        // Wait for gnt
         `uvm_info("OBI_DRV", "Waiting for gnt==1", UVM_LOW)
-        @(negedge vif.clk_i);
-        while (vif.gnt !== 1'b1) begin
-          @(negedge vif.clk_i);
-        end
+        do begin
+          @(posedge vif.clk_i);
+        end while (vif.gnt !== 1'b1);
         `uvm_info("OBI_DRV", "Got gnt==1, dropping req and waiting for rvalid==1", UVM_LOW)
         
-        // Drop req at negedge (half-cycle after it was accepted at posedge)
-        vif.req = 0;
+        // Drop req at posedge using NBA
+        vif.req <= 0;
 
-        // Keep waiting for rvalid at negedge
+        // Keep waiting for rvalid (check immediately since it could be 1 in same cycle)
         while (vif.rvalid !== 1'b1) begin
-          @(negedge vif.clk_i);
+          @(posedge vif.clk_i);
         end
         `uvm_info("OBI_DRV", "Got rvalid==1, finishing item", UVM_LOW)
         if (!req.we) begin

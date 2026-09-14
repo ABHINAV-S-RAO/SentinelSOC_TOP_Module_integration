@@ -43,24 +43,36 @@ module soc_obi_demux #(
   always_comb begin : proc_req
     select_d = select_q;
     cnt_up = 1'b0;
-    
-    // Workaround for Xcelium packed struct assignment bug
-    mgr_ports_req_o = '0;
     sbr_port_gnt = 1'b0;
+    
+    // Explicit 0 assignment for all ports
+    mgr_ports_req_o = '0;
 
-    if (!overflow) begin
-      // R-4.1.1: block source changes while a stalled R phase is active
-      if (sbr_port_select_i == select_q || (!rsp_phase_stalled &&
-          (in_flight == '0 || (in_flight == 1 && cnt_down)))) begin
-        // Only assign the specific selected port
-        for (int i = 0; i < NumMgrPorts; i++) begin
-          if (i == sbr_port_select_i) begin
-            mgr_ports_req_o[i].req = sbr_port_req_i.req;
-            mgr_ports_req_o[i].a   = sbr_port_req_i.a;
-          end
-        end
-        sbr_port_gnt                           = mgr_ports_rsp_i[sbr_port_select_i].gnt;
-      end
+    if (!overflow && (sbr_port_select_i == select_q || (!rsp_phase_stalled &&
+          (in_flight == '0 || (in_flight == 1 && cnt_down))))) begin
+      // Active grant path
+      sbr_port_gnt = mgr_ports_rsp_i[sbr_port_select_i].gnt;
+      
+      // Xcelium Workaround: Unroll the struct array assignment to avoid loop/index bugs
+      case (sbr_port_select_i)
+        0:  begin mgr_ports_req_o[0].req = sbr_port_req_i.req;  mgr_ports_req_o[0].a = sbr_port_req_i.a; end
+        1:  if (NumMgrPorts > 1) begin mgr_ports_req_o[1].req = sbr_port_req_i.req;  mgr_ports_req_o[1].a = sbr_port_req_i.a; end
+        2:  if (NumMgrPorts > 2) begin mgr_ports_req_o[2].req = sbr_port_req_i.req;  mgr_ports_req_o[2].a = sbr_port_req_i.a; end
+        3:  if (NumMgrPorts > 3) begin mgr_ports_req_o[3].req = sbr_port_req_i.req;  mgr_ports_req_o[3].a = sbr_port_req_i.a; end
+        4:  if (NumMgrPorts > 4) begin mgr_ports_req_o[4].req = sbr_port_req_i.req;  mgr_ports_req_o[4].a = sbr_port_req_i.a; end
+        5:  if (NumMgrPorts > 5) begin mgr_ports_req_o[5].req = sbr_port_req_i.req;  mgr_ports_req_o[5].a = sbr_port_req_i.a; end
+        6:  if (NumMgrPorts > 6) begin mgr_ports_req_o[6].req = sbr_port_req_i.req;  mgr_ports_req_o[6].a = sbr_port_req_i.a; end
+        7:  if (NumMgrPorts > 7) begin mgr_ports_req_o[7].req = sbr_port_req_i.req;  mgr_ports_req_o[7].a = sbr_port_req_i.a; end
+        8:  if (NumMgrPorts > 8) begin mgr_ports_req_o[8].req = sbr_port_req_i.req;  mgr_ports_req_o[8].a = sbr_port_req_i.a; end
+        9:  if (NumMgrPorts > 9) begin mgr_ports_req_o[9].req = sbr_port_req_i.req;  mgr_ports_req_o[9].a = sbr_port_req_i.a; end
+        10: if (NumMgrPorts > 10) begin mgr_ports_req_o[10].req = sbr_port_req_i.req; mgr_ports_req_o[10].a = sbr_port_req_i.a; end
+        11: if (NumMgrPorts > 11) begin mgr_ports_req_o[11].req = sbr_port_req_i.req; mgr_ports_req_o[11].a = sbr_port_req_i.a; end
+        12: if (NumMgrPorts > 12) begin mgr_ports_req_o[12].req = sbr_port_req_i.req; mgr_ports_req_o[12].a = sbr_port_req_i.a; end
+        13: if (NumMgrPorts > 13) begin mgr_ports_req_o[13].req = sbr_port_req_i.req; mgr_ports_req_o[13].a = sbr_port_req_i.a; end
+        14: if (NumMgrPorts > 14) begin mgr_ports_req_o[14].req = sbr_port_req_i.req; mgr_ports_req_o[14].a = sbr_port_req_i.a; end
+        15: if (NumMgrPorts > 15) begin mgr_ports_req_o[15].req = sbr_port_req_i.req; mgr_ports_req_o[15].a = sbr_port_req_i.a; end
+        default: ;
+      endcase
     end
 
     if (mgr_ports_req_o[sbr_port_select_i].req && mgr_ports_rsp_i[sbr_port_select_i].gnt) begin

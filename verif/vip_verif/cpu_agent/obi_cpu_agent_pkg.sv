@@ -57,29 +57,25 @@ package obi_cpu_agent_pkg;
         vif.wdata = req.data;
         vif.be    = req.be;
         
-        // Wait for gnt at posedge (combinational output, settled from negedge drive)
+        // Wait for gnt at negedge to ensure signals have settled from the posedge transitions
         `uvm_info("OBI_DRV", "Waiting for gnt==1", UVM_LOW)
-        @(posedge vif.clk_i);
+        @(negedge vif.clk_i);
         while (vif.gnt !== 1'b1) begin
-          @(posedge vif.clk_i);
+          @(negedge vif.clk_i);
         end
         `uvm_info("OBI_DRV", "Got gnt==1, dropping req and waiting for rvalid==1", UVM_LOW)
         
-        // Drop req immediately after gnt is sampled high (clean de-assertion to prevent multiple txns)
+        // Drop req at negedge (half-cycle after it was accepted at posedge)
         vif.req = 0;
 
-        // Keep waiting for rvalid at posedge
-        // The driver sampled gnt==1 on this clock edge. Rvalid could be 1 in the same cycle or later.
+        // Keep waiting for rvalid at negedge
         while (vif.rvalid !== 1'b1) begin
-          @(posedge vif.clk_i);
+          @(negedge vif.clk_i);
         end
         `uvm_info("OBI_DRV", "Got rvalid==1, finishing item", UVM_LOW)
         if (!req.we) begin
           req.data = vif.rdata;
         end
-        
-        // Wait till next negedge to cleanly finish cycle before next item
-        @(negedge vif.clk_i);
         
         seq_item_port.item_done();
       end

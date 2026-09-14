@@ -40,6 +40,11 @@ module soc_obi_demux #(
 
   select_t select_d, select_q;
 
+  // Prove this module is actually being used
+  initial begin
+    $display("[SOC_OBI_DEMUX] *** soc_obi_demux instantiated with NumMgrPorts=%0d NumMaxTrans=%0d ***", NumMgrPorts, NumMaxTrans);
+  end
+
   always_comb begin : proc_req
     select_d = select_q;
     cnt_up = 1'b0;

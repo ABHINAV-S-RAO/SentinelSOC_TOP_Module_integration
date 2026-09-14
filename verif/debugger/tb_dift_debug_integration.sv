@@ -785,7 +785,22 @@ initial begin : tb_main
 
     $finish;
 end
+// ─── DMI transport diagnostic probe — temporary, remove once DMI bug is fixed ─
+// dmi_req_valid/dmi_req_ready are soc_top's own internal wires (declared
+// there as `logic dmi_req_valid, dmi_req_ready;`), driven by dmi_jtag_o
+// and consumed by dm_top respectively — probing dut.dmi_req_ready hits
+// exactly that net.
+int dmi_ready_pulse_count = 0;
 
+always @(posedge clk_i) begin
+    if (dut.dmi_req_ready) begin
+        dmi_ready_pulse_count++;
+        $display("[DMI PROBE] dmi_req_ready PULSED (#%0d) @ %0t", dmi_ready_pulse_count, $time);
+    end
+    if (dut.dmi_req_valid && !dut.dmi_req_ready) begin
+        $display("[DMI PROBE] dmi_req_valid=1 but dmi_req_ready=0 (stalled) @ %0t", $time);
+    end
+end
 // ─── Watchdog ────────────────────────────────────────────────────────────────
 initial begin
     #10_000_000;

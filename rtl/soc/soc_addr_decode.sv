@@ -309,10 +309,13 @@ module soc_addr_decode #(
     data_req_s.a.aid   = '0;
   end
 
-  assign data_gnt_o    = data_rsp_s.gnt;
-  assign data_rvalid_o = data_rsp_s.rvalid;
-  assign data_rdata_o  = data_rsp_s.r.rdata;
-  assign data_err_o    = data_rsp_s.r.err;
+  // --------------------------------------------------------------------------
+  // Output Mux (Bypass integration for APB)
+  // --------------------------------------------------------------------------
+  assign data_gnt_o    = (data_sel == SEL_APB) ? apb_gnt_i    : data_rsp_s.gnt;
+  assign data_rvalid_o = (data_sel == SEL_APB) ? apb_rvalid_i : data_rsp_s.rvalid;
+  assign data_rdata_o  = (data_sel == SEL_APB) ? apb_rdata_i  : data_rsp_s.r.rdata;
+  assign data_err_o    = (data_sel == SEL_APB) ? apb_err_i    : data_rsp_s.r.err;
 
   // --------------------------------------------------------------------------
   // Pack Ibex flat instruction signals into OBI request struct

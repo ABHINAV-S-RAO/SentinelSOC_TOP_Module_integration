@@ -801,6 +801,16 @@ always @(posedge clk_i) begin
         $display("[DMI PROBE] dmi_req_valid=1 but dmi_req_ready=0 (stalled) @ %0t", $time);
     end
 end
+
+// ─── DMI response diagnostic probe ─────────────────────────────
+int dmi_resp_pulse_count = 0;
+
+always @(posedge clk_i) begin
+    if (dut.dmi_resp_valid) begin
+        dmi_resp_pulse_count++;
+        $display("[DMI RESP PROBE] dmi_resp_valid PULSED (#%0d) @ %0t", dmi_resp_pulse_count, $time);
+    end
+end
 // ─── Watchdog ────────────────────────────────────────────────────────────────
 initial begin
     #10_000_000;

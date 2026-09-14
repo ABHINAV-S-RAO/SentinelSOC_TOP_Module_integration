@@ -58,25 +58,35 @@ package obi_cpu_agent_pkg;
         
         // Wait for gnt with timeout
         begin : gnt_wait
-          // Wait for gnt
+          int unsigned t = 0;
           `uvm_info("OBI_DRV", "Waiting for gnt==1", UVM_LOW)
-          do begin
-            @(negedge vif.clk_i);
-          end while (vif.gnt !== 1'b1);
+          while (vif.gnt !== 1'b1) begin
+            @(posedge vif.clk_i);
+            if (++t >= 500) `uvm_fatal("OBI_DRV", $sformatf("GNT TIMEOUT addr=0x%08h", req.addr))
+          end
         end
         `uvm_info("OBI_DRV", "Got gnt==1, dropping req and waiting for rvalid==1", UVM_LOW)
         
-        // Drop req at next posedge using NBA
         @(posedge vif.clk_i);
         vif.req <= 0;
 
-        // Keep waiting for rvalid (sample at negedge to avoid races)
-        do begin
-          @(negedge vif.clk_i);
-        end while (vif.rvalid !== 1'b1);
-        
-        // Align to posedge before finishing item
-        @(posedge vif.clk_i);
+        // Wait for rvalid with timeout + diagnostic prints
+        begin : rvalid_wait
+          int unsigned t = 0;
+          while (vif.rvalid !== 1'b1) begin
+            @(posedge vif.clk_i);
+            if (++t == 100)
+              $display("[OBI_DRV] %0t: still waiting rvalid, addr=0x%08h rvalid=%b gnt=%b",
+                       $time, req.addr, vif.rvalid, vif.gnt);
+            if (t % 500 == 0)
+              $display("[OBI_DRV] %0t: rvalid wait cycle %0d, addr=0x%08h",
+                       $time, t, req.addr);
+            if (t >= 5000) begin
+              $display("[OBI_DRV] FATAL: rvalid never came for addr=0x%08h after %0d cycles", req.addr, t);
+              `uvm_fatal("OBI_DRV", "rvalid TIMEOUT — check APB bridge / address decode")
+            end
+          end
+        end
 
         `uvm_info("OBI_DRV", "Got rvalid==1, finishing item", UVM_LOW)
         if (!req.we) req.data = vif.rdata;

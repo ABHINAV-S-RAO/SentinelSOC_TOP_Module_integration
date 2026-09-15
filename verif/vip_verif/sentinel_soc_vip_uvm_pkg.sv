@@ -82,8 +82,15 @@ package sentinel_soc_vip_uvm_pkg;
       // Setup Config
       uart_cfg = UartEnvConfig::type_id::create("uart_cfg");
       uart_cfg.uartTxAgentConfig = UartTxAgentConfig::type_id::create("uartTxAgentConfig");
+      uart_cfg.uartTxAgentConfig.uartBaudRate           = BAUD_9600;
+      uart_cfg.uartTxAgentConfig.uartOverSamplingMethod = OVERSAMPLING_16;
+      uart_cfg.uartTxAgentConfig.uartDataType            = EIGHT_BIT;
+      uart_cfg.uartTxAgentConfig.uartStopBit              = ONE_BIT;
       uart_cfg.uartRxAgentConfig = UartRxAgentConfig::type_id::create("uartRxAgentConfig");
-      uart_cfg.uartTxAgentConfig.is_active = UVM_PASSIVE;
+      uart_cfg.uartRxAgentConfig.uartBaudRate           = BAUD_9600;
+      uart_cfg.uartRxAgentConfig.uartOverSamplingMethod = OVERSAMPLING_16;
+      uart_cfg.uartRxAgentConfig.uartDataType            = EIGHT_BIT;
+      uart_cfg.uartRxAgentConfig.uartStopBit              = ONE_BIT;
       uart_cfg.uartRxAgentConfig.is_active = UVM_PASSIVE;
       uart_cfg.hasScoreboard = 1;
       
@@ -134,8 +141,9 @@ package sentinel_soc_vip_uvm_pkg;
   // UART VIP Integration Test (Traffic Test)
   // -------------------------------------------------------------------------
   
-  // Sequence that blasts data using the CPU agent, meant to be caught by the UART VIP
-    class soc_uart_traffic_seq extends uvm_sequence #(obi_seq_item);
+      // Sequence that configures the UART baud divisor, then blasts data using
+  // the CPU agent, meant to be caught by the UART VIP
+  class soc_uart_traffic_seq extends uvm_sequence #(obi_seq_item);
     `uvm_object_utils(soc_uart_traffic_seq)
     function new(string name = "soc_uart_traffic_seq"); super.new(name); endfunction
 
@@ -148,6 +156,45 @@ package sentinel_soc_vip_uvm_pkg;
         `uvm_error("SEQ", "Could not get uart_scoreboard handle — TX side of scoreboard will not be fed, comparison will hang")
       end
 
+      // -----------------------------------------------------------------
+      // Configure UART for 9600 baud, 8N1, matching uartRxAgentConfig set
+      // in build_phase. divisor = clk_freq / (16 * baud)
+      //                        = 50_000_000 / (16*9600) ~= 326 (0x0146)
+      // Standard 16550-style DLAB sequence: LCR is offset 3.
+      // -----------------------------------------------------------------
+      `uvm_info("SEQ", "Configuring UART baud divisor (DLAB sequence)...", UVM_LOW)
+
+      // 1. Set DLAB (bit 7 of LCR) to expose DLL/DLM at offsets 0/1
+      start_item(item);
+      item.addr = 32'h1050_3000 + 3; // LCR
+      item.data = 32'h0000_0083;     // DLAB=1, 8 data bits, no parity, 1 stop bit
+      item.we = 1; item.be = 4'h1;
+      finish_item(item);
+
+      // 2. Write DLL (low byte of divisor) at offset 0
+      start_item(item);
+      item.addr = 32'h1050_3000 + 0;
+      item.data = 32'h0000_0046; // 326 & 0xFF = 0x46
+      item.we = 1; item.be = 4'h1;
+      finish_item(item);
+
+      // 3. Write DLM (high byte of divisor) at offset 1
+      start_item(item);
+      item.addr = 32'h1050_3000 + 1;
+      item.data = 32'h0000_0001; // 326 >> 8 = 0x01
+      item.we = 1; item.be = 4'h1;
+      finish_item(item);
+
+      // 4. Clear DLAB — offsets 0/1 go back to RBR/THR and IER
+      start_item(item);
+      item.addr = 32'h1050_3000 + 3;
+      item.data = 32'h0000_0003; // DLAB=0, 8N1 stays set
+      item.we = 1; item.be = 4'h1;
+      finish_item(item);
+
+      // -----------------------------------------------------------------
+      // Now blast the payload
+      // -----------------------------------------------------------------
       `uvm_info("SEQ", "Blasting payload into UART TX Register...", UVM_LOW)
 
       foreach(payload[i]) begin
@@ -177,7 +224,7 @@ package sentinel_soc_vip_uvm_pkg;
     endtask
   endclass
 
-  class sentinel_soc_vip_uart_test extends sentinel_soc_vip_base_test;
+    class sentinel_soc_vip_uart_test extends sentinel_soc_vip_base_test;
     `uvm_component_utils(sentinel_soc_vip_uart_test)
     
     function new(string name, uvm_component parent);
@@ -199,8 +246,10 @@ package sentinel_soc_vip_uvm_pkg;
       seq = soc_uart_traffic_seq::type_id::create("seq");
       seq.start(cpu_agent.sequencer);
       
-      // Wait for UART RTL to shift out all the bits
-      #50000;
+      // Wait for UART RTL to shift out all the bits at real 9600 baud:
+      // ~10 bits/byte / 9600 baud ~= 1.04ms/byte, 16 bytes ~= 17ms minimum,
+      // plus baud-config writes and margin.
+      #20_000_000;
       
       phase.drop_objection(this);
     endtask

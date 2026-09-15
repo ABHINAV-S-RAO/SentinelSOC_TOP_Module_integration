@@ -953,12 +953,18 @@ soc_addr_decode #(
     .event_o (irq_uart)
   );
 
-  // SPI
-  // u_apb_spi : apb_spi_master #(...) (...)
+   // SPI — NOT YET IMPLEMENTED (owner: [teammate]). Tied off only to prevent
+  // X-propagation into the shared OBI/APB bridge, which was tripping ibex's
+  // IbexDataGntX/IbexDataRValidX assertions on any access to this range.
+  // Remove these three assigns once the real SPI peripheral is wired in.
   assign spi_csn_o   = 1'b1;
   assign spi_clk_o   = 1'b0;
   assign spi_mosi_o  = 1'b0;
   assign irq_spi     = 1'b0;
+
+  assign prdata_spi  = 32'h0;
+  assign pready_spi  = 1'b1;
+  assign pslverr_spi = 1'b0;
 
   // QSPI
   logic [1:0] qspi_events;
@@ -1038,9 +1044,11 @@ soc_addr_decode #(
     .interrupt         (irq_gpio)
   );
 
-  // Timer
-  // u_apb_timer : apb_timer #(...) (...)
+  // Timer — NOT YET IMPLEMENTED. Same X-tie-off as SPI above.
   assign irq_timer_periph = 1'b0;
+  assign prdata_timer  = 32'h0;
+  assign pready_timer  = 1'b1;
+  assign pslverr_timer = 1'b0;
 
   // OBI -> PLIC reg adapter
   // OBI is req/gnt/rvalid, reg bus is valid/ready/rdata

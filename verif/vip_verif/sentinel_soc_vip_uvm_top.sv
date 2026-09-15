@@ -182,14 +182,12 @@ module sentinel_soc_vip_uvm_top;
 `endif
 
   // ---------------------------------------------------------------------------
-  // UART VIP Multiple-Driver Workaround
+  // UART RX Monitor Workaround
   // ---------------------------------------------------------------------------
-  // UartRxDriverBfm actively drives rx to 1. To prevent a multiple-driver 
-  // collision with the DUT's tx output, we force the rx line instead.
-  initial begin
-    force u_uart_if.rx = dut_uart_tx;
-  end
-
+  // UartRxDriverBfm declares rx as 'output bit' so it owns the signal.
+  // We cannot override it from outside. Instead, force the monitor BFM's
+  // rx input port directly to track dut_uart_tx continuously.
+  always @(*) force u_uart_rx_bfm.uartRxMonitorBfm.rx = dut_uart_tx;
   // ---------------------------------------------------------------------------
   // UVM Initialization
   // ---------------------------------------------------------------------------

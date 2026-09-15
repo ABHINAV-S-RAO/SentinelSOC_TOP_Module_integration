@@ -15,7 +15,15 @@ module sentinel_soc_vip_uvm_top;
     forever #10 clk_i = ~clk_i; // 50 MHz
   end
 
-  initial begin
+    initial begin
+    // Start out of reset, then pulse reset low->high so any block waiting
+    // on @(negedge reset)/@(posedge reset) — e.g. UartRxMonitorBfm's
+    // WaitForReset() — actually observes a real falling edge. The previous
+    // version started already-low and only ever rose once, so no negedge
+    // ever occurred and the whole RX monitor forever-loop (including its
+    // uvm_config_db::set for uartConfigStruct) never ran.
+    rst_ni = 1;
+    #20;
     rst_ni = 0;
     #100;
     rst_ni = 1;

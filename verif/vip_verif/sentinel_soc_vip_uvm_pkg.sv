@@ -96,6 +96,7 @@ package sentinel_soc_vip_uvm_pkg;
 
       // Create Envs/Agents
       uart_env = UartEnv::type_id::create("uart_env", this);
+            uvm_config_db#(UartScoreboard)::set(null, "*", "uart_scoreboard", uart_env.uartScoreboard);
       cpu_agent = obi_agent::type_id::create("cpu_agent", this);
       
       // Pass OBI interface to CPU agent
@@ -125,16 +126,21 @@ package sentinel_soc_vip_uvm_pkg;
   // -------------------------------------------------------------------------
   
   // Sequence that blasts data using the CPU agent, meant to be caught by the UART VIP
-  class soc_uart_traffic_seq extends uvm_sequence #(obi_seq_item);
+    class soc_uart_traffic_seq extends uvm_sequence #(obi_seq_item);
     `uvm_object_utils(soc_uart_traffic_seq)
     function new(string name = "soc_uart_traffic_seq"); super.new(name); endfunction
-    
+
     task body();
       obi_seq_item item = obi_seq_item::type_id::create("item");
       string payload = "Hello mBits VIP!";
-      
+      UartScoreboard uart_scoreboard;
+
+      if (!uvm_config_db#(UartScoreboard)::get(null, "", "uart_scoreboard", uart_scoreboard)) begin
+        `uvm_error("SEQ", "Could not get uart_scoreboard handle — TX side of scoreboard will not be fed, comparison will hang")
+      end
+
       `uvm_info("SEQ", "Blasting payload into UART TX Register...", UVM_LOW)
-      
+
       foreach(payload[i]) begin
         start_item(item);
         item.addr = 32'h1050_3000; // Correct UART TXDATA Base
@@ -142,8 +148,22 @@ package sentinel_soc_vip_uvm_pkg;
         item.we = 1;
         item.be = 4'h1; // Byte enable
         finish_item(item);
+
+        // Register write completed — this byte is now the "ground truth"
+        // expected transmission. Push it straight into the scoreboard's
+        // TX fifo so compareTxRx() can pair it against whatever the RX
+        // monitor decodes off the real DUT uart_tx_o pin.
+        if (uart_scoreboard != null) begin
+          UartTxTransaction exp_tx = UartTxTransaction::type_id::create("exp_tx");
+          exp_tx.transmissionData = payload[i];
+          exp_tx.parity       = 1'b0;
+          exp_tx.parityError  = 1'b0;
+          exp_tx.framingError = 1'b0;
+          exp_tx.breakingError = 1'b0;
+          uart_scoreboard.uartScoreboardTxAnalysisExport.write(exp_tx);
+        end
       end
-      
+
       `uvm_info("SEQ", "Payload sent to APB!", UVM_LOW)
     endtask
   endclass

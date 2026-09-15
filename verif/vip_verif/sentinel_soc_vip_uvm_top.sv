@@ -184,10 +184,10 @@ module sentinel_soc_vip_uvm_top;
   // ---------------------------------------------------------------------------
   // UART RX Monitor Workaround
   // ---------------------------------------------------------------------------
-  // UartRxDriverBfm declares rx as 'output bit' so it owns the signal.
-  // We cannot override it from outside. Instead, force the monitor BFM's
-  // rx input port directly to track dut_uart_tx continuously.
-  always @(*) force u_uart_rx_bfm.uartRxMonitorBfm.rx = dut_uart_tx;
+  // UartRxDriverBfm drives uartIf.rx procedurally (idle=1). Force the
+  // interface net itself continuously so both driver and monitor see
+  // dut_uart_tx. 'force' on a logic net beats procedural drivers.
+  always @(dut_uart_tx) force u_uart_if.rx = dut_uart_tx;
   // ---------------------------------------------------------------------------
   // UVM Initialization
   // ---------------------------------------------------------------------------

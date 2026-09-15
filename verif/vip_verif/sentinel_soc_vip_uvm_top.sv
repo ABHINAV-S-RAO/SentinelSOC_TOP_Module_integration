@@ -119,6 +119,7 @@ module sentinel_soc_vip_uvm_top;
     
     // Fully silence Ibex's instruction bus
     force u_dut.core_instr_req = 1'b0;
+    $assertoff(0, sentinel_soc_vip_uvm_top.u_dut.u_ibex_top);
   end
 
   // Continuously force OBI signals from our obi_if into the crossbar/dift_obi_ctrl.

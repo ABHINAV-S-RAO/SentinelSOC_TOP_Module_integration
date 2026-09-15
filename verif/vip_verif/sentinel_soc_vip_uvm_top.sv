@@ -161,6 +161,13 @@ module sentinel_soc_vip_uvm_top;
         u_dut.u_addr_decode.data_sel, u_dut.u_addr_decode.u_data_demux.in_flight,
         u_dut.u_addr_decode.u_data_demux.sbr_port_gnt, u_dut.apb_bridge_req
       );
+
+      $display("[SELQ_TRACE] %0t: select_q=%0d select_d=%0d port7_rvalid=%b sbr_rvalid=%b",
+          $time,
+          u_dut.u_addr_decode.u_data_demux.select_q,
+          u_dut.u_addr_decode.u_data_demux.select_d,
+          u_dut.u_addr_decode.u_data_demux.mgr_ports_rsp_i[7].rvalid,
+          u_dut.u_addr_decode.u_data_demux.sbr_port_rsp_o.rvalid);
     end
   end
 `endif

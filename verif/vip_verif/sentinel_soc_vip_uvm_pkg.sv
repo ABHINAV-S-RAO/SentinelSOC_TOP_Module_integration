@@ -96,11 +96,20 @@ package sentinel_soc_vip_uvm_pkg;
 
       // Create Envs/Agents
       uart_env = UartEnv::type_id::create("uart_env", this);
-            uvm_config_db#(UartScoreboard)::set(null, "*", "uart_scoreboard", uart_env.uartScoreboard);
       cpu_agent = obi_agent::type_id::create("cpu_agent", this);
       
       // Pass OBI interface to CPU agent
       uvm_config_db#(virtual obi_if)::set(this, "cpu_agent.driver", "vif", vif_obi);
+    endfunction
+
+    function void connect_phase(uvm_phase phase);
+      super.connect_phase(phase);
+      // uart_env's own build_phase (which constructs uartScoreboard) only
+      // runs *after* this test's build_phase returns — doing this set() in
+      // build_phase captured a still-null handle. connect_phase runs after
+      // every component's build_phase in the whole hierarchy has finished,
+      // so uart_env.uartScoreboard is guaranteed constructed by now.
+      uvm_config_db#(UartScoreboard)::set(null, "*", "uart_scoreboard", uart_env.uartScoreboard);
     endfunction
 
     task run_phase(uvm_phase phase);

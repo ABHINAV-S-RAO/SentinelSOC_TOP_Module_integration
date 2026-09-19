@@ -5,8 +5,11 @@
 +incdir+.bender/git/checkouts/apb-1b178314edfb6925/include
 +incdir+.bender/git/checkouts/obi-75858655e8b256db/include
 
+.bender/git/checkouts/obi-75858655e8b256db/src/obi_demux.sv
+
 # Bender deps
 -f verif/bender_files.f
+
 
 rtl/core/ibex_core/rtl/ibex_pkg.sv
 rtl/core/ibex_core/rtl/ibex_tracer_pkg.sv

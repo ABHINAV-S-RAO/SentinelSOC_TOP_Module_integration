@@ -176,7 +176,7 @@ typedef struct packed {
   logic        dbg_mode;
   assign dbg_mode = dm_halted; // NrHarts=1, so this is hart 0's halted bit
 
-  // Debugger Signals 
+  // Debugger Signals
   logic        debug_req_raw;
   logic        debug_req_gated;
   logic        debug_disable;
@@ -194,11 +194,11 @@ typedef struct packed {
   // chip reset instead (see both instantiations below).
   logic        dmi_rst_n;
 
-  // Security Gating: Tie to 0 for development. 
+  // Security Gating: Tie to 0 for development.
   // Later, tie to SHA valid signal to block debug on boot.
   assign debug_disable = 1'b0;
   assign debug_req_gated = debug_req_raw & ~debug_disable;
-  
+
   // ---------------------------------------------------------------------------
   // Decoder ↔ slave flat signals
   // ---------------------------------------------------------------------------
@@ -579,8 +579,8 @@ soc_addr_decode #(
   .BUF_MASK     ( 32'hFFFF_F000 ),
   .SHA_BASE     ( 32'h0005_0000 ),
   .SHA_MASK     ( 32'hFFFF_F000 ),
-  .PLIC_BASE    ( 32'h0C00_0000 ),   
-  .PLIC_MASK    ( 32'hFFC0_0000 ),   
+  .PLIC_BASE    ( 32'h0C00_0000 ),
+  .PLIC_MASK    ( 32'hFFC0_0000 ),
   .DBG_BASE     ( 32'h1A11_0000 ),
   .DBG_MASK     ( 32'hFFFF_0000 ),
   .APB_BASE     ( 32'h1000_0000 ),
@@ -635,8 +635,8 @@ soc_addr_decode #(
   // Access-control inputs — NEW connections, not present in the
   // instantiation shown earlier; needed for priv-gating (CTRL/BUF/SHA)
   // and ISRAM fetch-verification to actually function.
-  .boot_done_i  ( ctrl_boot_done   ), 
-  .dbg_mode_i   ( dbg_mode         ), 
+  .boot_done_i  ( ctrl_boot_done   ),
+  .dbg_mode_i   ( dbg_mode         ),
   .fw_verified_i ( sha_signature_valid ),
 
   // DSRAM
@@ -920,7 +920,7 @@ soc_addr_decode #(
     end
     if (psel_spi) begin
       apb_rsp.prdata  = prdata_spi;
-      apb_rsp.pready  = pready_spi;
+      apb_rsp.pready  = pready_spi & apb_req.penable; //gate with penable
       apb_rsp.pslverr = pslverr_spi;
     end
     if (psel_gpio) begin
@@ -957,11 +957,44 @@ soc_addr_decode #(
   );
 
   // SPI
-  // u_apb_spi : apb_spi_master #(...) (...)
-  assign spi_csn_o   = 1'b1;
-  assign spi_clk_o   = 1'b0;
-  assign spi_mosi_o  = 1'b0;
-  assign irq_spi     = 1'b0;
+  logic [1:0] spi_events;
+  assign irq_spi = spi_events[0];
+
+  apb_spi_master #(
+    .BUFFER_DEPTH   ( 10 ),
+    .APB_ADDR_WIDTH ( 12 )
+  ) u_apb_spi (
+    .HCLK     ( clk_i ),
+    .HRESETn  ( rst_ni ),
+
+    .PADDR    ( apb_req.paddr[11:0] ),
+    .PWDATA   ( apb_req.pwdata ),
+    .PWRITE   ( apb_req.pwrite ),
+    .PSEL     ( psel_spi ),
+    .PENABLE  ( apb_req.penable ),
+    .PRDATA   ( prdata_spi ),
+    .PREADY   ( pready_spi ),
+    .PSLVERR  ( pslverr_spi ),
+
+    .events_o ( spi_events ),
+
+    .spi_clk  ( spi_clk_o ),
+    .spi_csn0 ( spi_csn_o ),
+    .spi_csn1 ( ),
+    .spi_csn2 ( ),
+    .spi_csn3 ( ),
+    .spi_mode ( ),
+
+    .spi_sdo0 ( spi_mosi_o ),
+    .spi_sdo1 ( ),
+    .spi_sdo2 ( ),
+    .spi_sdo3 ( ),
+
+    .spi_sdi0 ( spi_miso_i ),
+    .spi_sdi1 ( 1'b0 ),
+    .spi_sdi2 ( 1'b0 ),
+    .spi_sdi3 ( 1'b0 )
+  );
 
   // QSPI
   logic [1:0] qspi_events;
@@ -1034,10 +1067,10 @@ soc_addr_decode #(
     .PREADY            (pready_gpio),
     .PSLVERR           (pslverr_gpio),
     .gpio_in           (gpio_in_sig),
-    .gpio_in_sync      (), 
+    .gpio_in_sync      (),
     .gpio_out          (gpio_out_sig),
     .gpio_dir          (gpio_dir_sig),
-    .gpio_padcfg       (), 
+    .gpio_padcfg       (),
     .interrupt         (irq_gpio)
   );
 
@@ -1102,7 +1135,7 @@ soc_addr_decode #(
     .rst_ni           (rst_ni),
     .testmode_i       (1'b0),
     .dmi_rst_no       (dmi_rst_n),
-    
+
     // JTAG pins
     .tck_i            (jtag_tck_i),
     .tms_i            (jtag_tms_i),
@@ -1110,7 +1143,7 @@ soc_addr_decode #(
     .td_i             (jtag_tdi_i),
     .td_o             (jtag_tdo_o),
     .tdo_oe_o         (), // Leave disconnected if using simple inout/output
-    
+
     // DMI Interface
     .dmi_req_o        (dmi_req_data),
     .dmi_req_valid_o  (dmi_req_valid),
@@ -1123,12 +1156,12 @@ soc_addr_decode #(
   // ---------------------------------------------------------------------------
   // RISC-V Debug Module (DM)
   // ---------------------------------------------------------------------------
-  
-  dm::hartinfo_t [0:0] hartinfo_arr;  
+
+  dm::hartinfo_t [0:0] hartinfo_arr;
     assign hartinfo_arr[0] = '{nscratch: 4'd2, dataaccess: 1'b1,
                              datasize: dm::DataCount, dataaddr: dm::DataAddr,
                              default: '0};
- 
+
   dm_top #(
     .NrHarts       ( 1              ),
     .BusWidth      ( 32             ),

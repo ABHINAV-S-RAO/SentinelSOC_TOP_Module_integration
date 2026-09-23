@@ -201,6 +201,9 @@ package sentinel_soc_vip_uvm_pkg;
     
     SpiMasterTransaction expected_q[$];
 
+    // Expected RX FIFO word, assembled from MISO bytes seen by SPI monitor
+    bit [31:0] expected_rx_q[$];
+
     function new(string name, uvm_component parent);
       super.new(name, parent);
       obi_export = new("obi_export", this);
@@ -208,6 +211,12 @@ package sentinel_soc_vip_uvm_pkg;
     endfunction
 
     virtual function void write_obi(obi_seq_item t);
+      // Dispatch reads (e.g. RXFIFO) to the RX checker
+      if (!t.we) begin
+        write_obi_rx(t);
+        return;
+      end
+      // Write-side: predict SPI transactions based on register writes
       if (t.we) begin
         case (t.addr)
           32'h1050_2018: expected_txfifo = t.data;
@@ -243,22 +252,69 @@ package sentinel_soc_vip_uvm_pkg;
       if (expected_q.size() > 0) begin
         SpiMasterTransaction exp_tx = expected_q.pop_front();
         if (t.masterOutSlaveIn.size() != exp_tx.masterOutSlaveIn.size()) begin
-          `uvm_error("SPI_VIP_SCB", $sformatf("Length mismatch: expected %0d bytes, got %0d bytes", exp_tx.masterOutSlaveIn.size(), t.masterOutSlaveIn.size()))
+          `uvm_error("SPI_VIP_SCB", $sformatf("TX Length mismatch: expected %0d bytes, got %0d bytes", exp_tx.masterOutSlaveIn.size(), t.masterOutSlaveIn.size()))
         end else begin
           bit match = 1;
           for (int i = 0; i < t.masterOutSlaveIn.size(); i++) begin
             if (t.masterOutSlaveIn[i] != exp_tx.masterOutSlaveIn[i]) begin
               match = 0;
-              `uvm_error("SPI_VIP_SCB", $sformatf("Data mismatch at byte %0d: expected 0x%02h, got 0x%02h", i, exp_tx.masterOutSlaveIn[i], t.masterOutSlaveIn[i]))
+              `uvm_error("SPI_VIP_SCB", $sformatf("TX Data mismatch at byte %0d: expected 0x%02h, got 0x%02h", i, exp_tx.masterOutSlaveIn[i], t.masterOutSlaveIn[i]))
             end
           end
-          if (match) `uvm_info("SPI_VIP_SCB", "SPI Transaction MATCHED successfully!", UVM_LOW)
+          if (match) `uvm_info("SPI_VIP_SCB", "SPI TX Transaction MATCHED successfully!", UVM_LOW)
         end
       end else begin
         `uvm_error("SPI_VIP_SCB", "Received unexpected SPI transaction from monitor!")
       end
+
+      // --- RX FIFO prediction ---
+      // The slave drove masterInSlaveOut bytes on MISO. Assemble them into
+      // the 32-bit word that should appear in the RXFIFO register.
+      if (t.masterInSlaveOut.size() > 0) begin
+        bit [31:0] expected_rx_word = 0;
+        // The RTL packs received bytes MSB-first into a 32-bit word.
+        for (int i = 0; i < t.masterInSlaveOut.size() && i < 4; i++) begin
+          expected_rx_word = (expected_rx_word << 8) | t.masterInSlaveOut[i];
+        end
+        expected_rx_q.push_back(expected_rx_word);
+        `uvm_info("SPI_VIP_SCB", $sformatf("Predicted RXFIFO word: 0x%08h", expected_rx_word), UVM_LOW)
+      end
+    endfunction
+
+    // Called when the OBI monitor sees any completed transaction
+    virtual function void write_obi_rx(obi_seq_item t);
+      if (!t.we && t.addr == 32'h1050_2020) begin // RXFIFO read
+        if (expected_rx_q.size() > 0) begin
+          bit [31:0] exp_rx = expected_rx_q.pop_front();
+          if (t.data == exp_rx) begin
+            `uvm_info("SPI_VIP_SCB", $sformatf("SPI RX FIFO MATCHED! CPU read 0x%08h as expected.", t.data), UVM_LOW)
+          end else begin
+            `uvm_error("SPI_VIP_SCB", $sformatf("SPI RX FIFO MISMATCH! Expected 0x%08h, CPU got 0x%08h", exp_rx, t.data))
+          end
+        end else begin
+          `uvm_error("SPI_VIP_SCB", $sformatf("Unexpected RXFIFO read at 0x%08h — no pending RX expected", t.data))
+        end
+      end
     endfunction
   endclass
+
+// A slave sequence that drives 4 known bytes on MISO so the DUT RX FIFO gets
+// a predictable, non-random value that the scoreboard can verify.
+class soc_spi_4byte_slave_seq extends SpiSlaveBaseSeq;
+  `uvm_object_utils(soc_spi_4byte_slave_seq)
+  function new(string name = "soc_spi_4byte_slave_seq"); super.new(name); endfunction
+  task body();
+    super.body();
+    start_item(req);
+    // Drive 4 bytes of MISO: 0xCA, 0xFE, 0xBA, 0xBE
+    req.masterInSlaveOut = new[4];
+    req.masterInSlaveOut[0] = 8'hCA;
+    req.masterInSlaveOut[1] = 8'hFE;
+    req.masterInSlaveOut[2] = 8'hBA;
+    req.masterInSlaveOut[3] = 8'hBE;
+    finish_item(req);
+  endtask
+endclass
 
 class soc_spi_multibyte_seq extends uvm_sequence #(obi_seq_item);
   `uvm_object_utils(soc_spi_multibyte_seq)
@@ -266,12 +322,42 @@ class soc_spi_multibyte_seq extends uvm_sequence #(obi_seq_item);
   task body();
     obi_seq_item item = obi_seq_item::type_id::create("item");
 
+    // CLKDIV = 8
     start_item(item); item.addr = 32'h1050_2004; item.data = 32'h0000_0008; item.we = 1; item.be = 4'hF; finish_item(item);
+    // TXFIFO = 0xDEADBEEF
     start_item(item); item.addr = 32'h1050_2018; item.data = 32'hDEAD_BEEF; item.we = 1; item.be = 4'hF; finish_item(item);
+    // SPILEN: data_len=32 bits => bits[31:16]=32 => 0x0020_0000
     start_item(item); item.addr = 32'h1050_2010; item.data = 32'h0020_0000; item.we = 1; item.be = 4'hF; finish_item(item);
+    // STATUS: cs0=1 (bit8), spi_wr=1 (bit1) => 0x0000_0102
     start_item(item); item.addr = 32'h1050_2000; item.data = 32'h0000_0102; item.we = 1; item.be = 4'hF; finish_item(item);
+
+    // Poll STATUS register (offset 0x00) until bit0 (busy) goes low
+    // STATUS[0] = 1 while transfer in progress, 0 when done.
+    `uvm_info("MULTIBYTE_SEQ", "Transfer started, polling STATUS until done...", UVM_LOW)
+    begin
+      bit [31:0] status_val;
+      int poll_count = 0;
+      do begin
+        start_item(item);
+        item.addr = 32'h1050_2000; item.we = 0; item.be = 4'hF; item.data = 0;
+        finish_item(item);
+        status_val = item.data;
+        poll_count++;
+        if (poll_count > 10000) begin
+          `uvm_fatal("MULTIBYTE_SEQ", "STATUS poll timed out — transfer never completed!")
+        end
+      end while (status_val[0] == 1'b1); // Wait for busy=0
+    end
+
+    `uvm_info("MULTIBYTE_SEQ", "Transfer done! Reading RXFIFO...", UVM_LOW)
+    // Read RXFIFO (offset 0x20)
+    start_item(item);
+    item.addr = 32'h1050_2020; item.we = 0; item.be = 4'hF; item.data = 0;
+    finish_item(item);
+    `uvm_info("MULTIBYTE_SEQ", $sformatf("RXFIFO read returned: 0x%08h", item.data), UVM_LOW)
   endtask
 endclass
+
 
 class soc_spi_traffic_seq extends uvm_sequence #(obi_seq_item);
   `uvm_object_utils(soc_spi_traffic_seq)
@@ -367,32 +453,39 @@ class sentinel_soc_vip_spi_test extends sentinel_soc_vip_base_test;
 
     task run_phase(uvm_phase phase);
       soc_spi_traffic_seq       seq;
-      SpiSlaveFdCpol0Cpha0Seq   slave_seq;
+      soc_spi_multibyte_seq     seq2;
 
       phase.raise_objection(this);
       #150;
 
       fork
-       begin : SLAVE_RESPONDER
-       forever begin
-        slave_seq = SpiSlaveFdCpol0Cpha0Seq::type_id::create("slave_seq");
-        slave_seq.start(spi_env.spiSlaveAgent[0].spiSlaveSequencer);
-       end
-      end
-      begin : MASTER_TRAFFIC
-        soc_spi_multibyte_seq seq2;
-        seq = soc_spi_traffic_seq::type_id::create("seq");
-        seq2 = soc_spi_multibyte_seq::type_id::create("seq2");
-        seq.start(cpu_agent.sequencer);
-        #5000;
-        seq2.start(cpu_agent.sequencer);
-      end
-    join_any
+        // Slave thread: serve exactly 2 transfers with different MISO payloads:
+        //   Transfer 1: 1-byte cmd (soc_spi_traffic_seq uses cmd phase only)
+        //   Transfer 2: 4-byte data (soc_spi_multibyte_seq uses TXFIFO data phase)
+        begin : SLAVE_RESPONDER
+          SpiSlaveFdCpol0Cpha0Seq slave_seq1;
+          soc_spi_4byte_slave_seq  slave_seq2;
+          // Serve transfer 1 (8-bit command)
+          slave_seq1 = SpiSlaveFdCpol0Cpha0Seq::type_id::create("slave_seq1");
+          slave_seq1.start(spi_env.spiSlaveAgent[0].spiSlaveSequencer);
+          // Serve transfer 2 (32-bit data + MISO = 0xCAFEBABE)
+          slave_seq2 = soc_spi_4byte_slave_seq::type_id::create("slave_seq2");
+          slave_seq2.start(spi_env.spiSlaveAgent[0].spiSlaveSequencer);
+        end
+        begin : MASTER_TRAFFIC
+          seq  = soc_spi_traffic_seq::type_id::create("seq");
+          seq2 = soc_spi_multibyte_seq::type_id::create("seq2");
+          seq.start(cpu_agent.sequencer);  // 8-bit cmd transfer
+          #5000;
+          seq2.start(cpu_agent.sequencer); // 32-bit TXFIFO transfer + STATUS poll + RXFIFO read
+        end
+      join
 
-     #50000;
-  disable fork;
-  phase.drop_objection(this);
-endtask
+      #10000;
+      phase.drop_objection(this);
+    endtask
+
+
 endclass
 
   // -------------------------------------------------------------------------

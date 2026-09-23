@@ -84,6 +84,41 @@ package obi_cpu_agent_pkg;
     endtask
   endclass
 
+  // Monitor
+  class obi_monitor extends uvm_monitor;
+    `uvm_component_utils(obi_monitor)
+    virtual obi_if vif;
+    uvm_analysis_port #(obi_seq_item) ap;
+
+    function new(string name, uvm_component parent);
+      super.new(name, parent);
+      ap = new("ap", this);
+    endfunction
+
+    function void build_phase(uvm_phase phase);
+      super.build_phase(phase);
+      if (!uvm_config_db#(virtual obi_if)::get(this, "", "vif", vif))
+        `uvm_fatal("NO_VIF", "obi_if not found")
+    endfunction
+
+    task run_phase(uvm_phase phase);
+      obi_seq_item item;
+      forever begin
+        @(posedge vif.clk_i);
+        if (vif.rst_ni && vif.req && vif.gnt) begin
+          item = obi_seq_item::type_id::create("item");
+          item.addr = vif.addr;
+          item.we   = vif.we;
+          item.be   = vif.be;
+          item.data = vif.wdata;
+          // Simple monitor: write immediately on req+gnt. 
+          // For full compliance, we'd wait for rvalid, but this is enough for predicting SPI writes.
+          ap.write(item);
+        end
+      end
+    endtask
+  endclass
+
   // Sequencer
   class obi_sequencer extends uvm_sequencer #(obi_seq_item);
     `uvm_component_utils(obi_sequencer)
@@ -96,6 +131,7 @@ package obi_cpu_agent_pkg;
   class obi_agent extends uvm_agent;
     `uvm_component_utils(obi_agent)
     obi_driver driver;
+    obi_monitor monitor;
     obi_sequencer sequencer;
 
     function new(string name, uvm_component parent);
@@ -105,11 +141,16 @@ package obi_cpu_agent_pkg;
     function void build_phase(uvm_phase phase);
       super.build_phase(phase);
       driver = obi_driver::type_id::create("driver", this);
+      monitor = obi_monitor::type_id::create("monitor", this);
       sequencer = obi_sequencer::type_id::create("sequencer", this);
     endfunction
 
     function void connect_phase(uvm_phase phase);
       driver.seq_item_port.connect(sequencer.seq_item_export);
+      // Provide vif to monitor in case it was passed to agent
+      // Usually handled by passing to agent and setting in agent's build_phase,
+      // but base_test currently passes it directly to driver via config_db.
+      // We will update base_test to pass it to the agent/monitor.
     endfunction
   endclass
 endpackage

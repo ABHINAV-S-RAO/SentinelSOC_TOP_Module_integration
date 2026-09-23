@@ -101,8 +101,10 @@ package sentinel_soc_vip_uvm_pkg;
 
       // Pass OBI interface to CPU agent
       uvm_config_db#(virtual obi_if)::set(this, "cpu_agent.driver", "vif", vif_obi);
+      uvm_config_db#(virtual obi_if)::set(this, "cpu_agent.monitor", "vif", vif_obi);
     endfunction
 
+    
     task run_phase(uvm_phase phase);
       soc_reg_seq seq;
       phase.raise_objection(this);
@@ -181,6 +183,96 @@ package sentinel_soc_vip_uvm_pkg;
   // -------------------------------------------------------------------------
   // SPI VIP Integration Test
   // -------------------------------------------------------------------------
+
+  `uvm_analysis_imp_decl(_obi)
+  `uvm_analysis_imp_decl(_spi)
+
+  class spi_vip_scoreboard extends uvm_scoreboard;
+    `uvm_component_utils(spi_vip_scoreboard)
+
+    uvm_analysis_imp_obi #(obi_seq_item, spi_vip_scoreboard) obi_export;
+    uvm_analysis_imp_spi #(SpiMasterTransaction, spi_vip_scoreboard) spi_export;
+
+    // Expected state
+    bit [31:0] expected_txfifo;
+    bit [31:0] expected_spilen;
+    bit [31:0] expected_spicmd;
+    bit [31:0] expected_clkdiv;
+    
+    SpiMasterTransaction expected_q[$];
+
+    function new(string name, uvm_component parent);
+      super.new(name, parent);
+      obi_export = new("obi_export", this);
+      spi_export = new("spi_export", this);
+    endfunction
+
+    virtual function void write_obi(obi_seq_item t);
+      if (t.we) begin
+        case (t.addr)
+          32'h1050_2018: expected_txfifo = t.data;
+          32'h1050_2010: expected_spilen = t.data;
+          32'h1050_2008: expected_spicmd = t.data;
+          32'h1050_2004: expected_clkdiv = t.data;
+          32'h1050_2000: begin // STATUS
+            if (t.data[1]) begin // spi_wr == 1
+              SpiMasterTransaction exp_tx = SpiMasterTransaction::type_id::create("exp_tx");
+              int cmd_len  = expected_spilen[5:0];
+              int data_len = expected_spilen[31:16];
+              
+              if (data_len > 0) begin
+                exp_tx.masterOutSlaveIn = new[data_len/8];
+                for (int i = 0; i < data_len/8; i++) begin
+                  exp_tx.masterOutSlaveIn[i] = expected_txfifo >> (8 * (3 - i));
+                end
+              end else if (cmd_len > 0) begin
+                exp_tx.masterOutSlaveIn = new[cmd_len/8];
+                for (int i = 0; i < cmd_len/8; i++) begin
+                  exp_tx.masterOutSlaveIn[i] = expected_spicmd >> (31 - (i*8) - 7);
+                end
+              end
+              expected_q.push_back(exp_tx);
+              `uvm_info("SPI_VIP_SCB", $sformatf("Predicted SPI Transaction: data_len=%0d, cmd_len=%0d", data_len, cmd_len), UVM_LOW)
+            end
+          end
+        endcase
+      end
+    endfunction
+
+    virtual function void write_spi(SpiMasterTransaction t);
+      if (expected_q.size() > 0) begin
+        SpiMasterTransaction exp_tx = expected_q.pop_front();
+        if (t.masterOutSlaveIn.size() != exp_tx.masterOutSlaveIn.size()) begin
+          `uvm_error("SPI_VIP_SCB", $sformatf("Length mismatch: expected %0d bytes, got %0d bytes", exp_tx.masterOutSlaveIn.size(), t.masterOutSlaveIn.size()))
+        end else begin
+          bit match = 1;
+          for (int i = 0; i < t.masterOutSlaveIn.size(); i++) begin
+            if (t.masterOutSlaveIn[i] != exp_tx.masterOutSlaveIn[i]) begin
+              match = 0;
+              `uvm_error("SPI_VIP_SCB", $sformatf("Data mismatch at byte %0d: expected 0x%02h, got 0x%02h", i, exp_tx.masterOutSlaveIn[i], t.masterOutSlaveIn[i]))
+            end
+          end
+          if (match) `uvm_info("SPI_VIP_SCB", "SPI Transaction MATCHED successfully!", UVM_LOW)
+        end
+      end else begin
+        `uvm_error("SPI_VIP_SCB", "Received unexpected SPI transaction from monitor!")
+      end
+    endfunction
+  endclass
+
+class soc_spi_multibyte_seq extends uvm_sequence #(obi_seq_item);
+  `uvm_object_utils(soc_spi_multibyte_seq)
+  function new(string name = "soc_spi_multibyte_seq"); super.new(name); endfunction
+  task body();
+    obi_seq_item item = obi_seq_item::type_id::create("item");
+
+    start_item(item); item.addr = 32'h1050_2004; item.data = 32'h0000_0008; item.we = 1; item.be = 4'hF; finish_item(item);
+    start_item(item); item.addr = 32'h1050_2018; item.data = 32'hDEAD_BEEF; item.we = 1; item.be = 4'hF; finish_item(item);
+    start_item(item); item.addr = 32'h1050_2010; item.data = 32'h0020_0000; item.we = 1; item.be = 4'hF; finish_item(item);
+    start_item(item); item.addr = 32'h1050_2000; item.data = 32'h0000_0102; item.we = 1; item.be = 4'hF; finish_item(item);
+  endtask
+endclass
+
 class soc_spi_traffic_seq extends uvm_sequence #(obi_seq_item);
   `uvm_object_utils(soc_spi_traffic_seq)
   function new(string name = "soc_spi_traffic_seq"); super.new(name); endfunction
@@ -226,6 +318,7 @@ class sentinel_soc_vip_spi_test extends sentinel_soc_vip_base_test;
 
     SpiEnvConfig  spi_cfg;
     SpiEnv        spi_env;
+    spi_vip_scoreboard scb;
     virtual SpiInterface vif_spi;
 
     function new(string name, uvm_component parent); super.new(name, parent); endfunction
@@ -262,7 +355,14 @@ class sentinel_soc_vip_spi_test extends sentinel_soc_vip_base_test;
       uvm_config_db#(SpiSlaveAgentConfig)::set(this, "spi_env.spiSlaveAgent[0]",  "SpiSlaveAgentConfig",  spi_cfg.spiSlaveAgentConfig[0]);
 
       spi_env = SpiEnv::type_id::create("spi_env", this);
+      scb = spi_vip_scoreboard::type_id::create("scb", this);
       uvm_config_db#(virtual SpiInterface)::set(this, "spi_env.*", "vif", vif_spi);
+    endfunction
+
+    function void connect_phase(uvm_phase phase);
+      super.connect_phase(phase);
+      cpu_agent.monitor.ap.connect(scb.obi_export);
+      spi_env.spiMasterAgent.spiMasterMonitorProxy.masterAnalysisPort.connect(scb.spi_export);
     endfunction
 
     task run_phase(uvm_phase phase);
@@ -280,8 +380,12 @@ class sentinel_soc_vip_spi_test extends sentinel_soc_vip_base_test;
        end
       end
       begin : MASTER_TRAFFIC
+        soc_spi_multibyte_seq seq2;
         seq = soc_spi_traffic_seq::type_id::create("seq");
+        seq2 = soc_spi_multibyte_seq::type_id::create("seq2");
         seq.start(cpu_agent.sequencer);
+        #5000;
+        seq2.start(cpu_agent.sequencer);
       end
     join_any
 

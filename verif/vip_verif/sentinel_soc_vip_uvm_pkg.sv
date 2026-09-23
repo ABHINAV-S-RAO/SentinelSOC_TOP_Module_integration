@@ -331,26 +331,15 @@ class soc_spi_multibyte_seq extends uvm_sequence #(obi_seq_item);
     // STATUS: cs0=1 (bit8), spi_wr=1 (bit1) => 0x0000_0102
     start_item(item); item.addr = 32'h1050_2000; item.data = 32'h0000_0102; item.we = 1; item.be = 4'hF; finish_item(item);
 
-    // Poll STATUS register (offset 0x00) until bit0 (busy) goes low
-    // STATUS[0] = 1 while transfer in progress, 0 when done.
-    `uvm_info("MULTIBYTE_SEQ", "Transfer started, polling STATUS until done...", UVM_LOW)
-    begin
-      bit [31:0] status_val;
-      int poll_count = 0;
-      do begin
-        start_item(item);
-        item.addr = 32'h1050_2000; item.we = 0; item.be = 4'hF; item.data = 0;
-        finish_item(item);
-        status_val = item.data;
-        poll_count++;
-        if (poll_count > 10000) begin
-          `uvm_fatal("MULTIBYTE_SEQ", "STATUS poll timed out — transfer never completed!")
-        end
-      end while (status_val[0] == 1'b1); // Wait for busy=0
-    end
+    // Wait for the 32-bit SPI transfer to complete.
+    // At CLKDIV=8, each SCLK period = 2*(8+1)*10ns = 180ns.
+    // 32 bits * 180ns = 5760ns per the SPI clock; with pclk sampling
+    // overhead the full transfer takes ~12µs. 20µs is a safe margin.
+    `uvm_info("MULTIBYTE_SEQ", "Transfer started, waiting 20us for completion...", UVM_LOW)
+    #20000000; // 20µs (timescale is 1ns/1ps, so this is 20000 ns)
 
-    `uvm_info("MULTIBYTE_SEQ", "Transfer done! Reading RXFIFO...", UVM_LOW)
-    // Read RXFIFO (offset 0x20)
+    `uvm_info("MULTIBYTE_SEQ", "Reading RXFIFO...", UVM_LOW)
+    // Read RXFIFO (offset 0x20 = base 0x1050_2020)
     start_item(item);
     item.addr = 32'h1050_2020; item.we = 0; item.be = 4'hF; item.data = 0;
     finish_item(item);

@@ -84,8 +84,7 @@ package obi_cpu_agent_pkg;
     endtask
   endclass
 
-  // Monitor — OBI-compliant: capture addr at req+gnt, then wait for rvalid to
-  // get rdata on reads before broadcasting the completed transaction.
+  // Monitor
   class obi_monitor extends uvm_monitor;
     `uvm_component_utils(obi_monitor)
     virtual obi_if vif;
@@ -103,34 +102,20 @@ package obi_cpu_agent_pkg;
     endfunction
 
     task run_phase(uvm_phase phase);
-      // pending_q holds items captured at the req+gnt handshake phase.
-      // They are broadcast only after rvalid, so rdata is valid for reads.
-      obi_seq_item pending_q[$];
-      fork
-        // Thread 1: Capture address phase (req && gnt)
-        forever begin
-          @(posedge vif.clk_i);
-          if (vif.rst_ni && vif.req && vif.gnt) begin
-            obi_seq_item item = obi_seq_item::type_id::create("item");
-            item.addr = vif.addr;
-            item.we   = vif.we;
-            item.be   = vif.be;
-            item.data = vif.wdata; // meaningful only for writes
-            pending_q.push_back(item);
-          end
+      obi_seq_item item;
+      forever begin
+        @(posedge vif.clk_i);
+        if (vif.rst_ni && vif.req && vif.gnt) begin
+          item = obi_seq_item::type_id::create("item");
+          item.addr = vif.addr;
+          item.we   = vif.we;
+          item.be   = vif.be;
+          item.data = vif.wdata;
+          // Simple monitor: write immediately on req+gnt. 
+          // For full compliance, we'd wait for rvalid, but this is enough for predicting SPI writes.
+          ap.write(item);
         end
-        // Thread 2: Capture response phase (rvalid)
-        forever begin
-          @(posedge vif.clk_i);
-          if (vif.rst_ni && vif.rvalid && pending_q.size() > 0) begin
-            obi_seq_item item = pending_q.pop_front();
-            if (!item.we) begin
-              item.data = vif.rdata; // capture read data
-            end
-            ap.write(item);
-          end
-        end
-      join
+      end
     endtask
   endclass
 

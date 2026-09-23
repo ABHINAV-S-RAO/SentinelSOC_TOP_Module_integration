@@ -198,6 +198,7 @@ package sentinel_soc_vip_uvm_pkg;
     bit [31:0] expected_spilen;
     bit [31:0] expected_spicmd;
     bit [31:0] expected_clkdiv;
+    bit        expected_spi_rd; // set when STATUS write has spi_rd=1 (bit0)
     
     SpiMasterTransaction expected_q[$];
 
@@ -224,6 +225,8 @@ package sentinel_soc_vip_uvm_pkg;
           32'h1050_2008: expected_spicmd = t.data;
           32'h1050_2004: expected_clkdiv = t.data;
           32'h1050_2000: begin // STATUS
+            // Track whether this transfer has a read phase (spi_rd = bit0)
+            expected_spi_rd = t.data[0];
             if (t.data[1]) begin // spi_wr == 1
               SpiMasterTransaction exp_tx = SpiMasterTransaction::type_id::create("exp_tx");
               int cmd_len  = expected_spilen[5:0];
@@ -268,9 +271,10 @@ package sentinel_soc_vip_uvm_pkg;
       end
 
       // --- RX FIFO prediction ---
-      // The slave drove masterInSlaveOut bytes on MISO. Assemble them into
-      // the 32-bit word that should appear in the RXFIFO register.
-      if (t.masterInSlaveOut.size() > 0) begin
+      // Only predict an RXFIFO entry when the transfer was a read operation
+      // (spi_rd=1 set in STATUS). Write-only transfers (spi_wr only) do NOT
+      // push data to the RXFIFO in the RTL.
+      if (expected_spi_rd && t.masterInSlaveOut.size() > 0) begin
         bit [31:0] expected_rx_word = 0;
         // The RTL packs received bytes MSB-first into a 32-bit word.
         for (int i = 0; i < t.masterInSlaveOut.size() && i < 4; i++) begin
@@ -332,11 +336,10 @@ class soc_spi_multibyte_seq extends uvm_sequence #(obi_seq_item);
     start_item(item); item.addr = 32'h1050_2000; item.data = 32'h0000_0102; item.we = 1; item.be = 4'hF; finish_item(item);
 
     // Wait for the 32-bit SPI transfer to complete.
-    // At CLKDIV=8, each SCLK period = 2*(8+1)*10ns = 180ns.
-    // 32 bits * 180ns = 5760ns per the SPI clock; with pclk sampling
-    // overhead the full transfer takes ~12µs. 20µs is a safe margin.
+    // At CLKDIV=8, each SCLK period ≈ 360 ns; 32 bits × 360 ns ≈ 11520 ns.
+    // 20 µs is a safe margin (timescale 1ns/1ps → #20000 = 20000 ns = 20 µs).
     `uvm_info("MULTIBYTE_SEQ", "Transfer started, waiting 20us for completion...", UVM_LOW)
-    #20000000; // 20µs (timescale is 1ns/1ps, so this is 20000 ns)
+    #20000; // 20 µs
 
     `uvm_info("MULTIBYTE_SEQ", "Reading RXFIFO...", UVM_LOW)
     // Read RXFIFO (offset 0x20 = base 0x1050_2020)

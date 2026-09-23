@@ -45,7 +45,7 @@ interface SpiSlaveAssertions(input pclk,
   //-------------------------------------------------------
   property ifSignalsAreStable(logic misoLocal, logic mosiLocal);
     @(posedge pclk) disable iff(!areset)
-    cs=='1 |=> $stable(sclk) && $stable(mosiLocal) && $stable(misoLocal);
+    cs=='1 |=> (cs=='0) || ($stable(sclk) && $stable(mosiLocal) && $stable(misoLocal));
   endproperty : ifSignalsAreStable
   
 

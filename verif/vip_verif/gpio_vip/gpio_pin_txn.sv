@@ -8,7 +8,7 @@
 // sequencer share a type. Split into separate classes if that gets confusing.
 class gpio_pin_txn extends uvm_sequence_item;
   rand bit [31:0] drv_en;
-  rand bit [31:0] drv_val;
+  rand logic [31:0] drv_val;
   rand int unsigned hold_cycles;
 
   constraint c_hold { hold_cycles inside {[2:20]}; }

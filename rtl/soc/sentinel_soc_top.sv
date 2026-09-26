@@ -925,7 +925,7 @@ soc_addr_decode #(
     end
     if (psel_gpio) begin
       apb_rsp.prdata  = prdata_gpio;
-      apb_rsp.pready  = pready_gpio;
+      apb_rsp.pready  = pready_gpio & apb_req.penable; //gate with penable
       apb_rsp.pslverr = pslverr_gpio;
     end
   end

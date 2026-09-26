@@ -91,6 +91,7 @@ package sentinel_soc_vip_uvm_pkg;
       uart_cfg.uartRxAgentConfig.uartOverSamplingMethod = OVERSAMPLING_16;
       uart_cfg.uartRxAgentConfig.uartDataType            = EIGHT_BIT;
       uart_cfg.uartRxAgentConfig.uartStopBit              = ONE_BIT;
+      uart_cfg.uartRxAgentConfig.OverSampledBaudFrequencyClk = 1;
       uart_cfg.uartRxAgentConfig.is_active = UVM_PASSIVE;
       uart_cfg.hasScoreboard = 1;
       
@@ -174,14 +175,14 @@ package sentinel_soc_vip_uvm_pkg;
       // 2. Write DLL (low byte of divisor) at offset 0
       start_item(item);
       item.addr = 32'h1050_3000 + 0;
-      item.data = 32'h0000_0046; // 326 & 0xFF = 0x46
+      item.data = 32'h0000_0057; // 5207 & 0xFF = 0x57 (fixed)
       item.we = 1; item.be = 4'h1;
       finish_item(item);
 
       // 3. Write DLM (high byte of divisor) at offset 1
       start_item(item);
       item.addr = 32'h1050_3000 + 1;
-      item.data = 32'h0000_0001; // 326 >> 8 = 0x01
+      item.data = 32'h0000_0014; // 5207 >> 8 = 0x14 (fixed)
       item.we = 1; item.be = 4'h1;
       finish_item(item);
 
@@ -204,6 +205,7 @@ package sentinel_soc_vip_uvm_pkg;
         item.we = 1;
         item.be = 4'h1; // Byte enable
         finish_item(item);
+        #2100000;
 
         // Register write completed — this byte is now the "ground truth"
         // expected transmission. Push it straight into the scoreboard's

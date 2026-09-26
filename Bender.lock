@@ -21,7 +21,7 @@ packages:
       Git: https://github.com/pulp-platform/common_verification.git
     dependencies: []
   obi:
-    revision: 6a724da5c8d6412b88b6948746e04c1adf39d017
+    revision: f29d4cc421248dfb5c32986bbf9918e2a1ca7556
     version: null
     source:
       Git: https://github.com/pulp-platform/obi.git
@@ -29,8 +29,8 @@ packages:
     - common_cells
     - common_verification
   tech_cells_generic:
-    revision: 7968dd6e6180df2c644636bc6d2908a49f2190cf
-    version: 0.2.13
+    revision: 3a3de73632a06826b1bd9c65a0a2e92b32016845
+    version: 0.2.14
     source:
       Git: https://github.com/pulp-platform/tech_cells_generic.git
     dependencies:

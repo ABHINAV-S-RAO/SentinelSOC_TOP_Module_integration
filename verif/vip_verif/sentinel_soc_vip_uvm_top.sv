@@ -187,7 +187,7 @@ module sentinel_soc_vip_uvm_top;
   // UartRxDriverBfm drives uartIf.rx procedurally (idle=1). Force the
   // interface net itself continuously so both driver and monitor see
   // dut_uart_tx. 'force' on a logic net beats procedural drivers.
-  always @(dut_uart_tx) force u_uart_if.rx = dut_uart_tx;
+  assign u_uart_if.monitor_rx = dut_uart_tx;
   // ---------------------------------------------------------------------------
   // UVM Initialization
   // ---------------------------------------------------------------------------

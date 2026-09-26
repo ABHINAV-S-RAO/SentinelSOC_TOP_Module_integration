@@ -926,6 +926,7 @@ soc_addr_decode #(
   end
 
   assign apb_rsp.pready = apb_rsp_pready_q;
+  wire apb_penable_gated = apb_req.penable & ~apb_rsp_pready_q;
   
   // ---------------------------------------------------------------------------
   // APB peripheral stubs
@@ -944,7 +945,7 @@ soc_addr_decode #(
     .PWDATA (apb_req.pwdata),
     .PWRITE (apb_req.pwrite),
     .PSEL (psel_uart),
-    .PENABLE (apb_req.penable),
+    .PENABLE (apb_penable_gated),
     .PRDATA (prdata_uart),
     .PREADY (pready_uart),
     .PSLVERR (pslverr_uart),

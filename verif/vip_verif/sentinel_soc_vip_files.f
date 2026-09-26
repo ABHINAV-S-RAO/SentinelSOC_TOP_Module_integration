@@ -212,6 +212,12 @@ verif/vip/jtag_avip/src/hdlTop/jtagTargetDeviceAgentBfm/JtagTargetDeviceAgentBfm
 verif/vip/jtag_avip/src/hdlTop/jtagTargetDeviceAgentBfm/JtagTargetDeviceAssertions.sv
 
 # -----------------------------------------------------------------------------
+# GPIO VIP
+# -----------------------------------------------------------------------------
+verif/vip_verif/gpio_vip/gpio_if.sv
+verif/vip_verif/gpio_vip/GpioEnvPkg.sv
+
+# -----------------------------------------------------------------------------
 # New Dedicated VIP Testbench
 # -----------------------------------------------------------------------------
 verif/vip_verif/cpu_agent/obi_if.sv

@@ -21,6 +21,8 @@ package sentinel_soc_vip_uvm_pkg;
 
   import obi_cpu_agent_pkg::*;
 
+  import GpioEnvPkg::*;
+
   // -------------------------------------------------------------------------
   // APB Register Sequence
   // -------------------------------------------------------------------------
@@ -425,29 +427,79 @@ endclass
   // -------------------------------------------------------------------------
   // GPIO VIP Integration Test
   // -------------------------------------------------------------------------
-  class soc_gpio_toggle_seq extends uvm_sequence #(obi_seq_item);
-    `uvm_object_utils(soc_gpio_toggle_seq)
-    function new(string name = "soc_gpio_toggle_seq"); super.new(name); endfunction
+  class soc_gpio_padout_seq extends uvm_sequence #(obi_seq_item);
+    `uvm_object_utils(soc_gpio_padout_seq)
+  
+    rand bit [31:0] pattern;
+  
+    function new(string name = "soc_gpio_padout_seq");
+      super.new(name);
+    endfunction
+  
     task body();
-      obi_seq_item item = obi_seq_item::type_id::create("item");
+      obi_seq_item item;
+  
+      // All 32 pads as output
+      item = obi_seq_item::type_id::create("item");
       start_item(item);
-      item.addr = 32'h1060_0000; // GPIO DIR
+      item.addr = 32'h1060_0000; // PADDIR
       item.data = 32'hFFFF_FFFF;
+      item.we = 1; item.be = 4'hF;
+      finish_item(item);
+  
+      // Drive known pattern onto PADOUT
+      item = obi_seq_item::type_id::create("item");
+      start_item(item);
+      item.addr = 32'h1060_000C; // PADOUT
+      item.data = pattern;
       item.we = 1; item.be = 4'hF;
       finish_item(item);
     endtask
   endclass
 
-  class sentinel_soc_vip_gpio_test extends sentinel_soc_vip_base_test;
-    `uvm_component_utils(sentinel_soc_vip_gpio_test)
-    function new(string name, uvm_component parent); super.new(name, parent); endfunction
-    task run_phase(uvm_phase phase);
-      soc_gpio_toggle_seq seq;
-      phase.raise_objection(this);
-      #150; seq = soc_gpio_toggle_seq::type_id::create("seq"); seq.start(cpu_agent.sequencer); #50000;
-      phase.drop_objection(this);
-    endtask
-  endclass
+
+// ---------------------------------------------------------------------
+// Test: replaces the write-only sentinel_soc_vip_gpio_test
+// ---------------------------------------------------------------------
+class sentinel_soc_vip_gpio_test extends sentinel_soc_vip_base_test;
+  `uvm_component_utils(sentinel_soc_vip_gpio_test)
+
+  GpioEnvConfig gpio_cfg;
+  GpioEnv       gpio_env;
+
+  function new(string name, uvm_component parent);
+    super.new(name, parent);
+  endfunction
+
+  function void build_phase(uvm_phase phase);
+    super.build_phase(phase);
+
+    gpio_cfg = GpioEnvConfig::type_id::create("gpio_cfg");
+    gpio_cfg.gpioAgentConfig = GpioAgentConfig::type_id::create("gpio_agent_cfg");
+    gpio_cfg.gpioAgentConfig.isActive = UVM_PASSIVE;
+    gpio_cfg.hasScoreboard = 1;
+
+    uvm_config_db#(GpioEnvConfig)::set(this, "gpio_env", "gpioEnvConfig", gpio_cfg);
+
+    gpio_env = GpioEnv::type_id::create("gpio_env", this);
+  endfunction
+
+  function void connect_phase(uvm_phase phase);
+    super.connect_phase(phase);
+    cpu_agent.monitor.ap.connect(gpio_env.scoreboard.obi_export);
+  endfunction
+
+  task run_phase(uvm_phase phase);
+    soc_gpio_padout_seq seq;
+    phase.raise_objection(this);
+    #150;
+    seq = soc_gpio_padout_seq::type_id::create("seq");
+    seq.pattern = 32'hA5A5_A5A5;
+    seq.start(cpu_agent.sequencer);
+    #500;
+    phase.drop_objection(this);
+  endtask
+endclass
 
   // -------------------------------------------------------------------------
   // JTAG VIP Integration Test

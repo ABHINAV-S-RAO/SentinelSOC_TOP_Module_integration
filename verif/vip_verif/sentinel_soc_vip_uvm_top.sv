@@ -94,7 +94,7 @@ module sentinel_soc_vip_uvm_top;
     .uart_rx_i          ( u_uart_if.tx ), // VIP TX goes to DUT RX
 
     // GPIO
-    .gpio_io            ( vif.gpio ),
+    .gpio_io            ( u_gpio_if.gpio_pins ),
 
     // SPI
     .spi_csn_o          ( u_spi_if.cs[0] ),

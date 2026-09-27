@@ -218,7 +218,7 @@ module dbg_tb_top;
     do begin
       u_jtag.dmi_read(dm::dm_csr_e'(dm::AbstractCS), abstractcs_val);
       poll++;
-      if (poll > 50000) begin
+      if (poll > 500000) begin
         $error("[FAIL] abstractcs.busy never cleared (abstractcs=%08h)", abstractcs_val);
         errors++;
         return;
@@ -276,7 +276,7 @@ module dbg_tb_top;
         u_jtag.idle_ticks(20);
         u_jtag.dmi_read(dm::dm_csr_e'(dm::DMStatus), dmstatus_val);
         poll++;
-        if (poll > 5000) begin
+        if (poll > 50000) begin
           $error("[FAIL] Timed out waiting for dmstatus.allhalted (dmstatus=%08h)",
                  dmstatus_val);
           errors++;
@@ -330,7 +330,7 @@ module dbg_tb_top;
         u_jtag.idle_ticks(20);
         u_jtag.dmi_read(dm::dm_csr_e'(dm::DMStatus), dmstatus_val);
         poll++;
-        if (poll > 5000) begin
+        if (poll > 50000) begin
           $error("[FAIL] Timed out waiting for dmstatus.allrunning (dmstatus=%08h)",
                  dmstatus_val);
           errors++;

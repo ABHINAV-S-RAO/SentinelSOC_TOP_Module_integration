@@ -46,7 +46,7 @@ module dsram_model #(
         end else begin
           rdata_q <= mem[idx];
         end
-        $display("[DSRAM   @%0t] addr=0x%08h we=%0b data=0x%08h",
+//         $display("[DSRAM   @%0t] addr=0x%08h we=%0b data=0x%08h",
       end
     end
   end

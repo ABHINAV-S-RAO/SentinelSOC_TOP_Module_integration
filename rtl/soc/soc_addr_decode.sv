@@ -1,7 +1,7 @@
 // Copyright 2025
 // SoC Address Decoder
-// Wraps obi_demux for data path (9 slaves: BootROM/ISRAM/DSRAM/CTRL/BUF/
-// SHA/PLIC/APB/DBG + 1 error responder) and fetch path (3 slaves: BootROM,
+// Wraps obi_demux for data path (10 slaves: BootROM/ISRAM/DSRAM/CTRL/BUF/
+// SHA/PLIC/APB/DBG/CLINT + 1 error responder) and fetch path (3 slaves: BootROM,
 // ISRAM, DBG — DBG added for debug-ROM instruction fetch, see arbiter below)
 // Uses ObiDefaultConfig: 32-bit addr/data, 1-bit ID, no integrity, no optional fields
 //
@@ -62,7 +62,9 @@ module soc_addr_decode #(
   parameter logic [31:0] SHA_BASE      = 32'h0005_0000,
   parameter logic [31:0] SHA_MASK      = 32'hFFFF_F000, // 4KB
   parameter logic [31:0] PLIC_BASE = 32'h0C00_0000,
-  parameter logic [31:0] PLIC_MASK = 32'hFFC0_0000, // 4MB 	
+  parameter logic [31:0] PLIC_MASK = 32'hFFC0_0000, // 4MB
+  parameter logic [31:0] CLINT_BASE    = 32'h0200_0000,
+  parameter logic [31:0] CLINT_MASK    = 32'hFFFF_0000, // 64KB
 
   // ---------------------------------------------------------------------
   // PLACEHOLDER — reserve address space for future privileged blocks.
@@ -82,7 +84,10 @@ module soc_addr_decode #(
 
   // 1 = SHA window (0x0005_0000) is backed by soc_secure_boot's VERIFY
   // registers; 0 = unimplemented, accesses get an error response.
-  parameter bit          SHA_IMPL      = 1'b0
+  parameter bit          SHA_IMPL      = 1'b0,
+  // 1 = PLIC / CLINT windows routed to their ports; 0 = error response
+  parameter bit          PLIC_IMPL     = 1'b0,
+  parameter bit          CLINT_IMPL    = 1'b0
 ) (
   input  logic clk_i,
   input  logic rst_ni,
@@ -239,6 +244,20 @@ module soc_addr_decode #(
   input  logic        plic_err_i,
 
   //--------------------------------------------------------------------
+  // CLINT (mtime/mtimecmp/msip) — OBI subordinate, not privileged.
+  // Tie the inputs off in SoCs without a CLINT (CLINT_IMPL=0).
+  //--------------------------------------------------------------------
+  output logic        clint_req_o,
+  input  logic        clint_gnt_i,
+  input  logic        clint_rvalid_i,
+  output logic [31:0] clint_addr_o,
+  output logic        clint_we_o,
+  output logic [ 3:0] clint_be_o,
+  output logic [31:0] clint_wdata_o,
+  input  logic [31:0] clint_rdata_i,
+  input  logic        clint_err_i,
+
+  //--------------------------------------------------------------------
   // OBI-to-APB Bridge — OBI subordinate
   //--------------------------------------------------------------------
   output logic        apb_req_o,
@@ -295,7 +314,8 @@ module soc_addr_decode #(
     SEL_PLIC	= 4'd6,
     SEL_APB     = 4'd7,
     SEL_DBG     = 4'd8,
-    SEL_ERR     = 4'd9
+    SEL_ERR     = 4'd9,
+    SEL_CLINT   = 4'd10
     // If a new privileged slave is added (e.g. SEL_CRYPTO2), widen this
     // enum, bump DataNumMgrPorts below, and add a new manager-port slot.
   } data_sel_e;
@@ -394,7 +414,8 @@ module soc_addr_decode #(
     else if ((data_addr_i & CTRL_MASK)    == CTRL_BASE)    data_sel = SEL_CTRL;
     else if ((data_addr_i & BUF_MASK)     == BUF_BASE)     data_sel = SEL_ERR; // BUF unimplemented
     else if ((data_addr_i & SHA_MASK)     == SHA_BASE)     data_sel = SHA_IMPL ? SEL_SHA : SEL_ERR;
-    else if ((data_addr_i & PLIC_MASK) == PLIC_BASE)       data_sel = SEL_ERR; // PLIC unimplemented
+    else if ((data_addr_i & PLIC_MASK)    == PLIC_BASE)    data_sel = PLIC_IMPL  ? SEL_PLIC  : SEL_ERR;
+    else if ((data_addr_i & CLINT_MASK)   == CLINT_BASE)   data_sel = CLINT_IMPL ? SEL_CLINT : SEL_ERR;
     else if ((data_addr_i & DBG_MASK)     == DBG_BASE)     data_sel = SEL_DBG; // abstract data register access (dm_obi_top slave)
     else if ((data_addr_i & APB_MASK)     == APB_BASE)     data_sel = SEL_APB;
     else                                                    data_sel = SEL_ERR;
@@ -414,7 +435,7 @@ module soc_addr_decode #(
   // --------------------------------------------------------------------------
   // Data demux — 9 manager ports (8 slaves + 1 error responder)
   // --------------------------------------------------------------------------
-  localparam int unsigned DataNumMgrPorts = 10; // SEL_BOOTROM..SEL_ERR = indices 0..8
+  localparam int unsigned DataNumMgrPorts = 11; // SEL_BOOTROM..SEL_CLINT = indices 0..10
 
   soc_obi_req_t [DataNumMgrPorts-1:0] data_mgr_req;
   soc_obi_rsp_t [DataNumMgrPorts-1:0] data_mgr_rsp;
@@ -709,6 +730,23 @@ end
     data_mgr_rsp[SEL_PLIC].rvalid  = plic_rvalid_i;
     data_mgr_rsp[SEL_PLIC].r.rdata = plic_rdata_i;
     data_mgr_rsp[SEL_PLIC].r.err   = plic_err_i;
+  end
+
+  // --------------------------------------------------------------------------
+  // CLINT — data demux only, simple passthrough (not privileged)
+  // --------------------------------------------------------------------------
+  assign clint_req_o   = data_mgr_req[SEL_CLINT].req;
+  assign clint_addr_o  = data_mgr_req[SEL_CLINT].a.addr;
+  assign clint_we_o    = data_mgr_req[SEL_CLINT].a.we;
+  assign clint_be_o    = data_mgr_req[SEL_CLINT].a.be;
+  assign clint_wdata_o = data_mgr_req[SEL_CLINT].a.wdata;
+
+  always_comb begin
+    data_mgr_rsp[SEL_CLINT]         = '0;
+    data_mgr_rsp[SEL_CLINT].gnt     = clint_gnt_i;
+    data_mgr_rsp[SEL_CLINT].rvalid  = clint_rvalid_i;
+    data_mgr_rsp[SEL_CLINT].r.rdata = clint_rdata_i;
+    data_mgr_rsp[SEL_CLINT].r.err   = clint_err_i;
   end
 
   // --------------------------------------------------------------------------

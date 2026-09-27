@@ -638,6 +638,15 @@ soc_addr_decode #(
   .boot_done_i  ( ctrl_boot_done   ),
   .dbg_mode_i   ( dbg_mode         ),
   .recovery_i   ( 1'b0             ),   // JTAG recovery boot not integrated in this top
+  .clint_req_o   (                  ),   // no CLINT in this top (CLINT_IMPL=0)
+  .clint_gnt_i   ( 1'b0             ),
+  .clint_rvalid_i( 1'b0             ),
+  .clint_addr_o  (                  ),
+  .clint_we_o    (                  ),
+  .clint_be_o    (                  ),
+  .clint_wdata_o (                  ),
+  .clint_rdata_i ( 32'h0            ),
+  .clint_err_i   ( 1'b0             ),
   .ver_req_i    ( 1'b0             ),   // no hardware-fed secure boot in this top
   .ver_addr_i   ( '0               ),
   .ver_gnt_o    (                  ),

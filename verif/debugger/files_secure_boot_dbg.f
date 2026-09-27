@@ -64,6 +64,11 @@ rtl/Interrupts/plic/rv_plic_gateway.sv
 rtl/Interrupts/plic/rv_plic_target.sv
 rtl/Interrupts/plic/plic_top.sv
 
+// Timer (PULP apb_timer) + CLINT
+rtl/peripheral/apb_timer/src/timer.sv
+rtl/peripheral/apb_timer/src/apb_timer.sv
+rtl/Interrupts/clint.sv
+
 // Crypto Subsystem (SHA-512 & ED25519) -- current rtl/crypto sources (OTP public key).
 // The old rtl/crypto/ed25519/ED25519/ copy (fpga_demo_top, key taken from the
 // image) must NOT be compiled: same module names, and it is insecure.

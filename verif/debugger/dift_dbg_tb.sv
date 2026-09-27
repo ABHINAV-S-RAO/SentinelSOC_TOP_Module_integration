@@ -145,6 +145,13 @@ module dift_dbg_tb;
     .spi_mode_o        ( spi_mode       ),
     .spi_sdo_o         ( spi_sdo        ),
     .spi_sdi_i         ( 4'h0           ),
+    .spi2_clk_o        (                ),   // general-purpose SPI unused here
+    .spi2_csn_o        (                ),
+    .spi2_sdo_o        (                ),
+    .spi2_sdi_i        ( 1'b0           ),
+    .gpio_in_i         ( 32'h0          ),   // GPIO unused here
+    .gpio_out_o        (                ),
+    .gpio_dir_o        (                ),
     .jtag_tck_i        ( jtag_tck       ),
     .jtag_tms_i        ( jtag_tms       ),
     .jtag_trst_ni      ( jtag_trst_n    ),

@@ -12,7 +12,11 @@ module basic_soc_top #(
   // 0 = legacy: ISRAM fetch gated directly by the crypto_verified_i pin
   //     (for testbenches that predate secure boot).
   parameter bit          SECURE_BOOT     = 1'b1,
-  parameter int unsigned CRYPTO_CLK_DIV  = 2                // crypto clock = clk_i / N
+  parameter int unsigned CRYPTO_CLK_DIV  = 2,               // crypto clock = clk_i / N
+
+  // 1 = PULP apb_gpio instantiated (rtl/peripheral/apb_gpio must be in the
+  // filelist). 0 = GPIO window returns an APB error, gpio_*_o driven 0.
+  parameter bit          HAS_GPIO        = 1'b0
 ) (
   input  logic        clk_i,
   input  logic        rst_ni,
@@ -60,12 +64,23 @@ module basic_soc_top #(
   input  logic [31:0] isram_rdata_i,
   input  logic        isram_err_i,
  
-  // QSPI Flash Controller pins -- testbench-side flash BFM sits behind these
+  // QSPI flash controller (APB 0x1050_0000) -- external boot flash
   output logic        spi_clk_o,
   output logic [3:0]  spi_csn_o,
-  output logic [1:0]  spi_mode_o,      // TODO: confirm width against apb_spi_master.sv
+  output logic [1:0]  spi_mode_o,      // 00 standard, 01 quad-tx, 10 quad-rx
   output logic [3:0]  spi_sdo_o,
   input  logic [3:0]  spi_sdi_i,
+
+  // General-purpose SPI master (APB 0x1050_2000), single-lane
+  output logic        spi2_clk_o,
+  output logic [3:0]  spi2_csn_o,
+  output logic        spi2_sdo_o,
+  input  logic        spi2_sdi_i,
+
+  // GPIO (APB 0x1060_0000); pads are split in/out/dir, tristate is off-chip
+  input  logic [31:0] gpio_in_i,
+  output logic [31:0] gpio_out_o,
+  output logic [31:0] gpio_dir_o,
  
   // EXPORTED Data OBI Interface (To Testbench Memory/Scoreboard)
   output logic        data_req_o,
@@ -88,7 +103,9 @@ module basic_soc_top #(
  
   localparam logic [31:0] BOOT_ADDR          = 32'h0000_0000;
   localparam logic [31:0] HART_ID            = 32'h0000_0000;
-  localparam int unsigned DSRAM_SIZE_WORDS   = 1024;
+  localparam int unsigned DSRAM_SIZE_WORDS   = 1024;        // 4 KB (DIFT tag RAM size)
+  localparam int unsigned ISRAM_SIZE_WORDS   = 2048;        // 8 KB
+  localparam logic [31:0] ISRAM_MASK         = ~(32'(ISRAM_SIZE_WORDS) * 4 - 1);
  
   // Core Instruction OBI (now internal-only -- routes through soc_addr_decode)
   logic        instr_req_int, instr_gnt_int, instr_rvalid_int, instr_err_int;
@@ -120,6 +137,10 @@ module basic_soc_top #(
   logic [3:0]  ctrl_be;
   logic [31:0] ctrl_addr, ctrl_wdata, ctrl_rdata;
   logic irq_dift, irq_uart;
+
+  // Interrupts: peripherals -> PLIC -> irq_external; CLINT -> timer/software
+  logic irq_spi2, irq_qspi, irq_gpio, irq_timer_periph;
+  logic irq_external, irq_mtimer, irq_msoft;
 
   // ---------------------------------------------------------------------------
   // RISC-V Debug (riscv-dbg): reset split + slave-port signals
@@ -217,9 +238,9 @@ module basic_soc_top #(
     .data_rdata_intg_i    ( '0 ),
     .data_err_i           ( core_data_err ),
  
-    .irq_software_i       ( 1'b0 ),
-    .irq_timer_i          ( 1'b0 ),
-    .irq_external_i       ( irq_uart ),
+    .irq_software_i       ( irq_msoft ),      // CLINT msip
+    .irq_timer_i          ( irq_mtimer ),     // CLINT mtimecmp
+    .irq_external_i       ( irq_external ),   // PLIC target 0
     .irq_fast_i           ( 15'h0 ),
     .irq_nm_i             ( irq_dift ),
  
@@ -387,7 +408,7 @@ module basic_soc_top #(
     soc_secure_boot #(
       .CRYPTO_CLK_DIV ( CRYPTO_CLK_DIV ),
       .ISRAM_BASE     ( 32'h0001_0000  ),   // must match soc_addr_decode ISRAM_BASE
-      .ISRAM_WORDS    ( 1024           )    // 4 KB, ISRAM_MASK
+      .ISRAM_WORDS    ( ISRAM_SIZE_WORDS )  // must match ISRAM_MASK
     ) u_secure_boot (
       .clk_i         ( clk_i           ),
       .rst_ni        ( sys_rst_n       ),
@@ -421,8 +442,19 @@ module basic_soc_top #(
     assign fw_verified = crypto_verified_i;
   end
 
+  // PLIC (OBI -> reg bus) and CLINT slave signals
+  logic        plic_req, plic_we, plic_gnt, plic_rvalid, plic_err;
+  logic [3:0]  plic_be;
+  logic [31:0] plic_addr, plic_wdata, plic_rdata;
+  logic        clint_req, clint_we, clint_gnt, clint_rvalid, clint_err;
+  logic [3:0]  clint_be;
+  logic [31:0] clint_addr, clint_wdata, clint_rdata;
+
   soc_addr_decode #(
-    .SHA_IMPL            ( SECURE_BOOT )
+    .ISRAM_MASK          ( ISRAM_MASK  ),
+    .SHA_IMPL            ( SECURE_BOOT ),
+    .PLIC_IMPL           ( 1'b1        ),
+    .CLINT_IMPL          ( 1'b1        )
   ) u_soc_addr_decode (
     .clk_i               ( clk_i ),
     .rst_ni              ( sys_rst_n ),
@@ -538,15 +570,25 @@ module basic_soc_top #(
     .ver_rdata_o         ( ver_rdata  ),
  
     // PLIC Interrupt Controller (deferred to next phase -- left tied off)
-    .plic_req_o          ( ),
-    .plic_gnt_i          ( 1'b0 ),
-    .plic_rvalid_i       ( 1'b0 ),
-    .plic_addr_o         ( ),
-    .plic_we_o           ( ),
-    .plic_be_o           ( ),
-    .plic_wdata_o        ( ),
-    .plic_rdata_i        ( 32'h0 ),
-    .plic_err_i          ( 1'b0 ),
+    .plic_req_o          ( plic_req    ),
+    .plic_gnt_i          ( plic_gnt    ),
+    .plic_rvalid_i       ( plic_rvalid ),
+    .plic_addr_o         ( plic_addr   ),
+    .plic_we_o           ( plic_we     ),
+    .plic_be_o           ( plic_be     ),
+    .plic_wdata_o        ( plic_wdata  ),
+    .plic_rdata_i        ( plic_rdata  ),
+    .plic_err_i          ( plic_err    ),
+
+    .clint_req_o         ( clint_req    ),
+    .clint_gnt_i         ( clint_gnt    ),
+    .clint_rvalid_i      ( clint_rvalid ),
+    .clint_addr_o        ( clint_addr   ),
+    .clint_we_o          ( clint_we     ),
+    .clint_be_o          ( clint_be     ),
+    .clint_wdata_o       ( clint_wdata  ),
+    .clint_rdata_i       ( clint_rdata  ),
+    .clint_err_i         ( clint_err    ),
  
     // Debug Subordinate -- wired to dm_obi_top's OBI slave port below
     .dbg_req_o           ( dbg_req    ),
@@ -676,7 +718,7 @@ module basic_soc_top #(
   );
  
   // ---------------------------------------------------------------------------
-  // OBI to APB Bridge, UART, QSPI
+  // OBI to APB Bridge + APB peripherals (UART, QSPI, SPI, timer, GPIO)
   // ---------------------------------------------------------------------------
   `OBI_TYPEDEF_DEFAULT_ALL(obi_apb, obi_pkg::ObiDefaultConfig)
   typedef logic [31:0] apb_addr_t;
@@ -717,19 +759,43 @@ module basic_soc_top #(
     .apb_rsp_i  ( apb_rsp_struct )
   );
  
-  // Two peripherals now share one APB bus -- decode which one is selected,
-  // and mux their independent response signals into apb_rsp_struct rather
-  // than letting each peripheral drive it directly (that direct-drive
-  // pattern is exactly the multi-driver bug class fixed earlier this
-  // session; not repeating it here).
-  logic psel_uart, psel_qspi;
-  assign psel_uart = (apb_req_struct.paddr[31:12] == 20'h10000); // 0x1000_0000-0x1000_0FFF
-  assign psel_qspi = (apb_req_struct.paddr[31:12] == 20'h10001); // 0x1000_1000-0x1000_1FFF -- ARBITRARY, confirm no collision
- 
-  logic [31:0] uart_prdata, qspi_prdata;
-  logic        uart_pready, qspi_pready;
-  logic        uart_pslverr, qspi_pslverr;
- 
+  // ---------------------------------------------------------------------------
+  // APB peripheral map (matches software/soc.h). Each slave gets PSEL only
+  // inside its 4 KB window; responses are muxed (never multi-driven).
+  // An APB address outside every window gets PSLVERR (bus error).
+  // ---------------------------------------------------------------------------
+  localparam logic [31:0] APB_QSPI_BASE  = 32'h1050_0000;
+  localparam logic [31:0] APB_TIMER_BASE = 32'h1050_1000;
+  localparam logic [31:0] APB_SPI_BASE   = 32'h1050_2000;
+  localparam logic [31:0] APB_UART_BASE  = 32'h1050_3000;
+  localparam logic [31:0] APB_GPIO_BASE  = 32'h1060_0000;
+
+  logic psel_qspi, psel_timer, psel_spi2, psel_uart, psel_gpio;
+  assign psel_qspi  = apb_req_struct.psel && (apb_req_struct.paddr[31:12] == APB_QSPI_BASE[31:12]);
+  assign psel_timer = apb_req_struct.psel && (apb_req_struct.paddr[31:12] == APB_TIMER_BASE[31:12]);
+  assign psel_spi2  = apb_req_struct.psel && (apb_req_struct.paddr[31:12] == APB_SPI_BASE[31:12]);
+  assign psel_uart  = apb_req_struct.psel && (apb_req_struct.paddr[31:12] == APB_UART_BASE[31:12]);
+  assign psel_gpio  = apb_req_struct.psel && (apb_req_struct.paddr[31:12] == APB_GPIO_BASE[31:12]);
+
+  logic [31:0] uart_prdata,  qspi_prdata,  spi2_prdata,  timer_prdata,  gpio_prdata;
+  logic        uart_pready,  qspi_pready,  spi2_pready,  timer_pready,  gpio_pready;
+  logic        uart_pslverr, qspi_pslverr, spi2_pslverr, timer_pslverr, gpio_pslverr;
+
+  always_comb begin
+    apb_rsp_struct.prdata  = 32'h0;
+    apb_rsp_struct.pready  = 1'b1;
+    apb_rsp_struct.pslverr = 1'b1;                  // unmapped APB address
+    unique case (1'b1)
+      psel_uart:  begin apb_rsp_struct.prdata = uart_prdata;  apb_rsp_struct.pready = uart_pready;  apb_rsp_struct.pslverr = uart_pslverr;  end
+      psel_qspi:  begin apb_rsp_struct.prdata = qspi_prdata;  apb_rsp_struct.pready = qspi_pready;  apb_rsp_struct.pslverr = qspi_pslverr;  end
+      psel_spi2:  begin apb_rsp_struct.prdata = spi2_prdata;  apb_rsp_struct.pready = spi2_pready;  apb_rsp_struct.pslverr = spi2_pslverr;  end
+      psel_timer: begin apb_rsp_struct.prdata = timer_prdata; apb_rsp_struct.pready = timer_pready; apb_rsp_struct.pslverr = timer_pslverr; end
+      psel_gpio:  begin apb_rsp_struct.prdata = gpio_prdata;  apb_rsp_struct.pready = gpio_pready;  apb_rsp_struct.pslverr = gpio_pslverr;  end
+      default: ;
+    endcase
+  end
+
+  // UART
   apb_uart_sv #(
     .APB_ADDR_WIDTH ( 12 )
   ) u_apb_uart (
@@ -747,7 +813,11 @@ module basic_soc_top #(
     .tx_o           ( uart_tx_o ),
     .event_o        ( irq_uart )
   );
- 
+
+  // QSPI flash controller
+  logic [1:0] qspi_events;
+  assign irq_qspi = qspi_events[0];
+
   apb_spi_master u_apb_qspi (
     .HCLK     ( clk_i ),
     .HRESETn  ( sys_rst_n ),
@@ -759,7 +829,7 @@ module basic_soc_top #(
     .PRDATA   ( qspi_prdata ),
     .PREADY   ( qspi_pready ),
     .PSLVERR  ( qspi_pslverr ),
-    .events_o ( ),              // TODO: wire to PLIC once interrupts phase begins
+    .events_o ( qspi_events ),
     .spi_clk  ( spi_clk_o ),
     .spi_csn0 ( spi_csn_o[0] ),
     .spi_csn1 ( spi_csn_o[1] ),
@@ -775,10 +845,177 @@ module basic_soc_top #(
     .spi_sdi2 ( spi_sdi_i[2] ),
     .spi_sdi3 ( spi_sdi_i[3] )
   );
- 
-  assign apb_rsp_struct.prdata  = psel_qspi ? qspi_prdata  : uart_prdata;
-  assign apb_rsp_struct.pready  = psel_qspi ? qspi_pready  : uart_pready;
-  assign apb_rsp_struct.pslverr = psel_qspi ? qspi_pslverr : uart_pslverr;
- 
+
+  // General-purpose SPI master (single lane)
+  logic [1:0] spi2_events;
+  assign irq_spi2 = spi2_events[0];
+
+  apb_spi_master u_apb_spi (
+    .HCLK     ( clk_i ),
+    .HRESETn  ( sys_rst_n ),
+    .PADDR    ( apb_req_struct.paddr[11:0] ),
+    .PWDATA   ( apb_req_struct.pwdata ),
+    .PWRITE   ( apb_req_struct.pwrite ),
+    .PSEL     ( psel_spi2 ),
+    .PENABLE  ( apb_req_struct.penable ),
+    .PRDATA   ( spi2_prdata ),
+    .PREADY   ( spi2_pready ),
+    .PSLVERR  ( spi2_pslverr ),
+    .events_o ( spi2_events ),
+    .spi_clk  ( spi2_clk_o ),
+    .spi_csn0 ( spi2_csn_o[0] ),
+    .spi_csn1 ( spi2_csn_o[1] ),
+    .spi_csn2 ( spi2_csn_o[2] ),
+    .spi_csn3 ( spi2_csn_o[3] ),
+    .spi_mode ( ),
+    .spi_sdo0 ( spi2_sdo_o ),
+    .spi_sdo1 ( ),
+    .spi_sdo2 ( ),
+    .spi_sdo3 ( ),
+    .spi_sdi0 ( spi2_sdi_i ),
+    .spi_sdi1 ( 1'b0 ),
+    .spi_sdi2 ( 1'b0 ),
+    .spi_sdi3 ( 1'b0 )
+  );
+
+  // Timer (PULP apb_timer, 2 timers: overflow + compare irq each)
+  logic [3:0] timer_irqs;
+  assign irq_timer_periph = |timer_irqs;
+
+  apb_timer #(
+    .APB_ADDR_WIDTH ( 12 ),
+    .TIMER_CNT      ( 2  )
+  ) u_apb_timer (
+    .HCLK     ( clk_i ),
+    .HRESETn  ( sys_rst_n ),
+    .PADDR    ( apb_req_struct.paddr[11:0] ),
+    .PWDATA   ( apb_req_struct.pwdata ),
+    .PWRITE   ( apb_req_struct.pwrite ),
+    .PSEL     ( psel_timer ),
+    .PENABLE  ( apb_req_struct.penable ),
+    .PRDATA   ( timer_prdata ),
+    .PREADY   ( timer_pready ),
+    .PSLVERR  ( timer_pslverr ),
+    .irq_o    ( timer_irqs )
+  );
+
+  // GPIO (PULP apb_gpio)
+  if (HAS_GPIO) begin : g_gpio
+    apb_gpio #(
+      .APB_ADDR_WIDTH ( 12 ),
+      .PAD_NUM        ( 32 )
+    ) u_apb_gpio (
+      .HCLK            ( clk_i ),
+      .HRESETn         ( sys_rst_n ),
+      .dft_cg_enable_i ( 1'b0 ),
+      .PADDR           ( apb_req_struct.paddr[11:0] ),
+      .PWDATA          ( apb_req_struct.pwdata ),
+      .PWRITE          ( apb_req_struct.pwrite ),
+      .PSEL            ( psel_gpio ),
+      .PENABLE         ( apb_req_struct.penable ),
+      .PRDATA          ( gpio_prdata ),
+      .PREADY          ( gpio_pready ),
+      .PSLVERR         ( gpio_pslverr ),
+      .gpio_in         ( gpio_in_i ),
+      .gpio_in_sync    ( ),
+      .gpio_out        ( gpio_out_o ),
+      .gpio_dir        ( gpio_dir_o ),
+      .gpio_padcfg     ( ),
+      .interrupt       ( irq_gpio )
+    );
+  end else begin : g_no_gpio
+    assign gpio_prdata  = 32'h0;
+    assign gpio_pready  = 1'b1;
+    assign gpio_pslverr = 1'b1;
+    assign gpio_out_o   = '0;
+    assign gpio_dir_o   = '0;
+    assign irq_gpio     = 1'b0;
+    logic unused_gpio_in;
+    assign unused_gpio_in = ^gpio_in_i;
+  end
+
+  // ---------------------------------------------------------------------------
+  // PLIC (0x0C00_0000): OBI -> reg-bus adapter, same as the verified
+  // verif/tb/ibex_plic_soc_tb.sv. The regmap is combinational on the request
+  // cycle, so read data / error are captured there and returned with rvalid.
+  // Source IDs match software/soc.h (IRQ_UART=1 ... IRQ_DIFT=8).
+  // ---------------------------------------------------------------------------
+  typedef struct packed {
+    logic        valid;
+    logic        write;
+    logic [31:0] addr;
+    logic [31:0] wdata;
+    logic [ 3:0] wstrb;
+  } plic_reg_req_t;
+
+  typedef struct packed {
+    logic        ready;
+    logic        error;
+    logic [31:0] rdata;
+  } plic_reg_rsp_t;
+
+  plic_reg_req_t plic_reg_req;
+  plic_reg_rsp_t plic_reg_rsp;
+
+  assign plic_gnt           = plic_req;
+  assign plic_reg_req.valid = plic_req;
+  assign plic_reg_req.write = plic_we;
+  assign plic_reg_req.addr  = plic_addr;
+  assign plic_reg_req.wdata = plic_wdata;
+  assign plic_reg_req.wstrb = plic_be;
+
+  always_ff @(posedge clk_i or negedge sys_rst_n) begin
+    if (!sys_rst_n) begin
+      plic_rvalid <= 1'b0;
+      plic_rdata  <= '0;
+      plic_err    <= 1'b0;
+    end else begin
+      plic_rvalid <= plic_req & plic_gnt;
+      if (plic_req & plic_gnt) begin
+        plic_rdata <= plic_reg_rsp.rdata;
+        plic_err   <= plic_reg_rsp.error;
+      end
+    end
+  end
+
+  logic [0:0] plic_eip;
+  assign irq_external = plic_eip[0];
+
+  plic_top #(
+    .N_SOURCE  ( 12             ),
+    .N_TARGET  ( 1              ),
+    .MAX_PRIO  ( 3              ),
+    .reg_req_t ( plic_reg_req_t ),
+    .reg_rsp_t ( plic_reg_rsp_t )
+  ) u_plic (
+    .clk_i         ( clk_i        ),
+    .rst_ni        ( sys_rst_n    ),
+    .req_i         ( plic_reg_req ),
+    .resp_o        ( plic_reg_rsp ),
+    .le_i          ( 12'h0        ),   // all level-triggered
+    //                  12..9  8         7 (SHA)  6 (BUF)  5                 4         3         2         1
+    .irq_sources_i ( {4'h0, irq_dift, 1'b0,    1'b0,    irq_timer_periph, irq_gpio, irq_qspi, irq_spi2, irq_uart} ),
+    .eip_targets_o ( plic_eip     )
+  );
+
+  // ---------------------------------------------------------------------------
+  // CLINT (0x0200_0000): mtime / mtimecmp -> irq_timer, msip -> irq_software
+  // ---------------------------------------------------------------------------
+  clint_obi u_clint (
+    .clk_i    ( clk_i        ),
+    .rst_ni   ( sys_rst_n    ),
+    .req_i    ( clint_req    ),
+    .gnt_o    ( clint_gnt    ),
+    .rvalid_o ( clint_rvalid ),
+    .addr_i   ( clint_addr   ),
+    .we_i     ( clint_we     ),
+    .be_i     ( clint_be     ),
+    .wdata_i  ( clint_wdata  ),
+    .rdata_o  ( clint_rdata  ),
+    .err_o    ( clint_err    ),
+    .msip_o   ( irq_msoft    ),
+    .mtip_o   ( irq_mtimer   )
+  );
+
 endmodule
  

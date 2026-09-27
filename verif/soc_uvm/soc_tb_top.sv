@@ -168,6 +168,13 @@ module soc_tb_top;
     .spi_mode_o          ( spi_mode_o ),
     .spi_sdo_o           ( spi_sdo_o ),
     .spi_sdi_i           ( spi_sdi_i ),
+    .spi2_clk_o        (                ),   // general-purpose SPI unused here
+    .spi2_csn_o        (                ),
+    .spi2_sdo_o        (                ),
+    .spi2_sdi_i        ( 1'b0           ),
+    .gpio_in_i         ( 32'h0          ),   // GPIO unused here
+    .gpio_out_o        (                ),
+    .gpio_dir_o        (                ),
 
     .data_req_o          ( data_req ),
     .data_gnt_i          ( data_gnt ),

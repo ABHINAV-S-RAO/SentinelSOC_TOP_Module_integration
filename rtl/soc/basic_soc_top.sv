@@ -134,7 +134,7 @@ module basic_soc_top (
     datasize   : dm::DataCount,
     dataaddr   : dm::DataAddr
   };
-  dm::hartinfo_t hartinfo_arr [1];
+  dm::hartinfo_t [0:0] hartinfo_arr;
   assign hartinfo_arr[0] = DBG_HARTINFO;
 
   dm::dmi_req_t  dmi_req;

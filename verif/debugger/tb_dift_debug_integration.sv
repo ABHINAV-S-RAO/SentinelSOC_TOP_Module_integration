@@ -844,5 +844,11 @@ always @(posedge dut.u_dmi_jtag.i_dmi_jtag_tap.tck_i) begin
         $display("[TAP PROBE] update pulse on TCK @ %0t", $time);
 end
 
+always @(posedge clk_i) begin
+    if (dut.u_dmi_jtag.i_dmi_cdc.core_dmi_valid_o)
+        $display("[CDC PROBE] core_dmi_valid_o=1 @ %0t", $time);
+    if (dut.u_dmi_jtag.i_dmi_cdc.core_dmi_ready_i)
+        $display("[CDC PROBE] core_dmi_ready_i=1 @ %0t", $time);
+end
 
 endmodule

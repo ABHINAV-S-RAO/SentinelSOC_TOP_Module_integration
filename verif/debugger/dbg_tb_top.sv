@@ -420,4 +420,17 @@ always @(posedge clk_i) begin
              u_dut.u_ibex_top.u_ibex_core.data_addr_o);
   end
 end
+
+logic [31:0] pc_if_q, pc_id_q;
+always @(posedge clk_i) begin
+  pc_if_q <= u_dut.u_ibex_top.u_ibex_core.pc_if;
+  pc_id_q <= u_dut.u_ibex_top.u_ibex_core.pc_id;
+  if (u_dut.u_ibex_top.u_ibex_core.pc_if !== pc_if_q ||
+      u_dut.u_ibex_top.u_ibex_core.pc_id !== pc_id_q) begin
+    $display("[%0t] PC_PROBE pc_if=%08h pc_id=%08h",
+             $time, u_dut.u_ibex_top.u_ibex_core.pc_if,
+             u_dut.u_ibex_top.u_ibex_core.pc_id);
+  end
+end
+
 endmodule : dbg_tb_top

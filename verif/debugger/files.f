@@ -64,22 +64,24 @@ rtl/Interrupts/plic/rv_plic_gateway.sv
 rtl/Interrupts/plic/rv_plic_target.sv
 rtl/Interrupts/plic/plic_top.sv
 
-// Crypto
-rtl/crypto/ed25519/ED25519/ED25519.srcs/sources_1/new/SHA/sha512_pkg.sv
-rtl/crypto/ed25519/ED25519/ED25519.srcs/sources_1/new/ALU/pseudo_mersenne.sv
-rtl/crypto/ed25519/ED25519/ED25519.srcs/sources_1/new/ALU/multiplier.sv
-rtl/crypto/ed25519/ED25519/ED25519.srcs/sources_1/new/ALU/alu.sv
-rtl/crypto/ed25519/ED25519/ED25519.srcs/sources_1/new/ALU/alu_top.sv
-rtl/crypto/ed25519/ED25519/ED25519.srcs/sources_1/new/SHA/sha512_msg_sched.sv
-rtl/crypto/ed25519/ED25519/ED25519.srcs/sources_1/new/SHA/sha512_padder.sv
-rtl/crypto/ed25519/ED25519/ED25519.srcs/sources_1/new/SHA/sha512_round.sv
-rtl/crypto/ed25519/ED25519/ED25519.srcs/sources_1/new/SHA/sha512_top.sv
-rtl/crypto/ed25519/ED25519/ED25519.srcs/sources_1/new/bram.sv
-rtl/crypto/ed25519/ED25519/ED25519.srcs/sources_1/new/reg_file.sv
-rtl/crypto/ed25519/ED25519/ED25519.srcs/sources_1/new/micro_seq.sv
-rtl/crypto/ed25519/ED25519/ED25519.srcs/sources_1/new/master_fsm.sv
-rtl/crypto/ed25519/ED25519/ED25519.srcs/sources_1/new/top_ed25519.sv
-rtl/crypto/ed25519/ED25519/ED25519.srcs/sources_1/new/top_most.sv
+// Crypto Subsystem (SHA-512 & ED25519) -- current rtl/crypto sources (OTP public key).
+// The old rtl/crypto/ed25519/ED25519/ copy (fpga_demo_top, key taken from the
+// image) must NOT be compiled: same module names, and it is insecure.
+rtl/crypto/SHA/sha512_pkg.sv
+rtl/crypto/ALU/pseudo_mersenne.sv
+rtl/crypto/ALU/multiplier.sv
+rtl/crypto/ALU/alu.sv
+rtl/crypto/ALU/alu_top.sv
+rtl/crypto/SHA/sha512_msg_sched.sv
+rtl/crypto/SHA/sha512_padder.sv
+rtl/crypto/SHA/sha512_round.sv
+rtl/crypto/SHA/sha512_top.sv
+rtl/crypto/ed/reg_file.sv
+rtl/crypto/ed/micro_seq.sv
+rtl/crypto/ed/master_fsm.sv
+rtl/crypto/ed/top_ed25519.sv
+rtl/crypto/otp.sv
+rtl/crypto/top_most.sv
 rtl/crypto/ed25519/sha_ed25519_obi_wrapper.sv
 
 // SoC memories
@@ -103,6 +105,7 @@ rtl/riscv-dbg/src/dmi_intf.sv
 rtl/soc/soc_addr_decode.sv
 rtl/soc/soc_ctrl_regs.sv
 rtl/soc/soc_buffer.sv
+rtl/soc/soc_secure_boot.sv
 rtl/soc/soc_recovery.sv
 rtl/soc/basic_soc_top.sv
 

@@ -638,6 +638,11 @@ soc_addr_decode #(
   .boot_done_i  ( ctrl_boot_done   ), 
   .dbg_mode_i   ( dbg_mode         ), 
   .recovery_i   ( 1'b0             ),   // JTAG recovery boot not integrated in this top
+  .ver_req_i    ( 1'b0             ),   // no hardware-fed secure boot in this top
+  .ver_addr_i   ( '0               ),
+  .ver_gnt_o    (                  ),
+  .ver_rvalid_o (                  ),
+  .ver_rdata_o  (                  ),
   .fw_verified_i ( sha_signature_valid ),
 
   // DSRAM

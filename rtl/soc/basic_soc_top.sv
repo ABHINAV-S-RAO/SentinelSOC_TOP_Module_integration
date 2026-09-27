@@ -5,12 +5,19 @@
 module basic_soc_top #(
   // Boot watchdog for JTAG recovery (soc_recovery.sv): cycles of core
   // execution without boot_done before recovery is forced. 0 = disabled.
-  parameter int unsigned BOOT_WDT_CYCLES = 32'd1_000_000   // 10 ms @ 100 MHz
+  parameter int unsigned BOOT_WDT_CYCLES = 32'd1_000_000,  // 10 ms @ 100 MHz
+
+  // 1 = hardware-fed Ed25519 secure boot (soc_secure_boot): ISRAM executes
+  //     only the signature-verified code range. crypto_verified_i is unused.
+  // 0 = legacy: ISRAM fetch gated directly by the crypto_verified_i pin
+  //     (for testbenches that predate secure boot).
+  parameter bit          SECURE_BOOT     = 1'b1,
+  parameter int unsigned CRYPTO_CLK_DIV  = 2                // crypto clock = clk_i / N
 ) (
   input  logic        clk_i,
   input  logic        rst_ni,
  
-  // Hardware Security Verification Status
+  // Legacy verification pin, used only when SECURE_BOOT=0
   input  logic        crypto_verified_i,
 
   // Boot-mode strap: 1 = JTAG recovery boot (hart held halted, bootrom
@@ -366,13 +373,63 @@ module basic_soc_top #(
   // Address Decoding: Route Instruction Fetch (BootROM/ISRAM), DIFT-OBI'd
   // Data (DSRAM/CTRL/APB/etc.)
   // ---------------------------------------------------------------------------
-  soc_addr_decode u_soc_addr_decode (
+  // ---------------------------------------------------------------------------
+  // Secure boot: ISRAM verifier port, SHA-window registers, fetch gate
+  // ---------------------------------------------------------------------------
+  logic        ver_req, ver_gnt, ver_rvalid;
+  logic [31:0] ver_addr, ver_rdata;
+  logic        sha_req, sha_we, sha_gnt, sha_rvalid, sha_err;
+  logic [3:0]  sha_be;
+  logic [31:0] sha_addr, sha_wdata, sha_rdata;
+  logic        fw_fetch_ok, fw_verified;
+
+  if (SECURE_BOOT) begin : g_secure_boot
+    soc_secure_boot #(
+      .CRYPTO_CLK_DIV ( CRYPTO_CLK_DIV ),
+      .ISRAM_BASE     ( 32'h0001_0000  ),   // must match soc_addr_decode ISRAM_BASE
+      .ISRAM_WORDS    ( 1024           )    // 4 KB, ISRAM_MASK
+    ) u_secure_boot (
+      .clk_i         ( clk_i           ),
+      .rst_ni        ( sys_rst_n       ),
+      .req_i         ( sha_req         ),
+      .we_i          ( sha_we          ),
+      .be_i          ( sha_be          ),
+      .addr_i        ( sha_addr        ),
+      .wdata_i       ( sha_wdata       ),
+      .gnt_o         ( sha_gnt         ),
+      .rvalid_o      ( sha_rvalid      ),
+      .rdata_o       ( sha_rdata       ),
+      .err_o         ( sha_err         ),
+      .ver_req_o     ( ver_req         ),
+      .ver_addr_o    ( ver_addr        ),
+      .ver_gnt_i     ( ver_gnt         ),
+      .ver_rvalid_i  ( ver_rvalid      ),
+      .ver_rdata_i   ( ver_rdata       ),
+      .isram_write_i ( isram_req_o & isram_we_o & isram_gnt_i ),
+      .fetch_addr_i  ( instr_addr_int  ),
+      .fetch_ok_o    ( fw_fetch_ok     ),
+      .verified_o    ( fw_verified     )
+    );
+  end else begin : g_legacy_verify
+    assign ver_req     = 1'b0;
+    assign ver_addr    = '0;
+    assign sha_gnt     = 1'b0;
+    assign sha_rvalid  = 1'b0;
+    assign sha_rdata   = '0;
+    assign sha_err     = 1'b0;
+    assign fw_fetch_ok = crypto_verified_i;
+    assign fw_verified = crypto_verified_i;
+  end
+
+  soc_addr_decode #(
+    .SHA_IMPL            ( SECURE_BOOT )
+  ) u_soc_addr_decode (
     .clk_i               ( clk_i ),
     .rst_ni              ( sys_rst_n ),
  
     // Access-control signals
     .boot_done_i         ( boot_done ),
-    .fw_verified_i       ( crypto_verified_i ),
+    .fw_verified_i       ( fw_fetch_ok ),
     .dbg_mode_i          ( core_debug_mode ),
     .recovery_i          ( recovery ),
     .ctrl_isram_lock_i   ( isram_lock ),
@@ -462,16 +519,23 @@ module basic_soc_top #(
     .buf_rdata_i         ( 32'h0 ),
     .buf_err_i           ( 1'b0 ),
  
-    // SHA + ED25519 CSR (on hold this phase -- left tied off)
-    .sha_req_o           ( ),
-    .sha_gnt_i           ( 1'b0 ),
-    .sha_rvalid_i        ( 1'b0 ),
-    .sha_addr_o          ( ),
-    .sha_we_o            ( ),
-    .sha_be_o            ( ),
-    .sha_wdata_o         ( ),
-    .sha_rdata_i         ( 32'h0 ),
-    .sha_err_i           ( 1'b0 ),
+    // SHA window: soc_secure_boot VERIFY registers (SECURE_BOOT=1)
+    .sha_req_o           ( sha_req    ),
+    .sha_gnt_i           ( sha_gnt    ),
+    .sha_rvalid_i        ( sha_rvalid ),
+    .sha_addr_o          ( sha_addr   ),
+    .sha_we_o            ( sha_we     ),
+    .sha_be_o            ( sha_be     ),
+    .sha_wdata_o         ( sha_wdata  ),
+    .sha_rdata_i         ( sha_rdata  ),
+    .sha_err_i           ( sha_err    ),
+
+    // Secure-boot verifier ISRAM read port
+    .ver_req_i           ( ver_req    ),
+    .ver_addr_i          ( ver_addr   ),
+    .ver_gnt_o           ( ver_gnt    ),
+    .ver_rvalid_o        ( ver_rvalid ),
+    .ver_rdata_o         ( ver_rdata  ),
  
     // PLIC Interrupt Controller (deferred to next phase -- left tied off)
     .plic_req_o          ( ),
@@ -604,7 +668,7 @@ module basic_soc_top #(
     .rvalid_o            ( ctrl_rvalid ),
     .rdata_o             ( ctrl_rdata ),
     .err_o               ( ctrl_err ),
-    .crypto_verified_i   ( crypto_verified_i ),
+    .crypto_verified_i   ( fw_verified ),
     .recovery_i          ( recovery ),
     .recovery_wdt_i      ( recovery_by_wdt ),
     .boot_done_o         ( boot_done ),

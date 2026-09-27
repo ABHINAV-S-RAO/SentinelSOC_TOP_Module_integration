@@ -201,6 +201,25 @@ rtl/peripheral/apb_uart/uart_interrupt.sv
 rtl/peripheral/apb_uart/apb_uart_sv.sv
 
 // 7. Basic SoC Top and Testbench
+// Crypto Subsystem (SHA-512 & ED25519) -- current rtl/crypto sources (OTP public key).
+// The old rtl/crypto/ed25519/ED25519/ copy (fpga_demo_top, key taken from the
+// image) must NOT be compiled: same module names, and it is insecure.
+rtl/crypto/SHA/sha512_pkg.sv
+rtl/crypto/ALU/pseudo_mersenne.sv
+rtl/crypto/ALU/multiplier.sv
+rtl/crypto/ALU/alu.sv
+rtl/crypto/ALU/alu_top.sv
+rtl/crypto/SHA/sha512_msg_sched.sv
+rtl/crypto/SHA/sha512_padder.sv
+rtl/crypto/SHA/sha512_round.sv
+rtl/crypto/SHA/sha512_top.sv
+rtl/crypto/ed/reg_file.sv
+rtl/crypto/ed/micro_seq.sv
+rtl/crypto/ed/master_fsm.sv
+rtl/crypto/ed/top_ed25519.sv
+rtl/crypto/otp.sv
+rtl/crypto/top_most.sv
+rtl/soc/soc_secure_boot.sv
 rtl/soc/soc_recovery.sv
 rtl/soc/basic_soc_top.sv
 verif/soc_verif/basic_soc_if.sv

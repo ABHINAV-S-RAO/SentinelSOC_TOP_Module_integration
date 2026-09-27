@@ -160,7 +160,7 @@ module ibex_plic_soc_tb;
     .isram_err_i(isram_err),
     .ctrl_isram_lock_i(1'b0),
 
-    .boot_done_i(1'b1), .dbg_mode_i(1'b0), .recovery_i(1'b0), .fw_verified_i(1'b1),
+    .boot_done_i(1'b1), .dbg_mode_i(1'b0), .recovery_i(1'b0), .ver_req_i(1'b0), .ver_addr_i('0), .ver_gnt_o(), .ver_rvalid_o(), .ver_rdata_o(), .fw_verified_i(1'b1),
 
     .dsram_req_o(), .dsram_gnt_i(1'b0), .dsram_rvalid_i(1'b0),
     .dsram_addr_o(), .dsram_we_o(), .dsram_be_o(), .dsram_wdata_o(),

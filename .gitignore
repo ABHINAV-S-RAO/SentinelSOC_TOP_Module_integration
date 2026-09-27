@@ -28,3 +28,6 @@ sw/**/*.map
 # Editor / Temp files
 .vscode/
 *.swp
+
+# Local simulation build output
+build/

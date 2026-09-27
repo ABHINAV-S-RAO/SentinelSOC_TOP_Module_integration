@@ -78,7 +78,11 @@ module soc_addr_decode #(
   parameter logic [31:0] APB_MASK      = 32'hF000_0000, // 256MB
 
   // Max outstanding transactions through the demux
-  parameter int unsigned NumMaxTrans   = 2
+  parameter int unsigned NumMaxTrans   = 2,
+
+  // 1 = SHA window (0x0005_0000) is backed by soc_secure_boot's VERIFY
+  // registers; 0 = unimplemented, accesses get an error response.
+  parameter bit          SHA_IMPL      = 1'b0
 ) (
   input  logic clk_i,
   input  logic rst_ni,
@@ -154,9 +158,21 @@ module soc_addr_decode #(
   // ISRAM-write block above; tie 1'b0 in SoCs without recovery.
   input  logic        recovery_i,
 
-  // Firmware signature-verified status — direct wire from SHA+ED25519
-  // (same source soc_ctrl_regs.crypto_verified_i uses). Gates instruction
-  // fetch from ISRAM (Req 4).
+  //--------------------------------------------------------------------
+  // Secure-boot verifier ISRAM read port (soc_secure_boot feeder).
+  // Read-only, lowest priority (data > fetch > verifier). Tie ver_req_i
+  // to 1'b0 in SoCs without soc_secure_boot.
+  //--------------------------------------------------------------------
+  input  logic        ver_req_i,
+  input  logic [31:0] ver_addr_i,
+  output logic        ver_gnt_o,
+  output logic        ver_rvalid_o,
+  output logic [31:0] ver_rdata_o,
+
+  // ISRAM fetch permission for the CURRENT fetch address (Req 4). With
+  // soc_secure_boot this is fetch_ok_o: verified signature, ISRAM unchanged
+  // since, and instr_addr_i inside the signed code range. Legacy SoCs drive
+  // a plain verified flag.
   input  logic        fw_verified_i,
 
   //--------------------------------------------------------------------
@@ -355,7 +371,13 @@ module soc_addr_decode #(
                // || ((data_addr_i & CRYPTO2_MASK) == CRYPTO2_BASE)
   end
 
-  assign priv_write_ok = ~boot_done_i & ~dbg_mode_i;   // writes: boot phase only, never from the debugger
+  // writes: boot phase only, never from the debugger -- except that in JTAG
+  // recovery the debugger may write the SHA window (VERIFY_CTRL.start), the
+  // only way to verify a debugger-loaded image. That register can only start
+  // a hardware-fed verification; it cannot influence the result.
+  logic sha_hit;
+  assign sha_hit       = ((data_addr_i & SHA_MASK) == SHA_BASE);
+  assign priv_write_ok = ~boot_done_i & (~dbg_mode_i | (sha_hit & recovery_i));
   assign priv_read_ok  = ~boot_done_i | dbg_mode_i;     // reads: boot phase, or debug-halted
   assign priv_denied   = priv_hit & (data_we_i ? ~priv_write_ok : ~priv_read_ok);
 
@@ -371,7 +393,7 @@ module soc_addr_decode #(
     else if (priv_denied)                                  data_sel = SEL_ERR; // Req 1-3
     else if ((data_addr_i & CTRL_MASK)    == CTRL_BASE)    data_sel = SEL_CTRL;
     else if ((data_addr_i & BUF_MASK)     == BUF_BASE)     data_sel = SEL_ERR; // BUF unimplemented
-    else if ((data_addr_i & SHA_MASK)     == SHA_BASE)     data_sel = SEL_ERR; // SHA unimplemented
+    else if ((data_addr_i & SHA_MASK)     == SHA_BASE)     data_sel = SHA_IMPL ? SEL_SHA : SEL_ERR;
     else if ((data_addr_i & PLIC_MASK) == PLIC_BASE)       data_sel = SEL_ERR; // PLIC unimplemented
     else if ((data_addr_i & DBG_MASK)     == DBG_BASE)     data_sel = SEL_DBG; // abstract data register access (dm_obi_top slave)
     else if ((data_addr_i & APB_MASK)     == APB_BASE)     data_sel = SEL_APB;
@@ -471,8 +493,11 @@ module soc_addr_decode #(
 // Write port gated by ctrl_isram_lock_i
 // Fetch port gated by fw_verified_i (Req 4)
 // --------------------------------------------------------------------------
-logic isram_data_active, isram_fetch_active;
+logic isram_data_active, isram_fetch_active, isram_ver_active;
 logic isram_fetch_blocked_q;
+
+// Owner of the in-flight transaction when it came from the verifier port.
+logic isram_resp_is_ver_q;
 
 // NEW: remembers which port's request is the one currently in flight,
 // so the response (which arrives after req has already dropped) gets
@@ -498,11 +523,13 @@ end
 always_ff @(posedge clk_i or negedge rst_ni) begin
   if (!rst_ni) begin
     isram_resp_is_data_q <= 1'b0;
+    isram_resp_is_ver_q  <= 1'b0;
     isram_wr_denied_q    <= 1'b0;
   end else if (isram_req_o && isram_gnt_i) begin
     // A transaction was just accepted this cycle — latch which port it
     // came from so the eventual isram_rvalid_i pulse routes correctly.
     isram_resp_is_data_q <= isram_data_active;
+    isram_resp_is_ver_q  <= isram_ver_active;
     isram_wr_denied_q    <= isram_data_active & isram_wr_denied;
   end
 end
@@ -510,6 +537,7 @@ end
 always_comb begin
   isram_data_active  = data_mgr_req[SEL_ISRAM].req;
   isram_fetch_active = fetch_mgr_req[FSEL_ISRAM].req & ~isram_data_active;
+  isram_ver_active   = ver_req_i & ~isram_data_active & ~fetch_mgr_req[FSEL_ISRAM].req;
 
   // Default outputs
   isram_req_o   = 1'b0;
@@ -527,6 +555,11 @@ always_comb begin
   fetch_mgr_rsp[FSEL_ISRAM].gnt    = 1'b0;
   fetch_mgr_rsp[FSEL_ISRAM].rvalid = 1'b0;
   fetch_mgr_rsp[FSEL_ISRAM].r      = '0;
+
+  // Verifier response defaults
+  ver_gnt_o    = 1'b0;
+  ver_rvalid_o = 1'b0;
+  ver_rdata_o  = '0;
 
   if (isram_data_active) begin
     // Data port drives ISRAM — apply write lock
@@ -552,6 +585,14 @@ always_comb begin
       fetch_mgr_rsp[FSEL_ISRAM].r.rdata = 32'hDEAD_BEEF;
       fetch_mgr_rsp[FSEL_ISRAM].r.err   = 1'b1;
     end
+  end else if (isram_ver_active) begin
+    // Secure-boot verifier: read-only
+    isram_req_o   = 1'b1;
+    isram_addr_o  = ver_addr_i;
+    isram_we_o    = 1'b0;
+    isram_be_o    = 4'hF;
+    isram_wdata_o = '0;
+    ver_gnt_o     = isram_gnt_i;
   end
 
   // NEW: route the response using the LATCHED owner, not live req state.
@@ -561,6 +602,9 @@ always_comb begin
     data_mgr_rsp[SEL_ISRAM].rvalid  = isram_rvalid_i;
     data_mgr_rsp[SEL_ISRAM].r.rdata = isram_rdata_i;
     data_mgr_rsp[SEL_ISRAM].r.err   = isram_err_i | isram_wr_denied_q;
+  end else if (isram_resp_is_ver_q) begin
+    ver_rvalid_o = isram_rvalid_i;
+    ver_rdata_o  = isram_rdata_i;
   end else begin
     fetch_mgr_rsp[FSEL_ISRAM].rvalid  = isram_rvalid_i;
     fetch_mgr_rsp[FSEL_ISRAM].r.rdata = isram_rdata_i;

@@ -886,10 +886,10 @@ always @(posedge clk_i) begin
       $time,
       dut.u_ibex_top.u_ibex_core.instr_req_o,
       dut.u_ibex_top.u_ibex_core.instr_addr_o,
-      dut.u_ibex_top.u_ibex_core.u_ibex_controller.pc_set_o,
-      dut.u_ibex_top.u_ibex_core.u_ibex_controller.ctrl_fsm_cs.name(),
-      dut.u_ibex_top.u_ibex_core.u_ibex_controller.stall,
-      dut.u_ibex_top.u_ibex_core.u_ibex_controller.halt_if);
+      `CORE.controller_i.pc_set_o,
+      `CORE.controller_i.ctrl_fsm_cs.name(),
+      `CORE.controller_i.stall,
+      `CORE.controller_i.halt_if);
   end
 end
 
@@ -897,11 +897,11 @@ always @(posedge clk_i) begin
   if ($time > 16000000 && $time < 17000000) begin
     $display("[DIFT] t=%0t lsu_tag_err=%b ex_tag_err=%b tag_err=%b tag_err_q=%b tcr_execute_pc_check=%b",
       $time,
-      dut.u_ibex_top.u_ibex_core.u_ibex_controller.lsu_tag_err_i,
-      dut.u_ibex_top.u_ibex_core.u_ibex_controller.ex_tag_err_i,
-      dut.u_ibex_top.u_ibex_core.u_ibex_controller.tag_err,
-      dut.u_ibex_top.u_ibex_core.u_ibex_controller.tag_err_q,
-      dut.u_ibex_top.u_ibex_core.u_ibex_controller.tcr_execute_pc_check_i);
+      `CORE.controller_i.lsu_tag_err_i,
+      `CORE.controller_i.ex_tag_err_i,
+      `CORE.controller_i.tag_err,
+      `CORE.controller_i.tag_err_q,
+      `CORE.controller_i.tcr_execute_pc_check_i);
   end
 end
 endmodule

@@ -709,18 +709,14 @@ module ibex_controller #(
           end
         end
 
-       /* `ifdef DIFT
-            if (illegal_insn_i || ecall_insn_i || ebrk_insn_i || tag_err) begin
-            ctrl_fsm_ns = IRQ_TAKEN;
-            flush_id_o  = 1'b1; // Flush tainted instruction from pipeline
-            end
-
-            if (tag_err) begin
-              ctrl_fsm_ns  = FLUSH;       // use FLUSH not IRQ_TAKEN — no PC redirect needed
-              flush_id_o   = 1'b1;
-              exc_cause_o  = ExcCauseIllegalInsn; // closest standard cause
-            end
-        `endif */
+       `ifdef DIFT
+    // Only handle DIFT exceptions here. Let standard exceptions route normally.
+    if (tag_err) begin
+      ctrl_fsm_ns  = FLUSH;       
+      flush_id     = 1'b1;        // FIXED: Drive internal variable, not output port
+      exc_cause_o  = ExcCauseIllegalInsn; 
+    end
+`endif
 
       end // DECODE
 

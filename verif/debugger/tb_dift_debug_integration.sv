@@ -248,6 +248,7 @@ task automatic dmi_write(input logic [6:0] addr, input logic [31:0] data);
     logic [31:0] rd; logic [1:0] rs;
     jtag_shift_ir(IR_DMIACCESS);
     jtag_shift_dmi(addr, data, 2'h2, rd, rs);
+
     repeat(20) @(posedge clk_i);   // let the CDC round-trip land before capturing
     jtag_shift_dmi(7'h0, 32'h0, 2'h0, rd, rs);
     if (rs == 2'h3) begin
@@ -825,5 +826,23 @@ initial begin
     $dumpfile("tb_dift_debug.vcd");
     $dumpvars(0, tb_dift_debug_integration);
 end
+
+
+// ─── TAP internal diagnostic probes ─────────────────────────────────────────
+always @(posedge clk_i) begin
+    if (dut.u_dmi_jtag.dmi_req_valid)
+        $display("[TAP PROBE] dmi_req_valid=1 in TCK domain (clk_i sample) @ %0t", $time);
+end
+
+always @(posedge dut.u_dmi_jtag.tck) begin
+    if (dut.u_dmi_jtag.dmi_req_valid)
+        $display("[TCK PROBE] dmi_req_valid=1 on inverted TCK @ %0t", $time);
+end
+
+always @(posedge dut.u_dmi_jtag.i_dmi_jtag_tap.tck_i) begin
+    if (dut.u_dmi_jtag.i_dmi_jtag_tap.update_o)
+        $display("[TAP PROBE] update pulse on TCK @ %0t", $time);
+end
+
 
 endmodule

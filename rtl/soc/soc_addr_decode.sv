@@ -699,23 +699,21 @@ always_comb begin
       dbg_we_o    = data_mgr_req[SEL_DBG].a.we;
       dbg_be_o    = data_mgr_req[SEL_DBG].a.be;
       dbg_wdata_o = data_mgr_req[SEL_DBG].a.wdata;
-      data_mgr_rsp[SEL_DBG].gnt = dbg_gnt_i;
+
+      data_mgr_rsp[SEL_DBG].gnt     = dbg_gnt_i;
+      data_mgr_rsp[SEL_DBG].rvalid  = dbg_rvalid_i;   // ← problem
+      data_mgr_rsp[SEL_DBG].r.rdata = dbg_rdata_i;
+      data_mgr_rsp[SEL_DBG].r.err   = 1'b0;
+
     end else if (dbg_fetch_active) begin
       dbg_req_o   = 1'b1;
       dbg_addr_o  = fetch_mgr_req[FSEL_DBG].a.addr;
       dbg_we_o    = 1'b0;
       dbg_be_o    = 4'hF;
       dbg_wdata_o = '0;
-      fetch_mgr_rsp[FSEL_DBG].gnt = dbg_gnt_i;
-    end
 
-    // Route the response by the LATCHED owner, not live req state.
-    if (dbg_resp_is_data_q) begin
-      data_mgr_rsp[SEL_DBG].rvalid  = dbg_rvalid_i;
-      data_mgr_rsp[SEL_DBG].r.rdata = dbg_rdata_i;
-      data_mgr_rsp[SEL_DBG].r.err   = 1'b0;
-    end else begin
-      fetch_mgr_rsp[FSEL_DBG].rvalid  = dbg_rvalid_i;
+      fetch_mgr_rsp[FSEL_DBG].gnt     = dbg_gnt_i;
+      fetch_mgr_rsp[FSEL_DBG].rvalid  = dbg_rvalid_i;  // ← problem
       fetch_mgr_rsp[FSEL_DBG].r.rdata = dbg_rdata_i;
       fetch_mgr_rsp[FSEL_DBG].r.err   = 1'b0;
     end

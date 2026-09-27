@@ -490,12 +490,25 @@ always @(posedge clk_i) begin
   end
 end
 
+// Per-cycle trace, windowed: only the 400 cycles after debug_req_core first
+// rises (printing every cycle for the whole run floods the log and slows
+// the sim to a crawl while the core spins on `j .`).
+int detail_cnt = -1;
 always @(posedge clk_i) begin
-  $display("[%0t] DETAIL instr_req=%0b instr_gnt=%0b instr_rvalid=%0b instr_addr=%08h dbg_req=%0b dbg_gnt=%0b dbg_rvalid=%0b if_busy=%0b",
-           $time,
-           u_dut.instr_req_int, u_dut.instr_gnt_int, u_dut.instr_rvalid_int, u_dut.instr_addr_int,
-           u_dut.dbg_req, u_dut.dbg_gnt, u_dut.dbg_rvalid,
-           u_dut.u_ibex_top.u_ibex_core.if_busy);
+  if (detail_cnt < 0 && u_dut.dbg_req_core === 1'b1) detail_cnt = 400;
+  if (detail_cnt > 0) begin
+    detail_cnt--;
+    $display("[%0t] DETAIL fsm=%0s dbg_mode=%0b instr_req=%0b gnt=%0b rvalid=%0b err=%0b addr=%08h rdata=%08h | dm_req=%0b dm_we=%0b dm_addr=%08h | d_req=%0b d_we=%0b d_addr=%08h | irq_nm=%0b if_busy=%0b",
+             $time,
+             u_dut.u_ibex_top.u_ibex_core.id_stage_i.controller_i.ctrl_fsm_cs.name(),
+             u_dut.u_ibex_top.u_ibex_core.id_stage_i.controller_i.debug_mode_q,
+             u_dut.instr_req_int, u_dut.instr_gnt_int, u_dut.instr_rvalid_int,
+             u_dut.instr_err_int, u_dut.instr_addr_int, u_dut.instr_rdata_int,
+             u_dut.dbg_req, u_dut.dbg_we, u_dut.dbg_addr,
+             u_dut.core_data_req, u_dut.core_data_we, u_dut.core_data_addr,
+             u_dut.irq_dift,
+             u_dut.u_ibex_top.u_ibex_core.if_busy);
+  end
 end
 
 endmodule : dbg_tb_top

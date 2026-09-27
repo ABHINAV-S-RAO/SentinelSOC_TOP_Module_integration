@@ -76,6 +76,7 @@ module dbg_tb_top;
     .clk_i             ( clk_i          ),
     .rst_ni            ( rst_ni         ),
     .crypto_verified_i ( 1'b1           ),
+    .boot_mode_i       ( 1'b0           ),
     .uart_tx_o         ( uart_tx        ),
     .uart_rx_i         ( 1'b1           ),
 `ifdef DIFT

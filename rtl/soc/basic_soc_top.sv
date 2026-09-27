@@ -2,12 +2,20 @@
 `include "obi/assign.svh"
 `include "apb/typedef.svh"
  
-module basic_soc_top (
+module basic_soc_top #(
+  // Boot watchdog for JTAG recovery (soc_recovery.sv): cycles of core
+  // execution without boot_done before recovery is forced. 0 = disabled.
+  parameter int unsigned BOOT_WDT_CYCLES = 32'd1_000_000   // 10 ms @ 100 MHz
+) (
   input  logic        clk_i,
   input  logic        rst_ni,
  
   // Hardware Security Verification Status
   input  logic        crypto_verified_i,
+
+  // Boot-mode strap: 1 = JTAG recovery boot (hart held halted, bootrom
+  // never executes). Sampled once after power-on reset.
+  input  logic        boot_mode_i,
  
   // UART Interface
   output logic        uart_tx_o,
@@ -120,6 +128,13 @@ module basic_soc_top (
   logic [3:0]  dbg_be;
   logic        dbg_req_core, dmactive;
 
+  // Core debug-mode status (ibex_top.debug_mode_o). Drives the decoder's
+  // debug access policy and tags debugger stores into DSRAM as untrusted.
+  logic        core_debug_mode;
+
+  // JTAG recovery boot
+  logic        recovery, recovery_halt_req;
+
   // Must match soc_addr_decode's DBG_BASE param exactly
   localparam logic [31:0] DBG_BASE_ADDR = 32'h1A11_0000;
 
@@ -206,7 +221,8 @@ module basic_soc_top (
     .scramble_nonce_i     ( '0 ),
     .scramble_req_o       ( ),
  
-    .debug_req_i          ( dbg_req_core ),
+    .debug_req_i          ( dbg_req_core | recovery_halt_req ),
+    .debug_mode_o         ( core_debug_mode ),
     .crash_dump_o         ( ),
     .double_fault_seen_o  ( ),
     .fetch_enable_i       ( ibex_pkg::IbexMuBiOn ),
@@ -305,29 +321,43 @@ module basic_soc_top (
   // Tag RAM indexing: tag_addr is ALREADY a word address (shim drops
   // addr[1:0]), so index with tag_addr[TAG_AW-1:0] = byte addr[TAG_AW+1:2].
   // (Was tag_addr[TAG_AW+1:2] -- a double shift giving one tag per 4 words.)
-  // NOTE: tag_mem still has no reset branch (flagged separately, not fixed
-  // in this diff) -- every entry is X until explicitly written.
 `ifdef DIFT
   localparam int unsigned TAG_AW = $clog2(DSRAM_SIZE_WORDS);
+  // Must match soc_addr_decode's DSRAM_BASE/DSRAM_MASK (4 KB = DSRAM_SIZE_WORDS)
+  localparam logic [31:0] DSRAM_BASE_ADDR = 32'h0002_0000;
   logic tag_mem [DSRAM_SIZE_WORDS];
   logic [TAG_AW-1:0] tag_rd_addr_q;
- 
+  logic              tag_in_dsram, tag_rd_in_dsram_q;
+
+  // Only DSRAM is tagged. Every other data address (debug module, ISRAM,
+  // peripherals) used to alias onto DSRAM tags through addr[11:2]; those
+  // accesses now read tag 0 and never write the tag RAM.
+  assign tag_in_dsram = (tag_addr[29:TAG_AW] == DSRAM_BASE_ADDR[31:TAG_AW+2]);
+
   always_ff @(posedge clk_i or negedge sys_rst_n) begin
     if (!sys_rst_n) begin
-      tag_rd_addr_q <= '0;
+      tag_rd_addr_q     <= '0;
+      tag_rd_in_dsram_q <= 1'b0;
     end else if (tag_req) begin
-      tag_rd_addr_q <= tag_addr[TAG_AW-1:0];
+      tag_rd_addr_q     <= tag_addr[TAG_AW-1:0];
+      tag_rd_in_dsram_q <= tag_in_dsram;
     end
   end
- 
+
+  // Reset on power-on reset only: DSRAM contents survive ndmreset, so their
+  // tags must too. Stores executed in debug mode (debugger program buffer /
+  // memory writes) are always tagged untrusted.
   // Plain `always` (not always_ff) so verification can backdoor-inject taint
   // into tag_mem (verif/debugger/dift_dbg_tb.sv); always_ff forbids any
   // other writer. Synthesizes identically.
-  always @(posedge clk_i) begin
-    if (tag_req && tag_we)
-      tag_mem[tag_addr[TAG_AW-1:0]] <= tag_wdata;
+  always @(posedge clk_i or negedge rst_ni) begin
+    if (!rst_ni) begin
+      for (int i = 0; i < DSRAM_SIZE_WORDS; i++) tag_mem[i] <= 1'b0;
+    end else if (tag_req && tag_we && tag_in_dsram) begin
+      tag_mem[tag_addr[TAG_AW-1:0]] <= tag_wdata | core_debug_mode;
+    end
   end
-  assign tag_rdata = tag_mem[tag_rd_addr_q];
+  assign tag_rdata = tag_rd_in_dsram_q ? tag_mem[tag_rd_addr_q] : 1'b0;
 `else
   assign tag_rdata = 1'b0;
 `endif
@@ -343,7 +373,8 @@ module basic_soc_top (
     // Access-control signals
     .boot_done_i         ( boot_done ),
     .fw_verified_i       ( crypto_verified_i ),
-    .dbg_mode_i          ( 1'b0 ),
+    .dbg_mode_i          ( core_debug_mode ),
+    .recovery_i          ( recovery ),
     .ctrl_isram_lock_i   ( isram_lock ),
  
     // Ibex Instruction Fetch Channel -- now LIVE (was tied off pre-restructure)
@@ -462,6 +493,24 @@ module basic_soc_top (
     .dbg_gnt_i           ( dbg_gnt    ),
     .dbg_rvalid_i        ( dbg_rvalid ),
     .dbg_rdata_i         ( dbg_rdata  )
+  );
+
+  // ---------------------------------------------------------------------------
+  // JTAG recovery boot (strap or boot watchdog -> hold hart halted for the
+  // debugger, allow it to load ISRAM; execution still needs fw_verified)
+  // ---------------------------------------------------------------------------
+  soc_recovery #(
+    .BOOT_WDT_CYCLES ( BOOT_WDT_CYCLES )
+  ) u_soc_recovery (
+    .clk_i             ( clk_i             ),
+    .por_rst_ni        ( rst_ni            ),
+    .sys_rst_ni        ( sys_rst_n         ),
+    .boot_mode_i       ( boot_mode_i       ),
+    .boot_done_i       ( boot_done         ),
+    .core_debug_mode_i ( core_debug_mode   ),
+    .recovery_o        ( recovery          ),
+    .halt_req_o        ( recovery_halt_req ),
+    .wdt_expired_o     (                   )
   );
 
   // ---------------------------------------------------------------------------

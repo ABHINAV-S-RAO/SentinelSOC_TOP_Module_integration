@@ -637,6 +637,7 @@ soc_addr_decode #(
   // and ISRAM fetch-verification to actually function.
   .boot_done_i  ( ctrl_boot_done   ),
   .dbg_mode_i   ( dbg_mode         ),
+  .recovery_i   ( 1'b0             ),   // JTAG recovery boot not integrated in this top
   .fw_verified_i ( sha_signature_valid ),
 
   // DSRAM

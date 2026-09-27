@@ -16,12 +16,18 @@
 //   -----------------------------------------------------------------------------------------------
 //   Boot phase (boot_done_i=0)     | allowed    | allowed   | allowed (unless dbg)  | n/a (BootROM)
 //   Post-boot, normal execution    | BLOCKED    | BLOCKED   | BLOCKED (lock is set) | BLOCKED until fw_verified_i
-//   Any time, dbg_mode_i=1         | BLOCKED    | allowed   | BLOCKED (unconditional)| (fetch gate independent of dbg)
+//   Any time, dbg_mode_i=1         | BLOCKED    | allowed   | BLOCKED (see recovery) | (fetch gate independent of dbg)
+//   dbg_mode_i=1 AND recovery_i=1  | BLOCKED    | allowed   | allowed until          | still gated by fw_verified_i
+//     AND boot_done_i=0            |            |           | boot_done/isram_lock   |
 //
-// ISRAM writes are blocked by dbg_mode_i UNCONDITIONALLY (not just
-// post-boot) — a halted-core debug session must never be able to inject
-// or modify firmware in ISRAM, even during the boot window before the
-// bootloader's own write-lock is set.
+// ISRAM writes are blocked by dbg_mode_i (not just post-boot) — a
+// halted-core debug session must never be able to inject or modify
+// firmware in ISRAM, even during the boot window before the bootloader's
+// own write-lock is set. The ONE exception is JTAG recovery boot
+// (recovery_i, see soc_recovery.sv): with a faulty bootrom the debugger
+// loads a replacement image into ISRAM, allowed only while boot_done_i=0
+// and ctrl_isram_lock_i=0. Execution of that image is still gated by
+// fw_verified_i, so recovery cannot run unsigned code.
 //
 // Denied CSR accesses are redirected to SEL_ERR (reuses the existing
 // unmapped-address error responder — DEAD_BEEF + err=1). This keeps the
@@ -145,6 +151,10 @@ module soc_addr_decode #(
   // here. Until that exists, tie to 1'b0 (fail-closed: no post-boot CSR
   // reads at all) rather than 1'b1.
   input  logic        dbg_mode_i,
+
+  // JTAG recovery boot active (soc_recovery.sv). Only relaxes the debug
+  // ISRAM-write block above; tie 1'b0 in SoCs without recovery.
+  input  logic        recovery_i,
 
   // Firmware signature-verified status — direct wire from SHA+ED25519
   // (same source soc_ctrl_regs.crypto_verified_i uses). Gates instruction
@@ -347,7 +357,7 @@ module soc_addr_decode #(
                // || ((data_addr_i & CRYPTO2_MASK) == CRYPTO2_BASE)
   end
 
-  assign priv_write_ok = ~boot_done_i;                 // writes: boot phase only, ever
+  assign priv_write_ok = ~boot_done_i & ~dbg_mode_i;   // writes: boot phase only, never from the debugger
   assign priv_read_ok  = ~boot_done_i | dbg_mode_i;     // reads: boot phase, or debug-halted
   assign priv_denied   = priv_hit & (data_we_i ? ~priv_write_ok : ~priv_read_ok);
 
@@ -471,6 +481,17 @@ logic isram_fetch_blocked_q;
 // routed back to the correct port instead of being silently dropped.
 logic isram_resp_is_data_q;
 
+// Debug-session ISRAM write block, relaxed only for JTAG recovery boot.
+logic isram_dbg_wr_block;
+assign isram_dbg_wr_block = dbg_mode_i & ~(recovery_i & ~boot_done_i);
+
+// Write-denied status of the in-flight data transaction. OBI err belongs to
+// the response phase, so it must be latched like the owner -- driving it only
+// in the request cycle meant a denied write was silently dropped with err=0.
+logic isram_wr_denied, isram_wr_denied_q;
+assign isram_wr_denied = data_mgr_req[SEL_ISRAM].a.we &
+                         (ctrl_isram_lock_i | isram_dbg_wr_block);
+
 always_ff @(posedge clk_i or negedge rst_ni) begin
   if (!rst_ni) isram_fetch_blocked_q <= 1'b0;
   else         isram_fetch_blocked_q <= isram_fetch_active & ~fw_verified_i;
@@ -479,10 +500,12 @@ end
 always_ff @(posedge clk_i or negedge rst_ni) begin
   if (!rst_ni) begin
     isram_resp_is_data_q <= 1'b0;
+    isram_wr_denied_q    <= 1'b0;
   end else if (isram_req_o && isram_gnt_i) begin
     // A transaction was just accepted this cycle — latch which port it
     // came from so the eventual isram_rvalid_i pulse routes correctly.
     isram_resp_is_data_q <= isram_data_active;
+    isram_wr_denied_q    <= isram_data_active & isram_wr_denied;
   end
 end
 
@@ -511,17 +534,11 @@ always_comb begin
     // Data port drives ISRAM — apply write lock
     isram_req_o   = 1'b1;
     isram_addr_o  = data_mgr_req[SEL_ISRAM].a.addr;
-    isram_we_o    = data_mgr_req[SEL_ISRAM].a.we
-                     & ~ctrl_isram_lock_i
-                     & ~dbg_mode_i;
+    isram_we_o    = data_mgr_req[SEL_ISRAM].a.we & ~isram_wr_denied;
     isram_be_o    = data_mgr_req[SEL_ISRAM].a.be;
     isram_wdata_o = data_mgr_req[SEL_ISRAM].a.wdata;
 
     data_mgr_rsp[SEL_ISRAM].gnt = isram_gnt_i;
-    // err can still be flagged live off the current request's we/lock state
-    data_mgr_rsp[SEL_ISRAM].r.err =
-      isram_err_i | (data_mgr_req[SEL_ISRAM].a.we
-                      & (ctrl_isram_lock_i | dbg_mode_i));
   end else if (isram_fetch_active) begin
     if (fw_verified_i) begin
       isram_req_o   = 1'b1;
@@ -545,10 +562,22 @@ always_comb begin
   if (isram_resp_is_data_q) begin
     data_mgr_rsp[SEL_ISRAM].rvalid  = isram_rvalid_i;
     data_mgr_rsp[SEL_ISRAM].r.rdata = isram_rdata_i;
+    data_mgr_rsp[SEL_ISRAM].r.err   = isram_err_i | isram_wr_denied_q;
   end else begin
     fetch_mgr_rsp[FSEL_ISRAM].rvalid  = isram_rvalid_i;
     fetch_mgr_rsp[FSEL_ISRAM].r.rdata = isram_rdata_i;
     fetch_mgr_rsp[FSEL_ISRAM].r.err   = isram_err_i;
+  end
+
+  // A fetch refused by the fw_verified_i gate never reaches the ISRAM, so its
+  // response comes from here (one cycle after the gnt above). This must come
+  // after the routing block: previously the routing block overwrote it with
+  // isram_rvalid_i=0, so a blocked fetch never completed and wedged the core
+  // (and the fetch demux) instead of raising an instruction access fault.
+  if (isram_fetch_blocked_q) begin
+    fetch_mgr_rsp[FSEL_ISRAM].rvalid  = 1'b1;
+    fetch_mgr_rsp[FSEL_ISRAM].r.rdata = 32'hDEAD_BEEF;
+    fetch_mgr_rsp[FSEL_ISRAM].r.err   = 1'b1;
   end
 end
 

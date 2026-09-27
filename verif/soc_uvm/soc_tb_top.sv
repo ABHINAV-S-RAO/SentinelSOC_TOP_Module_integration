@@ -131,6 +131,7 @@ module soc_tb_top;
     .clk_i               ( clk_i ),
     .rst_ni              ( rst_ni ),
     .crypto_verified_i   ( crypto_verified ),
+    .boot_mode_i         ( 1'b0            ),   // normal boot (no JTAG recovery)
 `ifdef DIFT
     .dift_en_i           ( dift_en ),
 `endif

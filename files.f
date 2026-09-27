@@ -124,6 +124,7 @@ rtl/riscv-dbg/src/dmi_intf.sv
 rtl/soc/soc_addr_decode.sv
 rtl/soc/soc_ctrl_regs.sv
 rtl/soc/soc_buffer.sv
+rtl/soc/soc_recovery.sv
 rtl/soc/basic_soc_top.sv
 
 // =============================================================================

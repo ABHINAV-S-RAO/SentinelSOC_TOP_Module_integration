@@ -139,6 +139,7 @@ module ibex_core import ibex_pkg::*; #(
 
   // Debug Interface
   input  logic                         debug_req_i,
+  output logic                         debug_mode_o,        // SoC: core executing in debug mode
   output crash_dump_t                  crash_dump_o,
   // SEC_CM: EXCEPTION.CTRL_FLOW.LOCAL_ESC
   // SEC_CM: EXCEPTION.CTRL_FLOW.GLOBAL_ESC
@@ -377,6 +378,7 @@ module ibex_core import ibex_pkg::*; #(
 
   logic        debug_mode;
   logic        debug_mode_entering;
+  assign debug_mode_o = debug_mode;
   dbg_cause_e  debug_cause;
   logic        debug_csr_save;
   logic        debug_single_step;

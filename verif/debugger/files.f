@@ -9,6 +9,12 @@
 
 # Bender deps
 -f verif/bender_files.f
+rtl/core/ibex_core/vendor/lowrisc_ip/ip/prim/rtl/prim_mubi_pkg.sv
+rtl/core/ibex_core/vendor/lowrisc_ip/ip/prim/rtl/prim_util_pkg.sv
+rtl/core/ibex_core/vendor/lowrisc_ip/ip/prim/rtl/prim_count_pkg.sv
+rtl/core/ibex_core/vendor/lowrisc_ip/ip/prim/rtl/prim_cipher_pkg.sv
+.bender/git/checkouts/apb-1b178314edfb6925/src/apb_pkg.sv
+.bender/git/checkouts/obi-75858655e8b256db/src/obi_pkg.sv
 rtl/core/ibex_core/vendor/lowrisc_ip/ip/prim/rtl/prim_secded_pkg.sv
 rtl/core/ibex_core/rtl/ibex_pkg.sv
 rtl/core/ibex_core/rtl/ibex_tracer_pkg.sv
@@ -80,9 +86,6 @@ rtl/crypto/ed/reg_file.sv
 rtl/crypto/ed/micro_seq.sv
 rtl/crypto/ed/master_fsm.sv
 rtl/crypto/ed/top_ed25519.sv
-rtl/crypto/otp.sv
-rtl/crypto/top_most.sv
-
 
 rtl/crypto/top_most.sv
 rtl/crypto/otp.sv
@@ -104,7 +107,6 @@ rtl/riscv-dbg/src/dm_sba.sv
 rtl/riscv-dbg/src/dm_obi_top.sv
 rtl/riscv-dbg/src/dm_top.sv
 rtl/riscv-dbg/src/dmi_cdc.sv
-./.bender/git/checkouts/tech_cells_generic-c280dda8b91b4f97/src/rtl/tc_clk.sv
 rtl/riscv-dbg/src/dmi_jtag_tap.sv
 rtl/riscv-dbg/src/dmi_jtag.sv
 rtl/riscv-dbg/src/dmi_intf.sv

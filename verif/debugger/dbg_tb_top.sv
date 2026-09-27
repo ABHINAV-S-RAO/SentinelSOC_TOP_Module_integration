@@ -186,7 +186,7 @@ module dbg_tb_top;
     $dumpvars(0, dbg_tb_top);
   end
 
-  // -------------------------------------------------------------------------
+     // -------------------------------------------------------------------------
   // DM signal probes (hierarchical into basic_soc_top internal signals)
   // -------------------------------------------------------------------------
   logic dbg_req_core_q, ndmreset_q, dmactive_q;
@@ -201,6 +201,41 @@ module dbg_tb_top;
                $time, u_dut.dbg_req_core, u_dut.ndmreset, u_dut.dmactive);
     end
   end
+
+  // -------------------------------------------------------------------------
+  // Controller FSM probes (hierarchical into ibex_core internals)
+  // -------------------------------------------------------------------------
+  logic                dbg_req_ctrl_q;
+  ibex_pkg::ctrl_fsm_e ctrl_fsm_cs_q;
+  logic                debug_mode_ctrl_q;
+
+  always @(posedge clk_i) begin
+    dbg_req_ctrl_q    <= u_dut.u_ibex_top.u_ibex_core.id_stage_i.controller_i.debug_req_i;
+    ctrl_fsm_cs_q     <= u_dut.u_ibex_top.u_ibex_core.id_stage_i.controller_i.ctrl_fsm_cs;
+    debug_mode_ctrl_q <= u_dut.u_ibex_top.u_ibex_core.id_stage_i.controller_i.debug_mode_q;
+
+    if (u_dut.u_ibex_top.u_ibex_core.id_stage_i.controller_i.debug_req_i  !== dbg_req_ctrl_q ||
+        u_dut.u_ibex_top.u_ibex_core.id_stage_i.controller_i.ctrl_fsm_cs  !== ctrl_fsm_cs_q  ||
+        u_dut.u_ibex_top.u_ibex_core.id_stage_i.controller_i.debug_mode_q !== debug_mode_ctrl_q) begin
+      $display("[%0t] CTRL_PROBE debug_req_i=%0b ctrl_fsm_cs=%0s debug_mode_q=%0b",
+               $time,
+               u_dut.u_ibex_top.u_ibex_core.id_stage_i.controller_i.debug_req_i,
+               u_dut.u_ibex_top.u_ibex_core.id_stage_i.controller_i.ctrl_fsm_cs.name(),
+               u_dut.u_ibex_top.u_ibex_core.id_stage_i.controller_i.debug_mode_q);
+    end
+  end
+
+  // -------------------------------------------------------------------------
+  // Core clock-gate enable probe
+  // -------------------------------------------------------------------------
+  logic clock_en_q;
+  always @(posedge clk_i) begin
+    clock_en_q <= u_dut.u_ibex_top.clock_en;
+    if (u_dut.u_ibex_top.clock_en !== clock_en_q) begin
+      $display("[%0t] CLKEN_PROBE clock_en=%0b", $time, u_dut.u_ibex_top.clock_en);
+    end
+  end
+
 
   // -------------------------------------------------------------------------
   // Self-checking test sequence

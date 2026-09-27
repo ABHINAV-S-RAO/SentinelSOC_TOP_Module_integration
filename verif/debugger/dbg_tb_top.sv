@@ -433,4 +433,20 @@ always @(posedge clk_i) begin
   end
 end
 
+logic instr_req_q, instr_gnt_q, instr_rvalid_q, dbg_req_q, dbg_gnt_q, dbg_rvalid_q;
+always @(posedge clk_i) begin
+  instr_req_q    <= u_dut.instr_req_int;
+  instr_gnt_q    <= u_dut.instr_gnt_int;
+  instr_rvalid_q <= u_dut.instr_rvalid_int;
+  dbg_req_q      <= u_dut.dbg_req;
+  dbg_gnt_q      <= u_dut.dbg_gnt;
+  dbg_rvalid_q   <= u_dut.dbg_rvalid;
+  if (u_dut.instr_req_int !== instr_req_q || u_dut.instr_gnt_int !== instr_gnt_q ||
+      u_dut.instr_rvalid_int !== instr_rvalid_q || u_dut.dbg_req !== dbg_req_q ||
+      u_dut.dbg_gnt !== dbg_gnt_q || u_dut.dbg_rvalid !== dbg_rvalid_q) begin
+    $display("[%0t] IFETCH_PROBE instr_req=%0b instr_gnt=%0b instr_rvalid=%0b dbg_req=%0b dbg_gnt=%0b dbg_rvalid=%0b",
+             $time, u_dut.instr_req_int, u_dut.instr_gnt_int, u_dut.instr_rvalid_int,
+             u_dut.dbg_req, u_dut.dbg_gnt, u_dut.dbg_rvalid);
+  end
+end
 endmodule : dbg_tb_top

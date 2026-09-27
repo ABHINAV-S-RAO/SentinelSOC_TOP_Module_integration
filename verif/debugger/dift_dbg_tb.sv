@@ -15,7 +15,7 @@
 //   Part D  SoC debug access policy (dbg_mode from ibex debug_mode_o):
 //     D-TAG  debugger stores into DSRAM are tagged untrusted
 //     D-PRIV debugger cannot write SoC CSRs / ISRAM, can read them
-//   Part C  SBA with its master port tied off (may wedge SBA; cleared by POR)
+//   Part C  no SBA: not advertised, forced SBA pokes are ignored
 //   Part E  JTAG recovery boot (power-on resets, faulty bootrom):
 //     R-STRAP  strap -> halted before first insn, debugger loads ISRAM,
 //              unverified image faults, verified image runs, ndmreset re-halts
@@ -959,23 +959,23 @@ module dift_dbg_tb;
     resume(ok);
 
     // =========================================================================
-    // PART C -- SBA (master port is tied off in basic_soc_top)
+    // PART C -- no System Bus Access (DM built with SbaEnable=0)
     // =========================================================================
     boot("C-SBA", TPR_OR, TCR_NONE, 4'b0000, 1'b1, ok);
     dm_r(SBCS, r);
-    obs($sformatf("sbcs=%08h (sbversion=%0d sbasize=%0d sbaccess32=%0b)", r, r[31:29], r[11:5], r[2]));
-    if (r[11:5] != 0) begin
-      npoll = 0;
-      dm_w(SBCS, 32'h0014_0000);        // sbreadonaddr, sbaccess=32-bit
-      dm_w(SBAddress0, 32'h0002_0000);
-      do begin dm_r(SBCS, r); npoll++; end while (r[21] && npoll < 20);
-      if (r[21])
-        finding("D14", "SBA is advertised (sbasize!=0) but master_gnt_i is tied 0: any SBA access wedges sbbusy; OpenOCD will try SBA for memory access");
-      dm_w(DMControl, 32'h0000_0000);   // dmactive=0 to recover
-      dm_w(DMControl, 32'h0000_0001);
-      dm_r(SBCS, r);
-      obs($sformatf("sbcs after dmactive toggle = %08h (sbbusy=%0b)", r, r[21]));
-    end
+    check(r[11:5] == 0 && r[4:0] == 0,
+          $sformatf("sbcs advertises no SBA: sbasize=0, sbaccess*=0 (sbcs=%08h)", r));
+    // A debugger that ignores sbcs and pokes SBA anyway must not wedge anything
+    dm_w(SBCS, 32'h0014_0000);          // sbreadonaddr, sbaccess=32-bit
+    dm_w(SBAddress0, 32'h0002_0000);
+    dm_w(SBData0, 32'h1234_5678);
+    dm_r(SBCS, r);
+    check(!r[21] && !u_dut.u_dm_obi_top.master_req_o,
+          $sformatf("forced SBA access ignored: sbbusy=0, no bus request (sbcs=%08h)", r));
+    halt(ok);
+    reg_read(gpr(S1), r, err);
+    check(ok && err == 0 && r == VAL_S1, "execution-based debug still works after SBA poke");
+    resume(ok);
 
     // =========================================================================
     // PART E -- JTAG recovery boot
@@ -995,6 +995,9 @@ module dift_dbg_tb;
     reg_write(gpr(T3), CTRL_BASE, err);
     progbuf_run(sw(S1, T3, 32'hC), EBREAK, err);
     check(err == 3'd3 && u_dut.boot_done == 1'b0, "CSR writes stay blocked in recovery");
+    progbuf_run(lw(S1, T3, 32'h4), EBREAK, err);           // STATUS0
+    check(err == 0 && `GPR[S1][3:2] == 2'b01,
+          $sformatf("STATUS0 recovery_mode=1 recovery_wdt=0 (STATUS0=%08h)", `GPR[S1]));
 
     // Unverified image must not run
     reg_write(CSR_DPC, ISRAM_BASE, err);
@@ -1030,6 +1033,10 @@ module dift_dbg_tb;
     check(ok && u_dut.recovery === 1'b1 && mon_exc_run != 0,
           $sformatf("boot watchdog -> recovery + halt after faulty bootrom ran (allhalted=%0b exceptions=%0d)", ok, mon_exc_run));
     check(image_in_isram(), "ISRAM image survived power-on reset (model)");
+    reg_write(gpr(T3), CTRL_BASE, err);
+    progbuf_run(lw(S1, T3, 32'h4), EBREAK, err);           // STATUS0
+    check(err == 0 && `GPR[S1][3:2] == 2'b11,
+          $sformatf("STATUS0 recovery_mode=1 recovery_wdt=1 (STATUS0=%08h)", `GPR[S1]));
     u_dsram.mem[W_MARK] = 0;
     reg_write(CSR_DPC, ISRAM_BASE, err);
     resume(ok);
@@ -1042,6 +1049,12 @@ module dift_dbg_tb;
     repeat (WDT_CYCLES + 1000) @(posedge clk_i);
     check(ok && u_dut.boot_done === 1'b1 && u_dut.recovery === 1'b0 && !`CTRL.debug_mode_q,
           "good bootrom: boot_done set, no recovery, hart running");
+    halt(ok);
+    reg_write(gpr(T3), CTRL_BASE, err);
+    progbuf_run(lw(S1, T3, 32'h4), EBREAK, err);           // STATUS0 (debug read allowed post-boot)
+    check(err == 0 && `GPR[S1][3:2] == 2'b00,
+          $sformatf("STATUS0 recovery bits clear on normal boot (STATUS0=%08h)", `GPR[S1]));
+    resume(ok);
 
     // =========================================================================
     // Summary

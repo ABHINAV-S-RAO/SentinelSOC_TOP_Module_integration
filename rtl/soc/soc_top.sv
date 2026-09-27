@@ -796,6 +796,8 @@ soc_addr_decode #(
     .rdata_o        ( ctrl_rdata      ),
     .err_o          ( ctrl_err        ),
     .crypto_verified_i ( sha_signature_valid ),
+    .recovery_i        ( 1'b0 ),   // JTAG recovery boot not integrated in this top
+    .recovery_wdt_i    ( 1'b0 ),
     // Control outputs
     .boot_done_o    ( ctrl_boot_done ),
     .isram_lock_o   ( ctrl_isram_lock )

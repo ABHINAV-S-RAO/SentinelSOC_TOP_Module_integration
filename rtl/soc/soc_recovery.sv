@@ -17,6 +17,10 @@
 // While recovery_o=1 the address decoder lets the halted core (debugger) write
 // ISRAM until boot_done/isram_lock (soc_addr_decode.sv). The loaded image
 // still only executes once fw_verified_i is set by the signature checker.
+// recovery_o / recovery_wdt_o are readable by software in soc_ctrl_regs
+// STATUS0[2]/[3], so the recovery image knows it is running in recovery.
+// The debugger has no System Bus Access (dm SbaEnable=0): all image loading
+// is execution-based and subject to soc_addr_decode's access policy.
 // =============================================================================
 module soc_recovery #(
   parameter int unsigned BOOT_WDT_CYCLES = 32'd1_000_000
@@ -29,13 +33,13 @@ module soc_recovery #(
   input  logic core_debug_mode_i,  // from ibex_top.debug_mode_o
   output logic recovery_o,
   output logic halt_req_o,
-  output logic wdt_expired_o
+  output logic recovery_wdt_o      // recovery was entered by the boot watchdog (sticky)
 );
 
   // ---------------------------------------------------------------------------
   // Recovery flag (power-on reset domain)
   // ---------------------------------------------------------------------------
-  logic strap_sampled_q, recovery_q, recovery_d1_q;
+  logic strap_sampled_q, recovery_q, recovery_d1_q, recovery_wdt_q;
   logic wdt_expired;
 
   always_ff @(posedge clk_i or negedge por_rst_ni) begin
@@ -43,6 +47,7 @@ module soc_recovery #(
       strap_sampled_q <= 1'b0;
       recovery_q      <= 1'b0;
       recovery_d1_q   <= 1'b0;
+      recovery_wdt_q  <= 1'b0;
     end else begin
       // The strap is sampled once, in the first cycle after power-on reset,
       // so toggling the pin later cannot halt a running system.
@@ -50,7 +55,10 @@ module soc_recovery #(
         strap_sampled_q <= 1'b1;
         if (boot_mode_i) recovery_q <= 1'b1;
       end
-      if (wdt_expired) recovery_q <= 1'b1;
+      if (wdt_expired && !recovery_q) begin
+        recovery_q     <= 1'b1;
+        recovery_wdt_q <= 1'b1;
+      end
       recovery_d1_q <= recovery_q;
     end
   end
@@ -85,8 +93,8 @@ module soc_recovery #(
     end
   end
 
-  assign recovery_o    = recovery_q;
-  assign halt_req_o    = recovery_q & halt_q;
-  assign wdt_expired_o = wdt_expired;
+  assign recovery_o     = recovery_q;
+  assign halt_req_o     = recovery_q & halt_q;
+  assign recovery_wdt_o = recovery_wdt_q;
 
 endmodule : soc_recovery

@@ -133,7 +133,7 @@ module basic_soc_top #(
   logic        core_debug_mode;
 
   // JTAG recovery boot
-  logic        recovery, recovery_halt_req;
+  logic        recovery, recovery_halt_req, recovery_by_wdt;
 
   // Must match soc_addr_decode's DBG_BASE param exactly
   localparam logic [31:0] DBG_BASE_ADDR = 32'h1A11_0000;
@@ -510,7 +510,7 @@ module basic_soc_top #(
     .core_debug_mode_i ( core_debug_mode   ),
     .recovery_o        ( recovery          ),
     .halt_req_o        ( recovery_halt_req ),
-    .wdt_expired_o     (                   )
+    .recovery_wdt_o    ( recovery_by_wdt   )
   );
 
   // ---------------------------------------------------------------------------
@@ -520,7 +520,8 @@ module basic_soc_top #(
     .IdWidth       ( 1             ),
     .NrHarts       ( 1             ),
     .BusWidth      ( 32            ),
-    .DmBaseAddress ( DBG_BASE_ADDR )
+    .DmBaseAddress ( DBG_BASE_ADDR ),
+    .SbaEnable     ( 1'b0          )    // execution-based debug only, no SBA
   ) u_dm_obi_top (
     .clk_i              ( clk_i          ),
     .rst_ni             ( rst_ni         ),   // raw POR reset, NOT sys_rst_n
@@ -542,8 +543,11 @@ module basic_soc_top #(
     .slave_rdata_o      ( dbg_rdata      ),
     .slave_rid_o        (                ),
 
-    // SBA intentionally unused -- debug is execution-based only (see
-    // soc_addr_decode.sv comment above the dbg arbiter)
+    // No System Bus Access: SbaEnable=0 makes the DM report no SBA support
+    // (sbcs.sbasize=0) and ignore SBA triggers, so debuggers only use
+    // abstract commands + program buffer executed by the core, i.e. every
+    // debugger memory access goes through soc_addr_decode's access policy.
+    // The master port is tied off and can never be requested.
     .master_req_o       (                ),
     .master_addr_o      (                ),
     .master_we_o        (                ),
@@ -601,6 +605,8 @@ module basic_soc_top #(
     .rdata_o             ( ctrl_rdata ),
     .err_o               ( ctrl_err ),
     .crypto_verified_i   ( crypto_verified_i ),
+    .recovery_i          ( recovery ),
+    .recovery_wdt_i      ( recovery_by_wdt ),
     .boot_done_o         ( boot_done ),
     .isram_lock_o        ( isram_lock )
   );

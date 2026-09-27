@@ -144,12 +144,10 @@ module soc_addr_decode #(
   // in soc_ctrl_regs. Before this: full CSR RW access (boot phase).
   input  logic        boot_done_i,
 
-  // Direct wire from Ibex core debug_mode (core halted under active debug
-  // session). TODO: ibex_top does not currently expose this as a port —
-  // add `output logic debug_mode_o` to ibex_top, wired from
-  // u_ibex_core's internal debug_mode_q (in cs_registers), and connect
-  // here. Until that exists, tie to 1'b0 (fail-closed: no post-boot CSR
-  // reads at all) rather than 1'b1.
+  // Core is executing in debug mode, i.e. every access on this cycle comes
+  // from the debugger (debug ROM, abstract command or program buffer).
+  // basic_soc_top wires ibex_top.debug_mode_o here. Tie 1'b0 in a SoC
+  // without debug (fail-closed: no post-boot CSR reads at all).
   input  logic        dbg_mode_i,
 
   // JTAG recovery boot active (soc_recovery.sv). Only relaxes the debug
@@ -243,8 +241,8 @@ module soc_addr_decode #(
   // instruction fetch) via the arbiter below, mirroring the BootROM/
   // ISRAM arbiters. Both traffic types originate from the same halted
   // Ibex core executing the execution-based debug protocol, never from
-  // a second independent master (SBA is deliberately disconnected — see
-  // soc_top.sv).
+  // a second independent master (no System Bus Access: the DM is built with
+  // SbaEnable=0 in basic_soc_top).
   //
   // dbg_gnt_i / dbg_rvalid_i: CONFIRMED against dm_obi_top.sv — slave_gnt_o
   // is hardwired 1'b1 (always-ready) and slave_rvalid_o pulses one cycle

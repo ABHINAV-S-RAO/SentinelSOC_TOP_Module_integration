@@ -27,7 +27,9 @@ module dm_top #(
   // toggle new behavior to drive master_be_o during a read
   parameter bit                 ReadByteEnable         = 1,
   // Maximum width supported by Access Register commands; must be 32 or 64.
-  parameter int unsigned        MaxRegisterAccessWidth = BusWidth
+  parameter int unsigned        MaxRegisterAccessWidth = BusWidth,
+  // SentinelSoC: 0 = System Bus Access not implemented (see dm_csrs)
+  parameter bit                 SbaEnable              = 1'b1
 ) (
   input  logic                  clk_i,       // clock
   // asynchronous reset active low, connect PoR here, not the system reset
@@ -119,7 +121,8 @@ module dm_top #(
   dm_csrs #(
     .NrHarts(NrHarts),
     .BusWidth(BusWidth),
-    .SelectableHarts(SelectableHarts)
+    .SelectableHarts(SelectableHarts),
+    .SbaEnable(SbaEnable)
   ) i_dm_csrs (
     .clk_i,
     .rst_ni,

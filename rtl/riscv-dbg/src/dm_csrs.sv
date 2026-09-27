@@ -18,7 +18,11 @@
 module dm_csrs #(
   parameter int unsigned        NrHarts          = 1,
   parameter int unsigned        BusWidth         = 32,
-  parameter logic [NrHarts-1:0] SelectableHarts  = {NrHarts{1'b1}}
+  parameter logic [NrHarts-1:0] SelectableHarts  = {NrHarts{1'b1}},
+  // SentinelSoC: 0 = no System Bus Access. sbcs advertises no SBA support
+  // (sbasize=0, sbaccess*=0) and SBA triggers are ignored, so debuggers use
+  // program-buffer (execution-based) memory access only.
+  parameter bit                 SbaEnable        = 1'b1
 ) (
   input  logic                              clk_i,           // Clock
   input  logic                              rst_ni,          // Asynchronous reset active low
@@ -615,6 +619,17 @@ module dm_csrs #(
     sbcs_d.sbaccess32           = logic'(BusWidth >= 32'd32);
     sbcs_d.sbaccess16           = logic'(BusWidth >= 32'd16);
     sbcs_d.sbaccess8            = logic'(BusWidth >= 32'd8);
+    if (!SbaEnable) begin
+      sbcs_d.sbasize     = '0;
+      sbcs_d.sbaccess128 = 1'b0;
+      sbcs_d.sbaccess64  = 1'b0;
+      sbcs_d.sbaccess32  = 1'b0;
+      sbcs_d.sbaccess16  = 1'b0;
+      sbcs_d.sbaccess8   = 1'b0;
+      sbaddress_write_valid_o = 1'b0;
+      sbdata_read_valid_o     = 1'b0;
+      sbdata_write_valid_o    = 1'b0;
+    end
   end
 
   // Hart writes take precedence over DMI writes to the abstract data registers.

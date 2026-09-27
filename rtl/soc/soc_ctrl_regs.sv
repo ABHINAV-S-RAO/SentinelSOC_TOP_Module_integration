@@ -17,7 +17,12 @@
 //                            1 = firmware signature verified OK.
 //                            0 = not yet verified or failed.
 //   [1]     isram_locked   : Reflects current state of isram_lock bit (readback)
-//   [31:2]  reserved
+//   [2]     recovery_mode  : 1 = SoC booted in JTAG recovery mode (soc_recovery.sv):
+//                            strap or boot watchdog. Sticky until power-on reset.
+//                            Lets the recovery image know it was debugger-loaded.
+//   [3]     recovery_wdt   : 1 = recovery was forced by the boot watchdog
+//                            (bootrom never set boot_done), 0 = strap / none.
+//   [31:4]  reserved
 //
 // Offset 0x08 — BOOT_STATUS (RO)
 //   [0]     boot_done      : Set by bootrom code via CTRL1 to indicate
@@ -28,6 +33,10 @@
 //   [0]     boot_done_set  : Write 1 to set boot_done in BOOT_STATUS.
 //                            Self-clearing after one cycle. Read always returns 0.
 //   [31:1]  reserved
+//
+// Access policy (enforced in soc_addr_decode, not here): writes only while
+// boot_done=0 and never from a debugger (core in debug mode); reads while
+// boot_done=0 or from a debugger.
 //
 // NOTE: SEL_SHA slot kept in decoder — remove if SHA+ED25519 has no
 //       OBI-accessible control/status registers after wrapper is finalized.
@@ -51,6 +60,10 @@ module soc_ctrl_regs (
   // Direct wire from SHA+ED25519 verification result
   // 1 = signature verified OK, 0 = not verified / failed
   input  logic        crypto_verified_i,
+
+  // JTAG recovery status from soc_recovery (tie 1'b0 if not integrated)
+  input  logic        recovery_i,
+  input  logic        recovery_wdt_i,
 
   // Control outputs
   output logic        boot_done_o  ,  // feeds soc_addr_decode ctrl_boot_done_i
@@ -133,7 +146,7 @@ module soc_ctrl_regs (
           end
 
           STATUS0_OFFSET: begin
-            rdata_o <= {30'h0, isram_lock_q, crypto_verified_i};
+            rdata_o <= {28'h0, recovery_wdt_i, recovery_i, isram_lock_q, crypto_verified_i};
           end
 
           BOOT_STATUS_OFFSET: begin

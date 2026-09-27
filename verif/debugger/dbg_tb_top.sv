@@ -39,8 +39,8 @@ module dbg_tb_top;
   wire jtag_tdi    = u_jtag.tdi;
 
   // TDO goes the other way: DUT output drives into the interface
-  assign u_jtag.tdo = jtag_tdo_dut;
   wire jtag_tdo_dut;
+  assign u_jtag.tdo = jtag_tdo_dut;
 
   // -------------------------------------------------------------------------
   // DUT-facing memory signals

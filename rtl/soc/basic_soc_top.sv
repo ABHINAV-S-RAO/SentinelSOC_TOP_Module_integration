@@ -318,7 +318,10 @@ module basic_soc_top (
     end
   end
  
-  always_ff @(posedge clk_i) begin
+  // Plain `always` (not always_ff) so verification can backdoor-inject taint
+  // into tag_mem (verif/debugger/dift_dbg_tb.sv); always_ff forbids any
+  // other writer. Synthesizes identically.
+  always @(posedge clk_i) begin
     if (tag_req && tag_we)
       tag_mem[tag_addr[TAG_AW+1:2]] <= tag_wdata;
   end

@@ -29,7 +29,7 @@ module dsram_model #(
   logic        rvalid_q;
   logic [31:0] rdata_q;
 
-  always_ff @(posedge clk_i or negedge rst_ni) begin
+  always @(posedge clk_i or negedge rst_ni) begin  // not always_ff: dift_dbg_tb backdoor-writes mem
     if (!rst_ni) begin
       rvalid_q <= 1'b0;
       rdata_q  <= '0;

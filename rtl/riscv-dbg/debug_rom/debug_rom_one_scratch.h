@@ -1,3 +1,7 @@
+// Copyright 2018 ETH Zurich and University of Bologna.
+// Solderpad Hardware License, Version 0.51, see LICENSE for details.
+// SPDX-License-Identifier: SHL-0.51
+
 // Auto-generated code
 
 const int reset_vec_size = 28;

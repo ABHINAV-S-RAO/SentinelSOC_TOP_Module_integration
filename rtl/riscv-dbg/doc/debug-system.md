@@ -4,7 +4,7 @@ This document specifies the processor debug system. The debug system implements 
 
 ## Features
 
-- Run-control debug functionality according to the [RISC-V Debug Specification version 0.13.2](https://github.com/riscv/riscv-debug-spec/raw/4e0bb0fc2d843473db2356623792c6b7603b94d4/riscv-debug-release.pdf), which includes all standard debug features: breakpoints, stepping, access to the CPU's GPRs and arbitrary memory locations.
+- Run-control debug functionality according to the [RISC-V Debug Specification version 0.13.2](https://github.com/riscv/riscv-debug-spec/raw/4e0bb0fc2d843473db2356623792c6b7603b94d4/riscv-debug-release.pdf), including stepping and access to the CPU's GPRs and arbitrary system-bus addresses.
 - Implementation following the Execution Based method as outlined in Section A.2 of the RISC-V Debug Specification. This allows the execution of arbitrary instructions on the core and requires minimal changes to the core.
 - JTAG Debug Transport Module (DTM) according to the RISC-V Debug Specification.
 - System Bus Access with generic 32 or 64 bit bus interface.
@@ -88,7 +88,7 @@ Accessing a non-implemented register will return `0`.
 
 **Field**       | **Access** | **(Reset) Value** | **Comment**
 --------------- | ---------- | ----------------- | -------------------------------------------------------------------------------------------------------------
-haltreq         | WARZ
+haltreq         | W
 resumereq       | W1
 hartreset       | WARL       | 0                 | Not implemented, reads constant 0
 ackhavereset    | W1
@@ -127,17 +127,20 @@ version         | R          | 2                 | Specification version 0.13
 
 The debug system can be configured at synthesis time through parameters.
 
-**Parameter Name** | **Valid values** | **Default** | **Description**
------------------- | ---------------- | ----------- | -------------------------------------------------------------------------------------------------------------
-NrHarts            | 1..2^20          | 1           | Number of connected harts
-BusWidth           | 32, 64           | 32          | Bus width (for debug memory and SBA busses)
-SelectableHarts    |                  | 1           | Bitmask to select physically available harts for systems that don't use hart numbers in a contiguous fashion.
+**Parameter Name**      | **Valid values** | **Default** | **Description**
+----------------------- | ---------------- | ----------- | -------------------------------------------------------------------------------------------------------------
+NrHarts                 | 1..2^20          | 1           | Number of connected harts
+BusWidth                | 32, 64           | 32          | Address and data width of the debug-memory and SBA interfaces
+DmBaseAddress           |                  | 0x1000      | Base address of the 4 KiB debug-memory window
+SelectableHarts         | NrHarts-bit mask | All harts   | Physically available harts for systems that do not use contiguous hart numbers
+ReadByteEnable          | 0, 1             | 1           | Drive the SBA byte enables during reads; available on `dm_top`
+MaxRegisterAccessWidth  | 32, 64           | BusWidth    | Maximum Access Register abstract-command width supported by the connected harts, independent of the debug-memory bus width. For heterogeneous systems, set this to the maximum XLEN among the connected harts.
 
 In addition to these parameters, additional configuration is provided through top-level signals, which are expected to be set to a fixed value at synthesis time.
 
 Signal Name | Data Type  | Width   | Description
 ----------- | ---------- | ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-hartinfo    | hartinfo_t | NrHarts | Value of the hartinfo DM register, see the RISC-V Debug Specification v0.13, Section 3.14.2 for details. **nscratch**: Number of debug scratch registers. Must be set to 2. **dataaccess**: Must be set to 1. (The data register are shadowed in the hart's memory.) **datasize**: Must be set to `dm::DataCount`. **dataaddr**: Must be set to `dm::DataAddr` (0x380).
+hartinfo    | hartinfo_t | NrHarts | Value of the hartinfo DM register, see the RISC-V Debug Specification v0.13, Section 3.14.2 for details. **nscratch**: Number of debug scratch registers. Set to 1 when `DmBaseAddress` is 0 and 2 otherwise. **dataaccess**: Must be set to 1. (The data registers are shadowed in the hart's memory.) **datasize**: Must be set to `dm::DataCount`. **dataaddr**: Must be set to `dm::DataAddr` (0x380).
 
 **SystemVerilog definition of the hartinfo_t structure**
 
@@ -163,10 +166,12 @@ The JTAG Debug Transport Module interacts with the host PC through JTAG, and wit
 
 **Signal** | **Direction** | **Description**
 ---------- | ------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-clk_i      | input         | clock. All components of the debug module and the DMI are synchronous to this clock, except for the JTAG components, which are clocked with the external TCLK.
+clk_i      | input         | clock. All components of the debug module and the DMI are synchronous to this clock, except for the JTAG components, which are clocked with the external TCK.
 rst_ni     | input         | asynchronous, active low reset.
 testmode_i | input         | not used currently
+next_dm_addr_i | input     | Static word address of the next Debug Module, or 0 for the last Debug Module in a chain
 ndmreset_o | output        | Non-Debug Mode reset (ndmreset). ndmreset is triggered externally through JTAG, e.g. by a debugger, and should reset the whole system except for the debug system. See the RISC-V Debug Specification v0.13, Section 3.2 (Reset Control) for more details.
+ndmreset_ack_i | input     | One-cycle acknowledgement that the requested Non-Debug Module reset completed
 dmactive_o | output        | debug module is active
 
 **SystemVerilog interface definition**
@@ -175,13 +180,15 @@ dmactive_o | output        | debug module is active
 input  logic                  clk_i,
 input  logic                  rst_ni,
 input  logic                  testmode_i,
+input  logic [31:0]           next_dm_addr_i,
 output logic                  ndmreset_o,
+input  logic                  ndmreset_ack_i,
 output logic                  dmactive_o
 ```
 
 ### Core Interface
 
-The debug system is compatible with any RISC-V compliant CPU core, given that it support execution based debugging according to the RISC-V Debug Specification, Section A.2.
+The debug system is compatible with any RISC-V-compliant CPU core that supports execution-based debugging according to the RISC-V Debug Specification, Section A.2.
 
 #### Debug Request Interrupt
 
@@ -202,7 +209,7 @@ In consequence, the core is expected to
 
 **Signal**               | **Direction** | **Description**
 ------------------------ | ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-unavailable_i[NrHarts-1] | input         | Set to 0 to mark the hart has unavailable (e.g.: power down). This information is made available to the debugger through the dmstatus.allunavail and dmstatus.anyavail fields.
+unavailable_i[NrHarts-1:0] | input       | Set a bit to 1 when the corresponding hart is unavailable, for example while it is powered down. This state is reported through the dmstatus.allunavail and dmstatus.anyunavail fields.
 
 #### Debug Control and Status Register (CSRs)
 
@@ -245,14 +252,16 @@ The bus host interface is compatible to the [instruction and data interfaces of 
 ---------- | --------------- | ------------- | ---------------------------------------------------------------------------------------------------------
 req        | 1               | output        | Request valid, must stay high until gnt is high for one cycle
 add        | BusWidth        | output        | Address, word aligned
-we         | BusWidth        | output        | Write Enable, high for writes, low for reads. Sent together with req
-be         | 1               | output        | Byte Enable. Is set for the bytes to write/read, sent together with req
+we         | 1               | output        | Write Enable, high for writes, low for reads. Sent together with req
+be         | BusWidth/8      | output        | Byte Enable. Is set for the bytes to write/read, sent together with req
 wdata      | BusWidth        | output        | Data to be written to device, sent together with req
 gnt        | 1               | input         | The device accepted the request. Host outputs may change in the next cycle.
 r_valid    | 1               | input         | r_rdata hold valid data when r_valid is high. This signal will be high for exactly one cycle per request.
 r_rdata    | BusWidth        | input         | Data read from the device
+r_err      | 1               | input         | Reports a bad-address bus error for the completed request
+r_other_err | 1              | input         | Reports another bus error for the completed request and takes priority over r_err
 
-No error response is currently implemented.
+Bus errors are reported through the `sberror` field of `sbcs`.
 
 **SystemVerilog interface definition (host side)**
 
@@ -264,6 +273,8 @@ output logic [BusWidth-1:0]   wdata_o,
 output logic [BusWidth/8-1:0] be_o,
 input  logic                  gnt_i,
 input  logic                  r_valid_i,
+input  logic                  r_err_i,
+input  logic                  r_other_err_i,
 input  logic [BusWidth-1:0]   r_rdata_i
 ```
 
@@ -301,14 +312,16 @@ Both interfaces are OBI compliant.
 ---------- | --------------- | ------------- | ---------------------------------------------------------------------------------------------------------
 req        | 1               | output        | Request valid, must stay high until gnt is high for one cycle
 addr       | BusWidth        | output        | Address, word aligned
-we         | BusWidth        | output        | Write Enable, high for writes, low for reads. Sent together with req
-be         | 1               | output        | Byte Enable. Is set for the bytes to write/read, sent together with req
+we         | 1               | output        | Write Enable, high for writes, low for reads. Sent together with req
+be         | BusWidth/8      | output        | Byte Enable. Is set for the bytes to write/read, sent together with req
 wdata      | BusWidth        | output        | Data to be written to device, sent together with req
 gnt        | 1               | input         | The device accepted the request. Host outputs may change in the next cycle.
 rvalid     | 1               | input         | r_rdata hold valid data when r_valid is high. This signal will be high for exactly one cycle per request.
 rdata      | BusWidth        | input         | Data read from the device
+err        | 1               | input         | Reports a bad-address bus error for the completed request
+other_err  | 1               | input         | Reports another bus error for the completed request and takes priority over err
 
-No error response is currently implemented.
+Bus errors are reported through the `sberror` field of `sbcs`.
 
 **SystemVerilog interface definition (host side)**
 
@@ -320,6 +333,8 @@ output logic [BusWidth-1:0]   master_wdata_o,
 output logic [BusWidth/8-1:0] master_be_o,
 input  logic                  master_gnt_i,
 input  logic                  master_rvalid_i,
+input  logic                  master_err_i,
+input  logic                  master_other_err_i,
 input  logic [BusWidth-1:0]   master_rdata_i
 ```
 
@@ -426,7 +441,7 @@ The implementation conforms to the [RISC-V Debug Specification v0.13](https://gi
 
 ## Debug Memory
 
-The Debug Module exposes a 16 kB memory over its device bus interface.
+The Debug Module exposes a 4 KiB memory window over its device bus interface.
 This memory is called the Debug Memory.
 It consists of a ROM portion, containing the Debug ROM, multiple memory-mapped control and status registers, and a RAM portion, the Program Buffer.
 The Debug Memory should only be accessible from the CPU if it is in debug mode.
@@ -434,6 +449,7 @@ The Debug Memory should only be accessible from the CPU if it is in debug mode.
 ### Debug Memory Map
 
 The memory map is an implementation detail of the Debug Module and should not be relied on when using the Debug Module.
+The addresses below are byte offsets from `DmBaseAddress`.
 
 Address         | Description
 --------------- | ------------------------------------------------------------------------------------------------------------------------------------------
@@ -445,9 +461,9 @@ Address         | Description
 0x300           | WhereTo
 0x338 to 0x35f  | AbstractCmd
 0x360 to 0x37f  | Program Buffer (8 words)
-0x380 to 0x388  | DataAddr
+0x380 to 0x387  | DataAddr
 0x400 to 0x7ff  | Flags
-0x800 to 0x1000 | Debug ROM
+0x800 to 0xfff  | Debug ROM
 0x800           | HaltAddress. Entry point into the Debug Module. The core must jump to this address when it was requested to halt.
 0x808           | ResumeAddress. Entry point into the Debug Module. Jumping to this address instructs the debug module to bring the core out of debug mode and back into normal operation mode.
 0x810           | ExceptionAddress. Entry point into the Debug Module. The core must jump to this address when it receives an exception while being in debug mode.
@@ -458,8 +474,8 @@ Address         | Description
 ## JTAG Debug Transport Module
 
 The RISC-V specification does not mandate a specific transport mode for the
-debug module. While theoratially debug could be facilitate over any
-memory-mapped protocol the debug specification standardizes the access via a
+debug module. While debug could theoretically be provided over any
+memory-mapped protocol, the debug specification standardizes access through an
 IEEE 1149.1 JTAG TAP (Test Access Port) - see [debug spec 0.13 chapter
 6](https://riscv.org/wp-content/uploads/2019/03/riscv-debug-release.pdf).
 

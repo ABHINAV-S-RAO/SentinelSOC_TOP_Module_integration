@@ -25,7 +25,9 @@ module dm_top #(
   // that don't use hart numbers in a contiguous fashion.
   parameter logic [NrHarts-1:0] SelectableHarts  = {NrHarts{1'b1}},
   // toggle new behavior to drive master_be_o during a read
-  parameter bit                 ReadByteEnable   = 1
+  parameter bit                 ReadByteEnable         = 1,
+  // Maximum width supported by Access Register commands; must be 32 or 64.
+  parameter int unsigned        MaxRegisterAccessWidth = BusWidth
 ) (
   input  logic                  clk_i,       // clock
   // asynchronous reset active low, connect PoR here, not the system reset
@@ -41,9 +43,7 @@ module dm_top #(
   input  logic                  ndmreset_ack_i, // non-debug module reset acknowledgement pulse
   output logic                  dmactive_o,  // debug module is active
   output logic [NrHarts-1:0]    debug_req_o, // async debug request
-  output logic [NrHarts-1:0]    halted_o,    // per-hart halted status
   // communicate whether the hart is unavailable (e.g.: power down)
-  
   input  logic [NrHarts-1:0]    unavailable_i,
   input  dm::hartinfo_t [NrHarts-1:0] hartinfo_i,
 
@@ -84,7 +84,7 @@ module dm_top #(
   logic [NrHarts-1:0]               resumeack;
   logic [NrHarts-1:0]               haltreq;
   logic [NrHarts-1:0]               resumereq;
-  logic                             clear_resumeack;
+  logic [NrHarts-1:0]               clear_resumeack;
   logic                             cmd_valid;
   dm::command_t                     cmd;
 
@@ -115,8 +115,6 @@ module dm_top #(
   logic [2:0]                       sberror;
 
   assign ndmreset_o = ndmreset;
-  assign halted_o   = halted;
-  
 
   dm_csrs #(
     .NrHarts(NrHarts),
@@ -208,13 +206,15 @@ module dm_top #(
   );
 
   dm_mem #(
-    .NrHarts(NrHarts),
-    .BusWidth(BusWidth),
-    .SelectableHarts(SelectableHarts),
-    .DmBaseAddress(DmBaseAddress)
+    .NrHarts                ( NrHarts                ),
+    .BusWidth               ( BusWidth               ),
+    .SelectableHarts        ( SelectableHarts        ),
+    .DmBaseAddress          ( DmBaseAddress          ),
+    .MaxRegisterAccessWidth ( MaxRegisterAccessWidth )
   ) i_dm_mem (
     .clk_i,
     .rst_ni,
+    .dmactive_i              ( dmactive_o            ),
     .debug_req_o,
     .ndmreset_i              ( ndmreset              ),
     .hartsel_i               ( hartsel               ),

@@ -6,6 +6,35 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 
 ## Unreleased
 
+### Fixed
+- Keep accepted resume requests pending per hart until acknowledged, clear resumeack only for the
+  request target, and retain resumeack across ndmreset; widen the internal dm_csrs/dm_mem
+  clear_resumeack connection from scalar to a per-hart vector and add a dmactive reset input to
+  dm_mem for resumeack state.
+- Reject out-of-range hart IDs reported through debug memory before updating per-hart state.
+- Make the write-only `dmcontrol.haltreq` field read as zero (#161).
+
+## [0.10.1] - 2026-08-07
+### Changed
+- Replace the obsolete Travis CI infrastructure with public GitHub Actions checks for licenses,
+  Slang elaboration, Verible and Verilator linting, and Verilator regressions (#190)
+  [@phsauter](https://github.com/phsauter)
+- Make the existing test infrastructure Verilator-compatible and remove unused CI and testbench
+  remnants (#190) [@phsauter](https://github.com/phsauter)
+
+### Fixed
+- Preserve the complete two-bit DMI response and use correctly directed interrupt ID vectors in
+  the testbench (#190) [@phsauter](https://github.com/phsauter)
+- Guard hart and abstract data register array accesses against invalid indices (#190)
+  [@phsauter](https://github.com/phsauter)
+
+## [0.10.0] - 2026-04-01
+### Changed
+- Replace `fifo_v2` with `fifo_v3` in `dm_csrs` (#185)
+  [@phsauter](https://github.com/phsauter)
+- Fix the JTAG DMI testbench to pass all required `read_dmi` arguments (#186)
+  [@niwis](https://github.com/niwis)
+
 ## [0.9.0] - 2025-11-23
 ### Added
 - nextdm register (#160) [@msfchaffner](https://github.com/msfschaffner)

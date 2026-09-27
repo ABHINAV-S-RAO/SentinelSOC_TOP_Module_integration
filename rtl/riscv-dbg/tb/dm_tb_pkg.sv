@@ -29,18 +29,18 @@ package dm_tb_pkg;
         SRAM_BASE     = 32'h1C00_0000
    } mmap_base_t;
 
-    localparam logic [31:0] ROM_LEN      = 32'h0010_0000;
-    localparam logic [31:0] FLL_LEN      = 32'h0000_1000;
-    localparam logic [31:0] GPIO_LEN     = 32'h0000_1000;
-    localparam logic [31:0] UDMA_LEN     = 32'h0000_2000;
-    localparam logic [31:0] CNTRL_LEN    = 32'h0000_1000;
-    localparam logic [31:0] ADVTIMER_LEN = 32'h0000_1000;
-    localparam logic [31:0] EVENT_LEN    = 32'h0000_5000;
-    localparam logic [31:0] TIMER_LEN    = 32'h0000_1000;
-    localparam logic [31:0] HWPE_LEN     = 32'h0000_3000;
-    localparam logic [31:0] STDOUT_LEN   = 32'h0000_1000;
-    localparam logic [31:0] DEBUG_LEN    = 32'h0000_1000;
-    localparam logic [31:0] SRAM_LEN     = 32'h000f_C000;
+    localparam logic [31:0] RomLen      = 32'h0010_0000;
+    localparam logic [31:0] FllLen      = 32'h0000_1000;
+    localparam logic [31:0] GpioLen     = 32'h0000_1000;
+    localparam logic [31:0] UdmaLen     = 32'h0000_2000;
+    localparam logic [31:0] CntrlLen    = 32'h0000_1000;
+    localparam logic [31:0] AdvTimerLen = 32'h0000_1000;
+    localparam logic [31:0] EventLen    = 32'h0000_5000;
+    localparam logic [31:0] TimerLen    = 32'h0000_1000;
+    localparam logic [31:0] HwpeLen     = 32'h0000_3000;
+    localparam logic [31:0] StdoutLen   = 32'h0000_1000;
+    localparam logic [31:0] DebugLen    = 32'h0000_1000;
+    localparam logic [31:0] SramLen     = 32'h000f_C000;
 
     // helper functions
     function automatic logic [31:0] jal (logic[4:0] rd, logic [20:0] imm);

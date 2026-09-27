@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
+# Copyright 2018 ETH Zurich and University of Bologna.
+# Solderpad Hardware License, Version 0.51, see LICENSE for details.
+# SPDX-License-Identifier: SHL-0.51
 
-from string import Template
 import argparse
 import os.path
 import sys
-import binascii
-
+from string import Template
 
 parser = argparse.ArgumentParser(description='Convert binary file to verilog rom')
 parser.add_argument('filename', metavar='filename', nargs=1,
@@ -16,7 +17,7 @@ file = args.filename[0];
 
 # check that file exists
 if not os.path.isfile(file):
-    print("File {} does not exist.".format(filename))
+    print(f"File {file} does not exist.")
     sys.exit(1)
 
 filename = os.path.splitext(file)[0]
@@ -81,6 +82,10 @@ endmodule
 """
 
 c_var = """\
+// Copyright 2018 ETH Zurich and University of Bologna.
+// Solderpad Hardware License, Version 0.51, see LICENSE for details.
+// SPDX-License-Identifier: SHL-0.51
+
 // Auto-generated code
 
 const int reset_vec_size = $size;
@@ -111,7 +116,7 @@ rom = read_bin()
 with open(filename + ".h", "w") as f:
     rom_str = ""
     # process in junks of 32 bit (4 byte)
-    for i in range(0, int(len(rom)/4)):
+    for i in range(int(len(rom)/4)):
         rom_str += "    0x" + "".join(rom[i*4:i*4+4][::-1]) + ",\n"
 
     # remove the trailing comma

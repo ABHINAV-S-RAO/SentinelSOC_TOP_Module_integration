@@ -18,12 +18,12 @@ module boot_rom (
     output logic [31:0] rdata_o
 );
     localparam int          RomSize    = 2;
-    localparam logic [31:0] entry_addr = 32'h1c00_0080;
+    localparam logic [31:0] EntryAddr = 32'h1c00_0080;
 
     logic [RomSize-1:0][31:0] mem;
     assign mem = {
-        dm_tb_pkg::jalr(5'h0, 5'h1, entry_addr[11:0]),
-        dm_tb_pkg::lui(5'h1, entry_addr[31:12])
+        dm_tb_pkg::jalr(5'h0, 5'h1, EntryAddr[11:0]),
+        dm_tb_pkg::lui(5'h1, EntryAddr[31:12])
     };
 
   logic [$clog2(RomSize)-1:0]     addr_q;

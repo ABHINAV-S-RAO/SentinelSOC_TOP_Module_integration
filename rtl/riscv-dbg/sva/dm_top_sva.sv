@@ -53,12 +53,14 @@ module dm_top_sva
 
   // Fail if the DM is not located on the zero page and one hart doesn't have two scratch registers.
   genvar i;
-  generate for (i = 0; i < NrHarts; i++)
-    begin
+  generate for (i = 0; i < NrHarts; i++) begin : gen_hart_info
       hart_info: assert property (
           @(posedge clk_i) disable iff (!rst_ni)
-              (1'b1) |-> ((DmBaseAddress > 0 && hartinfo_i[i].nscratch >= 2) || (DmBaseAddress == 0 && hartinfo_i[i].nscratch >= 1)))
-          else $fatal(1, "If the DM is not located at the zero page each hart needs at least two scratch registers %d %d",i, hartinfo_i[i].nscratch);
+              (1'b1) |->
+                  ((DmBaseAddress > 0 && hartinfo_i[i].nscratch >= 2) ||
+                   (DmBaseAddress == 0 && hartinfo_i[i].nscratch >= 1)))
+          else $fatal(1, "The DM location requires more hart scratch registers: %d %d",
+                      i, hartinfo_i[i].nscratch);
     end
   endgenerate
 

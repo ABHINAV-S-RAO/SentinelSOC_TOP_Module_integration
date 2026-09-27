@@ -26,7 +26,7 @@ interface DMI_BUS_DV #(
 
   /// The response channel (P).
   data_t   p_data;
-  logic    p_resp;
+  logic [1:0] p_resp;
   logic    p_valid;
   logic    p_ready;
 

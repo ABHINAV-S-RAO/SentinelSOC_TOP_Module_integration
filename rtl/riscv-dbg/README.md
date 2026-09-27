@@ -1,7 +1,7 @@
 # RISC-V Debug Support for various Cores
 
 This module is an implementation of a debug unit compliant with the [RISC-V
-debug specification](https://github.com/riscv/riscv-debug-spec) v0.13.1. It is
+debug specification](https://github.com/riscv/riscv-debug-spec) v0.13.2. It is
 used in the [cva6](https://github.com/pulp-platform/cva6),
 [cv32e40p](https://github.com/pulp-platform/cv32e40p) and
 [ibex](https://github.com/lowRISC/ibex) cores.
@@ -17,10 +17,10 @@ debugging.
 ## Features
 The following features are currently supported
 
-* Parametrizable buswidth for `XLEN=32` `XLEN=64` cores
-* Accessing registers over abstract command
+* Parametrizable 32- or 64-bit debug-module bus width, independent of hart XLEN
+* Accessing 32- or 64-bit hart registers over abstract commands
 * Program buffer
-* System bus access (only `XLEN`)
+* System bus access over a 32- or 64-bit bus
 * DTM with JTAG interface
 
 These are not implemented (yet)

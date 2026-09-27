@@ -866,4 +866,16 @@ always @(posedge dut.u_dmi_jtag.tck) begin
     if (dut.u_dmi_jtag.dmi_resp_valid)
         $display("[CDC RESP] dmi_resp_valid=1 on TCK @ %0t", $time);
 end
+
+always @(posedge clk_i) begin
+  if (dbg_req_o)
+    $display("[DBG ARB] req=1 data_active=%b fetch_active=%b addr=%h @ %0t",
+              dut.u_addr_decode.dbg_data_active,
+              dut.u_addr_decode.dbg_fetch_active,
+              dut.u_addr_decode.dbg_addr_o, $time);
+  if (dbg_rvalid_i)
+    $display("[DBG ARB] rvalid=1 resp_is_data_q=%b rdata=%h @ %0t",
+              dut.u_addr_decode.dbg_resp_is_data_q,   // only exists if the fix is in
+              dut.u_addr_decode.dbg_rdata_i, $time);
+end
 endmodule

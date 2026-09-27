@@ -61,7 +61,14 @@ module basic_soc_top (
   output logic [3:0]  data_be_o,
   output logic [31:0] data_wdata_o,
   input  logic [31:0] data_rdata_i,
-  input  logic        data_err_i
+  input  logic        data_err_i,
+
+  // JTAG DTM (riscv-dbg)
+  input  logic        jtag_tck_i,
+  input  logic        jtag_tms_i,
+  input  logic        jtag_trst_ni,
+  input  logic        jtag_tdi_i,
+  output logic        jtag_tdo_o
 );
  
   localparam logic [31:0] BOOT_ADDR          = 32'h0000_0000;
@@ -98,6 +105,41 @@ module basic_soc_top (
   logic [3:0]  ctrl_be;
   logic [31:0] ctrl_addr, ctrl_wdata, ctrl_rdata;
   logic irq_dift, irq_uart;
+
+  // ---------------------------------------------------------------------------
+  // RISC-V Debug (riscv-dbg): reset split + slave-port signals
+  // ---------------------------------------------------------------------------
+  // ndmreset resets core/peripherals/DIFT but NOT the debug module itself,
+  // so a debugger-triggered reset never kills its own JTAG/DMI connection.
+  logic ndmreset;
+  logic sys_rst_n;
+  assign sys_rst_n = rst_ni & ~ndmreset;
+
+  logic        dbg_req, dbg_we, dbg_gnt, dbg_rvalid;
+  logic [31:0] dbg_addr, dbg_wdata, dbg_rdata;
+  logic [3:0]  dbg_be;
+  logic        dbg_req_core, dmactive;
+
+  // Must match soc_addr_decode's DBG_BASE param exactly
+  localparam logic [31:0] DBG_BASE_ADDR = 32'h1A11_0000;
+
+  // dataaccess=1: abstract data register is memory-mapped at
+  // DmBaseAddress + dm::DataAddr (0x1A110380), reached over the data OBI
+  // channel -- routed to SEL_DBG in soc_addr_decode.
+  localparam dm::hartinfo_t DBG_HARTINFO = '{
+    zero1      : '0,
+    nscratch   : 4'd2,
+    zero0      : '0,
+    dataaccess : 1'b1,
+    datasize   : dm::DataCount,
+    dataaddr   : dm::DataAddr
+  };
+  dm::hartinfo_t hartinfo_arr [1];
+  assign hartinfo_arr[0] = DBG_HARTINFO;
+
+  dm::dmi_req_t  dmi_req;
+  dm::dmi_resp_t dmi_resp;
+  logic dmi_req_valid, dmi_req_ready, dmi_resp_valid, dmi_resp_ready, dmi_rst_n;
  
   // ---------------------------------------------------------------------------
   // Core Instantiation (Ibex)
@@ -124,7 +166,7 @@ module basic_soc_top (
     .SecureIbex       ( 1'b0 )
   ) u_ibex_top (
     .clk_i                ( clk_i ),
-    .rst_ni               ( rst_ni ),
+    .rst_ni               ( sys_rst_n ),
     .test_en_i            ( 1'b0 ),
     .ram_cfg_icache_tag_i ( '0 ),
     .ram_cfg_icache_data_i( '0 ),
@@ -164,7 +206,7 @@ module basic_soc_top (
     .scramble_nonce_i     ( '0 ),
     .scramble_req_o       ( ),
  
-    .debug_req_i          ( 1'b0 ),
+    .debug_req_i          ( dbg_req_core ),
     .crash_dump_o         ( ),
     .double_fault_seen_o  ( ),
     .fetch_enable_i       ( ibex_pkg::IbexMuBiOn ),
@@ -202,7 +244,7 @@ module basic_soc_top (
  
   dift_obi_ctrl u_dift_obi_ctrl (
     .clk_i              ( clk_i ),
-    .rst_ni             ( rst_ni ),
+    .rst_ni             ( sys_rst_n ),
  
     .core_data_req_i    ( core_data_req ),
     .core_data_addr_i   ( core_data_addr ),
@@ -268,8 +310,8 @@ module basic_soc_top (
   logic tag_mem [DSRAM_SIZE_WORDS];
   logic [TAG_AW-1:0] tag_rd_addr_q;
  
-  always_ff @(posedge clk_i or negedge rst_ni) begin
-    if (!rst_ni) begin
+  always_ff @(posedge clk_i or negedge sys_rst_n) begin
+    if (!sys_rst_n) begin
       tag_rd_addr_q <= '0;
     end else if (tag_req) begin
       tag_rd_addr_q <= tag_addr[TAG_AW+1:2];
@@ -291,7 +333,7 @@ module basic_soc_top (
   // ---------------------------------------------------------------------------
   soc_addr_decode u_soc_addr_decode (
     .clk_i               ( clk_i ),
-    .rst_ni              ( rst_ni ),
+    .rst_ni              ( sys_rst_n ),
  
     // Access-control signals
     .boot_done_i         ( boot_done ),
@@ -406,15 +448,87 @@ module basic_soc_top (
     .plic_rdata_i        ( 32'h0 ),
     .plic_err_i          ( 1'b0 ),
  
-    // Debug Subordinate (deferred to next phase -- left tied off)
-    .dbg_req_o           ( ),
-    .dbg_addr_o          ( ),
-    .dbg_we_o            ( ),
-    .dbg_be_o            ( ),
-    .dbg_wdata_o         ( ),
-    .dbg_gnt_i           ( 1'b0 ),
-    .dbg_rvalid_i        ( 1'b0 ),
-    .dbg_rdata_i         ( 32'h0 )
+    // Debug Subordinate -- wired to dm_obi_top's OBI slave port below
+    .dbg_req_o           ( dbg_req    ),
+    .dbg_addr_o          ( dbg_addr   ),
+    .dbg_we_o            ( dbg_we     ),
+    .dbg_be_o            ( dbg_be     ),
+    .dbg_wdata_o         ( dbg_wdata  ),
+    .dbg_gnt_i           ( dbg_gnt    ),
+    .dbg_rvalid_i        ( dbg_rvalid ),
+    .dbg_rdata_i         ( dbg_rdata  )
+  );
+
+  // ---------------------------------------------------------------------------
+  // RISC-V Debug Module (OBI-wrapped) + JTAG DTM
+  // ---------------------------------------------------------------------------
+  dm_obi_top #(
+    .IdWidth       ( 1             ),
+    .NrHarts       ( 1             ),
+    .BusWidth      ( 32            ),
+    .DmBaseAddress ( DBG_BASE_ADDR )
+  ) u_dm_obi_top (
+    .clk_i              ( clk_i          ),
+    .rst_ni             ( rst_ni         ),   // raw POR reset, NOT sys_rst_n
+    .testmode_i         ( 1'b0           ),
+    .ndmreset_o         ( ndmreset       ),
+    .dmactive_o         ( dmactive       ),
+    .debug_req_o        ( dbg_req_core   ),
+    .unavailable_i      ( 1'b0           ),
+    .hartinfo_i         ( hartinfo_arr   ),
+
+    .slave_req_i        ( dbg_req        ),
+    .slave_gnt_o        ( dbg_gnt        ),
+    .slave_we_i         ( dbg_we         ),
+    .slave_addr_i       ( dbg_addr       ),
+    .slave_be_i         ( dbg_be         ),
+    .slave_wdata_i      ( dbg_wdata      ),
+    .slave_aid_i        ( 1'b0           ),
+    .slave_rvalid_o     ( dbg_rvalid     ),
+    .slave_rdata_o      ( dbg_rdata      ),
+    .slave_rid_o        (                ),
+
+    // SBA intentionally unused -- debug is execution-based only (see
+    // soc_addr_decode.sv comment above the dbg arbiter)
+    .master_req_o       (                ),
+    .master_addr_o      (                ),
+    .master_we_o        (                ),
+    .master_wdata_o     (                ),
+    .master_be_o        (                ),
+    .master_gnt_i       ( 1'b0           ),
+    .master_rvalid_i    ( 1'b0           ),
+    .master_err_i       ( 1'b0           ),
+    .master_other_err_i ( 1'b0           ),
+    .master_rdata_i     ( '0             ),
+
+    .dmi_rst_ni         ( dmi_rst_n      ),
+    .dmi_req_valid_i    ( dmi_req_valid  ),
+    .dmi_req_ready_o    ( dmi_req_ready  ),
+    .dmi_req_i          ( dmi_req        ),
+    .dmi_resp_valid_o   ( dmi_resp_valid ),
+    .dmi_resp_ready_i   ( dmi_resp_ready ),
+    .dmi_resp_o         ( dmi_resp       )
+  );
+
+  dmi_jtag #(
+    .IdcodeValue ( 32'h0000_0DB3 )   // placeholder -- swap for a project-specific IDCODE if you have one
+  ) u_dmi_jtag (
+    .clk_i             ( clk_i         ),
+    .rst_ni            ( rst_ni        ),   // raw POR reset, NOT sys_rst_n
+    .testmode_i        ( 1'b0          ),
+    .dmi_rst_no        ( dmi_rst_n     ),
+    .dmi_req_o         ( dmi_req       ),
+    .dmi_req_valid_o   ( dmi_req_valid ),
+    .dmi_req_ready_i   ( dmi_req_ready ),
+    .dmi_resp_i        ( dmi_resp      ),
+    .dmi_resp_ready_o  ( dmi_resp_ready),
+    .dmi_resp_valid_i  ( dmi_resp_valid),
+    .tck_i             ( jtag_tck_i    ),
+    .tms_i             ( jtag_tms_i    ),
+    .trst_ni           ( jtag_trst_ni  ),
+    .td_i              ( jtag_tdi_i    ),
+    .td_o              ( jtag_tdo_o    ),
+    .tdo_oe_o          (               )   // no tri-state pad model needed in sim
   );
  
   // ---------------------------------------------------------------------------
@@ -422,7 +536,7 @@ module basic_soc_top (
   // ---------------------------------------------------------------------------
   soc_ctrl_regs u_soc_ctrl_regs (
     .clk_i               ( clk_i ),
-    .rst_ni              ( rst_ni ),
+    .rst_ni              ( sys_rst_n ),
     .req_i               ( ctrl_req ),
     .we_i                ( ctrl_we ),
     .be_i                ( ctrl_be ),
@@ -472,7 +586,7 @@ module basic_soc_top (
     .apb_rsp_t  ( apb_resp_t )
   ) u_obi_to_apb (
     .clk_i      ( clk_i ),
-    .rst_ni     ( rst_ni ),
+    .rst_ni     ( sys_rst_n ),
     .obi_req_i  ( apb_obi_req ),
     .obi_rsp_o  ( apb_obi_rsp ),
     .apb_req_o  ( apb_req_struct ),
@@ -496,7 +610,7 @@ module basic_soc_top (
     .APB_ADDR_WIDTH ( 12 )
   ) u_apb_uart (
     .CLK            ( clk_i ),
-    .RSTN           ( rst_ni ),
+    .RSTN           ( sys_rst_n ),
     .PADDR          ( apb_req_struct.paddr[11:0] ),
     .PWDATA         ( apb_req_struct.pwdata ),
     .PWRITE         ( apb_req_struct.pwrite ),
@@ -512,7 +626,7 @@ module basic_soc_top (
  
   apb_spi_master u_apb_qspi (
     .HCLK     ( clk_i ),
-    .HRESETn  ( rst_ni ),
+    .HRESETn  ( sys_rst_n ),
     .PADDR    ( apb_req_struct.paddr[11:0] ),
     .PWDATA   ( apb_req_struct.pwdata ),
     .PWRITE   ( apb_req_struct.pwrite ),

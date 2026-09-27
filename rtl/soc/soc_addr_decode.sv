@@ -236,12 +236,10 @@ module soc_addr_decode #(
   // a second independent master (SBA is deliberately disconnected — see
   // soc_top.sv).
   //
-  // dbg_gnt_i: ASSUMED PLACEHOLDER — the dm_top.sv shared so far has no
-  // gnt/rvalid on its slave port at all (just slave_rdata_o). This
-  // module assumes a fixed single-cycle latency (gnt=req, rvalid next
-  // cycle), matching soc_sram's convention, until confirmed against the
-  // real dm_top/dm_mem source. If dm_top's slave port is actually
-  // zero-latency combinational, this needs to change to match.
+  // dbg_gnt_i / dbg_rvalid_i: CONFIRMED against dm_obi_top.sv — slave_gnt_o
+  // is hardwired 1'b1 (always-ready) and slave_rvalid_o pulses one cycle
+  // after any granted request. Since gnt is unconditionally high, this
+  // matches the assumed "gnt=req, rvalid next cycle" model exactly.
   output logic        dbg_req_o,
   output logic [31:0] dbg_addr_o,
   output logic        dbg_we_o,
@@ -367,7 +365,7 @@ module soc_addr_decode #(
     else if ((data_addr_i & BUF_MASK)     == BUF_BASE)     data_sel = SEL_ERR; // BUF unimplemented
     else if ((data_addr_i & SHA_MASK)     == SHA_BASE)     data_sel = SEL_ERR; // SHA unimplemented
     else if ((data_addr_i & PLIC_MASK) == PLIC_BASE)       data_sel = SEL_ERR; // PLIC unimplemented
-    else if ((data_addr_i & DBG_MASK)     == DBG_BASE)     data_sel = SEL_ERR; // DBG unimplemented
+    else if ((data_addr_i & DBG_MASK)     == DBG_BASE)     data_sel = SEL_DBG; // abstract data register access (dm_obi_top slave)
     else if ((data_addr_i & APB_MASK)     == APB_BASE)     data_sel = SEL_APB;
     else                                                    data_sel = SEL_ERR;
   end

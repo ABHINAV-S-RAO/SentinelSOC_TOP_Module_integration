@@ -184,7 +184,7 @@ task automatic jtag_init();
     jtag_tdi_i   = 0; jtag_trst_ni = 0;
     repeat(6) @(posedge clk_i);
     jtag_trst_ni = 1;
-    @(posedge clk_i);
+    repeat(50) @(posedge clk_i);  // was 1 — give CDC reset sequencer time to complete
 endtask
 
 task automatic jtag_clk(input logic tms, input logic tdi, output logic tdo);
@@ -401,7 +401,7 @@ task automatic hard_reset();
     jtag_init();
     repeat(12) @(posedge clk_i);
     rst_ni = 1;
-    repeat(12) @(posedge clk_i);
+    repeat(50) @(posedge clk_i);  // was 12
 endtask
 
 task automatic wait_cyc(input int n);

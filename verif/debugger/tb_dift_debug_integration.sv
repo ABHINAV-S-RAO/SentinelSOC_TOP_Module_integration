@@ -851,4 +851,16 @@ always @(posedge clk_i) begin
         $display("[CDC PROBE] core_dmi_ready_i=1 @ %0t", $time);
 end
 
+
+always @(posedge clk_i) begin
+    if (dut.u_dmi_jtag.i_dmi_cdc.core_dmi_valid_i)
+        $display("[CDC RESP] core_dmi_valid_i=1 @ %0t", $time);
+end
+
+always @(posedge dut.u_dmi_jtag.tck) begin
+    if (dut.u_dmi_jtag.i_dmi_cdc.jtag_dmi_valid_o)
+        $display("[CDC RESP] jtag_dmi_valid_o=1 on TCK @ %0t", $time);
+    if (dut.u_dmi_jtag.dmi_resp_valid)
+        $display("[CDC RESP] dmi_resp_valid=1 on TCK @ %0t", $time);
+end
 endmodule

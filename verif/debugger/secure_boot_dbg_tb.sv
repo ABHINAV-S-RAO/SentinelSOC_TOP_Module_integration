@@ -1,5 +1,5 @@
 // =============================================================================
-// dift_dbg_tb.sv -- exhaustive riscv-dbg + Ibex(DIFT) integration testbench
+// secure_boot_dbg_tb.sv -- riscv-dbg + Ibex(DIFT) + JTAG recovery + hardware secure boot
 //
 // Drives basic_soc_top's external JTAG pins (jtag_if BFM) and self-checks:
 //   Part A  generic debug-spec behaviour (DTM, DM, halt/resume, abstract
@@ -47,11 +47,11 @@
 `define GPR   u_dut.u_ibex_top.gen_regfile_ff.register_file_i.rf_reg
 `define CSRS  `CORE.cs_registers_i
 
-module dift_dbg_tb;
+module secure_boot_dbg_tb;
   import dm::*;
 
 `ifndef DIFT
-  initial $fatal(1, "dift_dbg_tb must be compiled with +define+DIFT");
+  initial $fatal(1, "secure_boot_dbg_tb must be compiled with +define+DIFT");
 `endif
 
   // ---------------------------------------------------------------------------
@@ -101,12 +101,8 @@ module dift_dbg_tb;
   logic [3:0]  spi_csn, spi_sdo;
   logic [1:0]  spi_mode;
 
-  // SECURE_BOOT=0: this TB predates hardware secure boot and models the
-  // verdict with the legacy crypto_verified pin (crypto_ok). The secure-boot
-  // version of these tests is verif/debugger/secure_boot_dbg_tb.sv.
   basic_soc_top #(
-    .BOOT_WDT_CYCLES   ( WDT_CYCLES     ),
-    .SECURE_BOOT       ( 1'b0           )
+    .BOOT_WDT_CYCLES   ( WDT_CYCLES     )
   ) u_dut (
     .clk_i             ( clk_i          ),
     .rst_ni            ( rst_ni         ),
@@ -1177,4 +1173,4 @@ module dift_dbg_tb;
     $finish;
   end
 
-endmodule : dift_dbg_tb
+endmodule : secure_boot_dbg_tb

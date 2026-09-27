@@ -190,8 +190,10 @@ endtask
 task automatic jtag_clk(input logic tms, input logic tdi, output logic tdo);
     jtag_tms_i = tms; jtag_tdi_i = tdi;
     repeat(TCK_HALF) @(posedge clk_i);
+    #1;               // skew TCK rising edge away from clk_i posedge
     jtag_tck_i = 1;
     repeat(TCK_HALF) @(posedge clk_i);
+    #1;               // skew TCK falling edge too
     tdo = jtag_tdo_o;
     jtag_tck_i = 0;
 endtask

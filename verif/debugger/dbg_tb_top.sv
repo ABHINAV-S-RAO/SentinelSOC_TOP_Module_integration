@@ -408,4 +408,16 @@ always @(posedge clk_i) begin
   end
 end
 
+logic data_req_out_q, pmp_d_err_q;
+always @(posedge clk_i) begin
+  data_req_out_q <= u_dut.u_ibex_top.u_ibex_core.data_req_out;
+  pmp_d_err_q    <= u_dut.u_ibex_top.u_ibex_core.pmp_req_err[2]; // PMP_D
+  if (u_dut.u_ibex_top.u_ibex_core.data_req_out !== data_req_out_q ||
+      u_dut.u_ibex_top.u_ibex_core.pmp_req_err[2] !== pmp_d_err_q) begin
+    $display("[%0t] PMP_PROBE data_req_out=%0b pmp_err_d=%0b addr=%08h",
+             $time, u_dut.u_ibex_top.u_ibex_core.data_req_out,
+             u_dut.u_ibex_top.u_ibex_core.pmp_req_err[2],
+             u_dut.u_ibex_top.u_ibex_core.data_addr_o);
+  end
+end
 endmodule : dbg_tb_top

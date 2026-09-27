@@ -257,7 +257,7 @@ task automatic dmi_write(input logic [6:0] addr, input logic [31:0] data);
         jtag_shift_ir(IR_DMIACCESS);
         jtag_shift_dmi(addr, data, 2'h2, rd, rs);
         jtag_goto_rti();
-        repeat(20) @(posedge clk_i);
+        repeat(50) @(posedge clk_i);
         jtag_shift_dmi(7'h0, 32'h0, 2'h0, rd, rs);
     end else if (rs != 2'h0) begin
         $display("dmi_write: addr=%h resp=%0d (nonzero!) @ %0t", addr, rs, $time);
@@ -269,6 +269,7 @@ task automatic dmi_read(input logic [6:0] addr, output logic [31:0] rdata);
     logic [1:0] rs;
     jtag_shift_ir(IR_DMIACCESS);
     jtag_shift_dmi(addr, 32'h0, 2'h1, rdata, rs);
+    repeat(50) @(posedge clk_i);
     jtag_shift_dmi(7'h0, 32'h0, 2'h0, rdata, rs);
     if (rs == 2'h3) begin
         $display("dmi_read: addr=%h got DMIBusy, clearing @ %0t", addr, $time);

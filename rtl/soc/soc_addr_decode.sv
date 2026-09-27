@@ -670,6 +670,21 @@ end
   // --------------------------------------------------------------------------
   logic dbg_data_active, dbg_fetch_active;
 
+  // Same fix as the ISRAM arbiter: remember which port owns the in-flight
+  // transaction, so the rvalid pulse (which arrives after the manager has
+  // already dropped req) is routed back instead of silently dropped. Without
+  // this, Ibex's prefetch buffer loses debug-ROM fetch responses after a
+  // pipeline flush and wedges waiting for rvalid.
+  logic dbg_resp_is_data_q;
+
+  always_ff @(posedge clk_i or negedge rst_ni) begin
+    if (!rst_ni) begin
+      dbg_resp_is_data_q <= 1'b0;
+    end else if (dbg_req_o && dbg_gnt_i) begin
+      dbg_resp_is_data_q <= dbg_data_active;
+    end
+  end
+
   always_comb begin
     dbg_data_active  = data_mgr_req[SEL_DBG].req;
     dbg_fetch_active = fetch_mgr_req[FSEL_DBG].req & ~dbg_data_active;
@@ -691,9 +706,6 @@ end
       dbg_wdata_o = data_mgr_req[SEL_DBG].a.wdata;
 
       data_mgr_rsp[SEL_DBG].gnt     = dbg_gnt_i;
-      data_mgr_rsp[SEL_DBG].rvalid  = dbg_rvalid_i;
-      data_mgr_rsp[SEL_DBG].r.rdata = dbg_rdata_i;
-      data_mgr_rsp[SEL_DBG].r.err   = 1'b0;
 
     end else if (dbg_fetch_active) begin
       dbg_req_o   = 1'b1;
@@ -703,9 +715,15 @@ end
       dbg_wdata_o = '0;
 
       fetch_mgr_rsp[FSEL_DBG].gnt     = dbg_gnt_i;
+    end
+
+    // Route the response using the LATCHED owner, not live req state.
+    if (dbg_resp_is_data_q) begin
+      data_mgr_rsp[SEL_DBG].rvalid  = dbg_rvalid_i;
+      data_mgr_rsp[SEL_DBG].r.rdata = dbg_rdata_i;
+    end else begin
       fetch_mgr_rsp[FSEL_DBG].rvalid  = dbg_rvalid_i;
       fetch_mgr_rsp[FSEL_DBG].r.rdata = dbg_rdata_i;
-      fetch_mgr_rsp[FSEL_DBG].r.err   = 1'b0;
     end
   end
 

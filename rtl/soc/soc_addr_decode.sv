@@ -672,7 +672,15 @@ end
   // --------------------------------------------------------------------------
   logic dbg_data_active, dbg_fetch_active;
 
-  always_comb begin
+  logic dbg_resp_is_data_q;
+
+always_ff @(posedge clk_i or negedge rst_ni) begin
+  if (!rst_ni) dbg_resp_is_data_q <= 1'b0;
+  else if (dbg_req_o)          // a transaction is being issued this cycle
+    dbg_resp_is_data_q <= dbg_data_active;
+end
+
+always_comb begin
     dbg_data_active  = data_mgr_req[SEL_DBG].req;
     dbg_fetch_active = fetch_mgr_req[FSEL_DBG].req & ~dbg_data_active;
 
@@ -691,25 +699,27 @@ end
       dbg_we_o    = data_mgr_req[SEL_DBG].a.we;
       dbg_be_o    = data_mgr_req[SEL_DBG].a.be;
       dbg_wdata_o = data_mgr_req[SEL_DBG].a.wdata;
-
-      data_mgr_rsp[SEL_DBG].gnt     = dbg_gnt_i;
-      data_mgr_rsp[SEL_DBG].rvalid  = dbg_rvalid_i;
-      data_mgr_rsp[SEL_DBG].r.rdata = dbg_rdata_i;
-      data_mgr_rsp[SEL_DBG].r.err   = 1'b0;
-
+      data_mgr_rsp[SEL_DBG].gnt = dbg_gnt_i;
     end else if (dbg_fetch_active) begin
       dbg_req_o   = 1'b1;
       dbg_addr_o  = fetch_mgr_req[FSEL_DBG].a.addr;
       dbg_we_o    = 1'b0;
       dbg_be_o    = 4'hF;
       dbg_wdata_o = '0;
+      fetch_mgr_rsp[FSEL_DBG].gnt = dbg_gnt_i;
+    end
 
-      fetch_mgr_rsp[FSEL_DBG].gnt     = dbg_gnt_i;
+    // Route the response by the LATCHED owner, not live req state.
+    if (dbg_resp_is_data_q) begin
+      data_mgr_rsp[SEL_DBG].rvalid  = dbg_rvalid_i;
+      data_mgr_rsp[SEL_DBG].r.rdata = dbg_rdata_i;
+      data_mgr_rsp[SEL_DBG].r.err   = 1'b0;
+    end else begin
       fetch_mgr_rsp[FSEL_DBG].rvalid  = dbg_rvalid_i;
       fetch_mgr_rsp[FSEL_DBG].r.rdata = dbg_rdata_i;
       fetch_mgr_rsp[FSEL_DBG].r.err   = 1'b0;
     end
-  end
+end
 
   // --------------------------------------------------------------------------
   // Error responder — unmapped address OR denied privileged access (Req 1-3)

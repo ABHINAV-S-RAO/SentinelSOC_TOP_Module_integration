@@ -449,4 +449,30 @@ always @(posedge clk_i) begin
              u_dut.dbg_req, u_dut.dbg_gnt, u_dut.dbg_rvalid);
   end
 end
+
+logic halt_if_q, retain_id_q, stall_q, ready_wb_q, instr_exec_q, id_wb_pending_q;
+always @(posedge clk_i) begin
+  halt_if_q       <= u_dut.u_ibex_top.u_ibex_core.id_stage_i.controller_i.halt_if;
+  retain_id_q     <= u_dut.u_ibex_top.u_ibex_core.id_stage_i.controller_i.retain_id;
+  stall_q         <= u_dut.u_ibex_top.u_ibex_core.id_stage_i.controller_i.stall;
+  ready_wb_q      <= u_dut.u_ibex_top.u_ibex_core.id_stage_i.controller_i.ready_wb_i;
+  instr_exec_q    <= u_dut.u_ibex_top.u_ibex_core.instr_exec;
+  id_wb_pending_q <= u_dut.u_ibex_top.u_ibex_core.id_stage_i.controller_i.id_wb_pending;
+
+  if (u_dut.u_ibex_top.u_ibex_core.id_stage_i.controller_i.halt_if       !== halt_if_q       ||
+      u_dut.u_ibex_top.u_ibex_core.id_stage_i.controller_i.retain_id     !== retain_id_q     ||
+      u_dut.u_ibex_top.u_ibex_core.id_stage_i.controller_i.stall         !== stall_q         ||
+      u_dut.u_ibex_top.u_ibex_core.id_stage_i.controller_i.ready_wb_i    !== ready_wb_q      ||
+      u_dut.u_ibex_top.u_ibex_core.instr_exec                            !== instr_exec_q    ||
+      u_dut.u_ibex_top.u_ibex_core.id_stage_i.controller_i.id_wb_pending !== id_wb_pending_q) begin
+    $display("[%0t] STALL_PROBE halt_if=%0b retain_id=%0b stall=%0b ready_wb=%0b instr_exec=%0b id_wb_pending=%0b",
+             $time,
+             u_dut.u_ibex_top.u_ibex_core.id_stage_i.controller_i.halt_if,
+             u_dut.u_ibex_top.u_ibex_core.id_stage_i.controller_i.retain_id,
+             u_dut.u_ibex_top.u_ibex_core.id_stage_i.controller_i.stall,
+             u_dut.u_ibex_top.u_ibex_core.id_stage_i.controller_i.ready_wb_i,
+             u_dut.u_ibex_top.u_ibex_core.instr_exec,
+             u_dut.u_ibex_top.u_ibex_core.id_stage_i.controller_i.id_wb_pending);
+  end
+end
 endmodule : dbg_tb_top

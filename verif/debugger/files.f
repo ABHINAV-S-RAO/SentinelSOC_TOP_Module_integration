@@ -1,4 +1,4 @@
--64bit -sv -sv2012 -timescale 1ns/1ps -access +rwc -coverage functional -covoverwrite -top dbg_tb_top
+-64bit -sv -timescale 1ns/1ps -access +rwc -coverage functional -covoverwrite -top dbg_tb_top
 +define+DIFT
 
 // Include dirs

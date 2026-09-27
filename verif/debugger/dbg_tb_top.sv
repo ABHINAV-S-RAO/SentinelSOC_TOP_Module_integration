@@ -189,6 +189,10 @@ module dbg_tb_top;
      // -------------------------------------------------------------------------
   // DM signal probes (hierarchical into basic_soc_top internal signals)
   // -------------------------------------------------------------------------
+  // Window counter for the noisy per-cycle probes below: -1 = not yet
+  // armed, >0 = inside the 400-cycle window after debug_req_core rises.
+  int detail_cnt = -1;
+
   logic dbg_req_core_q, ndmreset_q, dmactive_q;
   always @(posedge clk_i) begin
     dbg_req_core_q <= u_dut.dbg_req_core;
@@ -399,9 +403,9 @@ always @(posedge clk_i) begin
   data_gnt_q  <= u_dut.u_ibex_top.data_gnt_i;
   data_we_q   <= u_dut.u_ibex_top.data_we_o;
   data_addr_q <= u_dut.u_ibex_top.data_addr_o;
-  if (u_dut.u_ibex_top.data_req_o !== data_req_q ||
+  if (detail_cnt > 0 && (u_dut.u_ibex_top.data_req_o !== data_req_q ||
       u_dut.u_ibex_top.data_gnt_i !== data_gnt_q ||
-      u_dut.u_ibex_top.data_addr_o !== data_addr_q) begin
+      u_dut.u_ibex_top.data_addr_o !== data_addr_q)) begin
     $display("[%0t] DBUS_PROBE req=%0b gnt=%0b we=%0b addr=%08h",
              $time, u_dut.u_ibex_top.data_req_o, u_dut.u_ibex_top.data_gnt_i,
              u_dut.u_ibex_top.data_we_o, u_dut.u_ibex_top.data_addr_o);
@@ -412,8 +416,8 @@ logic data_req_out_q, pmp_d_err_q;
 always @(posedge clk_i) begin
   data_req_out_q <= u_dut.u_ibex_top.u_ibex_core.data_req_out;
   pmp_d_err_q    <= u_dut.u_ibex_top.u_ibex_core.pmp_req_err[2]; // PMP_D
-  if (u_dut.u_ibex_top.u_ibex_core.data_req_out !== data_req_out_q ||
-      u_dut.u_ibex_top.u_ibex_core.pmp_req_err[2] !== pmp_d_err_q) begin
+  if (detail_cnt > 0 && (u_dut.u_ibex_top.u_ibex_core.data_req_out !== data_req_out_q ||
+      u_dut.u_ibex_top.u_ibex_core.pmp_req_err[2] !== pmp_d_err_q)) begin
     $display("[%0t] PMP_PROBE data_req_out=%0b pmp_err_d=%0b addr=%08h",
              $time, u_dut.u_ibex_top.u_ibex_core.data_req_out,
              u_dut.u_ibex_top.u_ibex_core.pmp_req_err[2],
@@ -425,8 +429,8 @@ logic [31:0] pc_if_q, pc_id_q;
 always @(posedge clk_i) begin
   pc_if_q <= u_dut.u_ibex_top.u_ibex_core.pc_if;
   pc_id_q <= u_dut.u_ibex_top.u_ibex_core.pc_id;
-  if (u_dut.u_ibex_top.u_ibex_core.pc_if !== pc_if_q ||
-      u_dut.u_ibex_top.u_ibex_core.pc_id !== pc_id_q) begin
+  if (detail_cnt > 0 && (u_dut.u_ibex_top.u_ibex_core.pc_if !== pc_if_q ||
+      u_dut.u_ibex_top.u_ibex_core.pc_id !== pc_id_q)) begin
     $display("[%0t] PC_PROBE pc_if=%08h pc_id=%08h",
              $time, u_dut.u_ibex_top.u_ibex_core.pc_if,
              u_dut.u_ibex_top.u_ibex_core.pc_id);
@@ -441,9 +445,9 @@ always @(posedge clk_i) begin
   dbg_req_q      <= u_dut.dbg_req;
   dbg_gnt_q      <= u_dut.dbg_gnt;
   dbg_rvalid_q   <= u_dut.dbg_rvalid;
-  if (u_dut.instr_req_int !== instr_req_q || u_dut.instr_gnt_int !== instr_gnt_q ||
+  if (detail_cnt > 0 && (u_dut.instr_req_int !== instr_req_q || u_dut.instr_gnt_int !== instr_gnt_q ||
       u_dut.instr_rvalid_int !== instr_rvalid_q || u_dut.dbg_req !== dbg_req_q ||
-      u_dut.dbg_gnt !== dbg_gnt_q || u_dut.dbg_rvalid !== dbg_rvalid_q) begin
+      u_dut.dbg_gnt !== dbg_gnt_q || u_dut.dbg_rvalid !== dbg_rvalid_q)) begin
     $display("[%0t] IFETCH_PROBE instr_req=%0b instr_gnt=%0b instr_rvalid=%0b dbg_req=%0b dbg_gnt=%0b dbg_rvalid=%0b",
              $time, u_dut.instr_req_int, u_dut.instr_gnt_int, u_dut.instr_rvalid_int,
              u_dut.dbg_req, u_dut.dbg_gnt, u_dut.dbg_rvalid);
@@ -459,12 +463,12 @@ always @(posedge clk_i) begin
   instr_exec_q    <= u_dut.u_ibex_top.u_ibex_core.instr_exec;
   id_wb_pending_q <= u_dut.u_ibex_top.u_ibex_core.id_stage_i.controller_i.id_wb_pending;
 
-  if (u_dut.u_ibex_top.u_ibex_core.id_stage_i.controller_i.halt_if       !== halt_if_q       ||
+  if (detail_cnt > 0 && (u_dut.u_ibex_top.u_ibex_core.id_stage_i.controller_i.halt_if       !== halt_if_q       ||
       u_dut.u_ibex_top.u_ibex_core.id_stage_i.controller_i.retain_id     !== retain_id_q     ||
       u_dut.u_ibex_top.u_ibex_core.id_stage_i.controller_i.stall         !== stall_q         ||
       u_dut.u_ibex_top.u_ibex_core.id_stage_i.controller_i.ready_wb_i    !== ready_wb_q      ||
       u_dut.u_ibex_top.u_ibex_core.instr_exec                            !== instr_exec_q    ||
-      u_dut.u_ibex_top.u_ibex_core.id_stage_i.controller_i.id_wb_pending !== id_wb_pending_q) begin
+      u_dut.u_ibex_top.u_ibex_core.id_stage_i.controller_i.id_wb_pending !== id_wb_pending_q)) begin
     $display("[%0t] STALL_PROBE halt_if=%0b retain_id=%0b stall=%0b ready_wb=%0b instr_exec=%0b id_wb_pending=%0b",
              $time,
              u_dut.u_ibex_top.u_ibex_core.id_stage_i.controller_i.halt_if,
@@ -480,8 +484,8 @@ logic pc_set_q, instr_valid_id_q;
 always @(posedge clk_i) begin
   pc_set_q         <= u_dut.u_ibex_top.u_ibex_core.pc_set;
   instr_valid_id_q <= u_dut.u_ibex_top.u_ibex_core.instr_valid_id;
-  if (u_dut.u_ibex_top.u_ibex_core.pc_set         !== pc_set_q ||
-      u_dut.u_ibex_top.u_ibex_core.instr_valid_id !== instr_valid_id_q) begin
+  if (detail_cnt > 0 && (u_dut.u_ibex_top.u_ibex_core.pc_set         !== pc_set_q ||
+      u_dut.u_ibex_top.u_ibex_core.instr_valid_id !== instr_valid_id_q)) begin
     $display("[%0t] IFSTAGE_PROBE pc_set=%0b instr_valid_id=%0b if_busy=%0b",
              $time,
              u_dut.u_ibex_top.u_ibex_core.pc_set,
@@ -493,7 +497,6 @@ end
 // Per-cycle trace, windowed: only the 400 cycles after debug_req_core first
 // rises (printing every cycle for the whole run floods the log and slows
 // the sim to a crawl while the core spins on `j .`).
-int detail_cnt = -1;
 always @(posedge clk_i) begin
   if (detail_cnt < 0 && u_dut.dbg_req_core === 1'b1) detail_cnt = 400;
   if (detail_cnt > 0) begin

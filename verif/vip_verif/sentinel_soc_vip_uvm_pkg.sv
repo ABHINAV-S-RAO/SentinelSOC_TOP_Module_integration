@@ -438,7 +438,7 @@ endclass
   
     task body();
       obi_seq_item item;
-  
+      `uvm_info("GPIO_SEQ", $sformatf("body() entered, pattern=%h", pattern), UVM_LOW)
       // All 32 pads as output
       item = obi_seq_item::type_id::create("item");
       start_item(item);
@@ -457,10 +457,6 @@ endclass
     endtask
   endclass
 
-
-// ---------------------------------------------------------------------
-// Test: replaces the write-only sentinel_soc_vip_gpio_test
-// ---------------------------------------------------------------------
 class sentinel_soc_vip_gpio_test extends sentinel_soc_vip_base_test;
   `uvm_component_utils(sentinel_soc_vip_gpio_test)
 

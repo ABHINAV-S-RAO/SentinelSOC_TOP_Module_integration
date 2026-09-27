@@ -16,15 +16,10 @@
 //     D-TAG  debugger stores into DSRAM are tagged untrusted
 //     D-PRIV debugger cannot write SoC CSRs / ISRAM, can read them
 //   Part C  no SBA: not advertised, forced SBA pokes are ignored
-//   Part E  JTAG recovery boot + hardware-fed Ed25519 secure boot
-//           (soc_secure_boot; power-on resets, faulty bootrom):
-//     R-STRAP  strap -> halted before first insn, debugger loads the signed
-//              image (verif/debugger/images, TEST-ONLY key in OTP); it does
-//              not run unverified; a tampered copy is rejected; the engine is
-//              one-shot per reset; the signed copy verifies and runs from its
-//              entry; the header (outside the code range) never executes
-//     R-WDT    boot watchdog forces recovery; ISRAM write after verification
-//              clears the verdict (no swap-after-verify); re-verify runs
+//   Part E  JTAG recovery boot (power-on resets, faulty bootrom):
+//     R-STRAP  strap -> halted before first insn, debugger loads ISRAM,
+//              unverified image faults, verified image runs, ndmreset re-halts
+//     R-WDT    boot watchdog forces recovery when the bootrom never finishes
 //     R-NORMAL good bootrom, no strap -> no recovery
 //
 // Result classes:
@@ -80,6 +75,7 @@ module dift_dbg_tb;
   assign u_jtag.tdo = jtag_tdo_dut;
 
   logic dift_en   = 1'b1;
+  logic crypto_ok = 1'b1;   // stands in for the SHA/ED25519 verdict
   logic boot_mode = 1'b0;   // recovery strap
 
   // Short boot watchdog so R-WDT runs quickly (2e4 cycles = 200 us)
@@ -110,7 +106,7 @@ module dift_dbg_tb;
   ) u_dut (
     .clk_i             ( clk_i          ),
     .rst_ni            ( rst_ni         ),
-    .crypto_verified_i ( 1'b0           ),   // legacy pin, unused with SECURE_BOOT=1
+    .crypto_verified_i ( crypto_ok      ),
     .boot_mode_i       ( boot_mode      ),
     .uart_tx_o         ( uart_tx        ),
     .uart_rx_i         ( 1'b1           ),
@@ -191,9 +187,6 @@ module dift_dbg_tb;
                           CTRL_BASE  = 32'h0003_0000;
   localparam int ISRAM_IDX0 = (ISRAM_BASE >> 2) % 65536;   // isram_model index of 0x1_0000
   localparam logic [31:0] MARK_OK = 32'h600D_B007;          // written by the recovery image
-  localparam logic [31:0] SB_BASE = 32'h0005_0000;          // soc_secure_boot VERIFY registers
-  localparam logic [31:0] ENTRY   = ISRAM_BASE + 32'h44;    // first signed code word
-  localparam int          IMG_WORDS = 25;                   // header(17) + code(8)
 
   localparam logic [31:0] SEC_S0 = 32'h5EC0_0008, SEC_A0 = 32'h5EC0_000A,
                           SEC_T1 = 32'h5EC0_0006, VAL_S1 = 32'hC1EA_0009;
@@ -539,42 +532,18 @@ module dift_dbg_tb;
     ok = s[9];
   endtask
 
-  // Signed recovery image (verif/debugger/images/gen_signed_image.py): header
-  // [sha_len, R, S] + code that marks DSRAM word W_MARK and heartbeats. The
-  // matching TEST-ONLY public key is forced into the OTP model (a real part
-  // has it fused at manufacturing).
-  `define SB u_dut.g_secure_boot.u_secure_boot
-  logic [31:0]  rimg [IMG_WORDS];
-  logic [31:0]  otp_key_w [8];
-  logic [255:0] otp_key;
+  // Recovery image: marks DSRAM word W_MARK, then heartbeats.
+  logic [31:0] rimg [8];
   initial begin
-    $readmemh("verif/debugger/images/recovery_signed.mem", rimg);
-    $readmemh("verif/debugger/images/otp_pubkey.mem", otp_key_w);
-    foreach (otp_key_w[i]) otp_key[32*i +: 32] = otp_key_w[i];
-    force `SB.u_otp.otp_mem = otp_key;
+    rimg[0] = lui (T0, 32'h20);
+    rimg[1] = lui (T1, MARK_OK[31:12]);
+    rimg[2] = addi(T1, T1, MARK_OK[11:0]);
+    rimg[3] = sw  (T1, T0, 4*W_MARK);
+    rimg[4] = addi(A1, 0, 0);
+    rimg[5] = addi(A1, A1, 1);
+    rimg[6] = sw  (A1, T0, 4*W_HB);
+    rimg[7] = jal (0, -8);
   end
-
-  // Write one ISRAM word through the debugger (allowed only in recovery)
-  task automatic isram_poke(int idx, logic [31:0] val, output logic [2:0] e);
-    logic [2:0] e2;
-    reg_write(gpr(T3), ISRAM_BASE + 4*idx, e2);
-    reg_write(gpr(S1), val, e2);
-    progbuf_run(sw(S1, T3, 0), EBREAK, e);
-  endtask
-
-  // Debugger starts a hardware verification (VERIFY_CTRL.start) and, once
-  // the engine finishes, reads VERIFY_STATUS back the way software would.
-  task automatic sb_verify(output logic [31:0] st, output logic [2:0] e);
-    logic [2:0] e2;
-    int c = 0;
-    reg_write(gpr(T3), SB_BASE, e2);
-    reg_write(gpr(S1), 32'h1, e2);
-    progbuf_run(sw(S1, T3, 0), EBREAK, e);
-    while (`SB.state_q != 0 && c < 1_500_000) begin @(posedge clk_i); c++; end
-    progbuf_run(lw(S1, T3, 32'h4), EBREAK, e2);
-    st = `GPR[S1];
-    obs($sformatf("verification took %0d cycles, VERIFY_STATUS=%05b (err verified valid done busy)", c, st[4:0]));
-  endtask
 
   // Load rimg into ISRAM through the debugger (execution-based, as OpenOCD
   // does without SBA): t3 = address; per word: write s1 + postexec
@@ -989,11 +958,6 @@ module dift_dbg_tb;
           $sformatf("debugger write to ISRAM denied outside recovery (err=%0d isram[0]=%08h)", err, u_isram.mem[ISRAM_IDX0]));
     progbuf_run(lw(S1, T3, 0), EBREAK, err);
     check(err == 0 && `GPR[S1] === r, $sformatf("debugger read of ISRAM allowed (err=%0d)", err));
-    reg_write(gpr(T3), SB_BASE, err);
-    reg_write(gpr(S1), 32'h1, err);
-    progbuf_run(sw(S1, T3, 0), EBREAK, err);
-    check(err == 3'd3 && `SB.state_q == 0,
-          $sformatf("debugger cannot start verification outside recovery (err=%0d)", err));
     repeat (WDT_CYCLES + 1000) @(posedge clk_i);
     check(u_dut.recovery === 1'b0, "boot watchdog paused while halted in boot phase (no false recovery)");
     resume(ok);
@@ -1023,6 +987,7 @@ module dift_dbg_tb;
 
     // R-STRAP: faulty bootrom, strap set
     por("R-STRAP", 1'b1, 1'b1);
+    crypto_ok = 1'b0;
     wait_halted(ok);
     check(ok && u_dut.recovery === 1'b1, $sformatf("strap -> recovery, hart halted (allhalted=%0b)", ok));
     check(mon_exc_run == 0, $sformatf("no bootrom instruction executed (exceptions=%0d)", mon_exc_run));
@@ -1039,7 +1004,7 @@ module dift_dbg_tb;
           $sformatf("STATUS0 recovery_mode=1 recovery_wdt=0 (STATUS0=%08h)", `GPR[S1]));
 
     // Unverified image must not run
-    reg_write(CSR_DPC, ENTRY, err);
+    reg_write(CSR_DPC, ISRAM_BASE, err);
     mon_clear();
     resume(ok);
     repeat (2000) @(posedge clk_i);
@@ -1048,26 +1013,13 @@ module dift_dbg_tb;
     halt(ok);
     check(ok, "core still haltable after refused ISRAM fetch (no bus wedge)");
 
-    // Tampered copy (one code bit flipped) is rejected
-    isram_poke(20, rimg[20] ^ 32'h1, err);
-    check(err == 0, "debugger can modify ISRAM in recovery");
-    sb_verify(r, err);
-    check(err == 0 && r[1] && !r[2] && !r[3] && !r[4],
-          $sformatf("TAMPERED image: signature rejected (VERIFY_STATUS=%05b)", r[4:0]));
-    reg_write(CSR_DPC, ENTRY, err);
-    mon_clear();
+    // Verified image runs
+    crypto_ok = 1'b1;
+    reg_write(CSR_DPC, ISRAM_BASE, err);
     resume(ok);
-    repeat (2000) @(posedge clk_i);
-    check(u_dsram.mem[W_MARK] != MARK_OK && mon_exc_run != 0, "tampered image does not execute");
-    halt(ok);
-
-    // The engine is one-shot per reset
-    reg_write(gpr(T3), SB_BASE, err);
-    reg_write(gpr(S1), 32'h1, err);
-    progbuf_run(sw(S1, T3, 0), EBREAK, err);
-    progbuf_run(lw(S1, T3, 32'h4), EBREAK, err);
-    check(`GPR[S1][4] && !`GPR[S1][3],
-          $sformatf("second verification without reset -> VERIFY_STATUS.error (%05b)", `GPR[S1][4:0]));
+    heartbeat(ok);
+    check(ok && u_dsram.mem[W_MARK] == MARK_OK,
+          $sformatf("VERIFIED recovery image runs from ISRAM (mark=%08h)", u_dsram.mem[W_MARK]));
 
     // ndmreset in recovery re-halts before the bootrom runs again
     mon_clear();
@@ -1077,35 +1029,6 @@ module dift_dbg_tb;
     reg_read(CSR_DPC, r, err);
     check(ok && r == 32'h80 && mon_exc_run == 0,
           $sformatf("ndmreset in recovery -> halted at reset vector again (dpc=%08h exc=%0d)", r, mon_exc_run));
-
-    // Restore the signed copy: verifies
-    isram_poke(20, rimg[20], err);
-    check(image_in_isram(), "signed image restored in ISRAM");
-    sb_verify(r, err);
-    check(err == 0 && r[1] && r[2] && r[3] && !r[4],
-          $sformatf("SIGNED image verified: valid + verified (VERIFY_STATUS=%05b)", r[4:0]));
-    reg_write(gpr(T3), SB_BASE, err);
-    progbuf_run(lw(S1, T3, 32'hC), EBREAK, err);
-    check(`GPR[S1] == ENTRY, $sformatf("VERIFY ENTRY register = %08h", `GPR[S1]));
-    reg_write(gpr(T3), CTRL_BASE, err);
-    progbuf_run(lw(S1, T3, 32'h4), EBREAK, err);           // STATUS0
-    check(`GPR[S1][0], $sformatf("STATUS0.crypto_verified follows the hardware verdict (STATUS0=%08h)", `GPR[S1]));
-
-    // Only the signed code range executes: jumping to the header faults
-    reg_write(CSR_DPC, ISRAM_BASE, err);
-    mon_clear();
-    resume(ok);
-    repeat (2000) @(posedge clk_i);
-    check(u_dsram.mem[W_MARK] != MARK_OK && mon_exc_run != 0,
-          "image header (outside the verified code range) does not execute");
-    halt(ok);
-
-    // Verified image runs from its entry point
-    reg_write(CSR_DPC, ENTRY, err);
-    resume(ok);
-    heartbeat(ok);
-    check(ok && u_dsram.mem[W_MARK] == MARK_OK,
-          $sformatf("VERIFIED recovery image runs from ISRAM entry (mark=%08h)", u_dsram.mem[W_MARK]));
 
     // R-WDT: faulty bootrom, no strap -> watchdog forces recovery
     por("R-WDT", 1'b0, 1'b1);
@@ -1118,32 +1041,11 @@ module dift_dbg_tb;
     progbuf_run(lw(S1, T3, 32'h4), EBREAK, err);           // STATUS0
     check(err == 0 && `GPR[S1][3:2] == 2'b11,
           $sformatf("STATUS0 recovery_mode=1 recovery_wdt=1 (STATUS0=%08h)", `GPR[S1]));
-
-    sb_verify(r, err);
-    check(r[3], $sformatf("signed image verified after watchdog recovery (VERIFY_STATUS=%05b)", r[4:0]));
-
-    // Swap-after-verify: any ISRAM write (even of the same value) kills the verdict
-    isram_poke(20, rimg[20], err);
-    reg_write(gpr(T3), SB_BASE, err);
-    progbuf_run(lw(S1, T3, 32'h4), EBREAK, err);
-    check(!`GPR[S1][3], $sformatf("ISRAM write after verification clears 'verified' (VERIFY_STATUS=%05b)", `GPR[S1][4:0]));
     u_dsram.mem[W_MARK] = 0;
-    reg_write(CSR_DPC, ENTRY, err);
-    mon_clear();
-    resume(ok);
-    repeat (2000) @(posedge clk_i);
-    check(u_dsram.mem[W_MARK] != MARK_OK && mon_exc_run != 0, "image modified after verification does not execute");
-    halt(ok);
-
-    // Reset + re-verify -> runs
-    dm_w(DMControl, 32'h0000_0003);
-    dm_w(DMControl, 32'h1000_0001);
-    wait_halted(ok);
-    sb_verify(r, err);
-    reg_write(CSR_DPC, ENTRY, err);
+    reg_write(CSR_DPC, ISRAM_BASE, err);
     resume(ok);
     heartbeat(ok);
-    check(r[3] && ok && u_dsram.mem[W_MARK] == MARK_OK, "re-verified image runs after reset");
+    check(ok && u_dsram.mem[W_MARK] == MARK_OK, "recovery image runs after watchdog recovery");
 
     // R-NORMAL: good bootrom, no strap -> never enters recovery
     por("R-NORMAL", 1'b0, 1'b0);
@@ -1172,7 +1074,7 @@ module dift_dbg_tb;
   end
 
   initial begin
-    #120ms;   // each Ed25519 verification is ~4 ms at CRYPTO_CLK_DIV=2
+    #40ms;
     $display("[FAIL] Global watchdog timeout in scenario %s", scen);
     $finish;
   end

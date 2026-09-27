@@ -764,7 +764,7 @@ module dift_dbg_tb;
     reg_write(gpr(T1), 32'h0000_1234, err);
     check(err == 0 && `GPR[T1] == 32'h1234, "debugger write of t1 lands in the RF");
     if (`TAGRF[T1] !== 1'b1)
-      finding("D06a", $sformatf("debugger write to tainted t1 CLEARED its tag (now %b): tag comes from tag_mem[0xE0], not from any debug policy -- debugger can launder taint",
+      finding("D06a", $sformatf("debugger write to tainted t1 CLEARED its tag (now %b): the value is loaded from DM data0 (untagged, reads tag 0), so debugger-written registers are clean -- open decision: tag them untrusted",
                                 `TAGRF[T1]));
     u_dut.tag_mem[TAG_DATA0] = 1'b1;
     reg_write(gpr(S1), 32'h0000_5678, err);

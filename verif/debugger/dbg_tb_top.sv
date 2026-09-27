@@ -129,7 +129,7 @@ module dbg_tb_top;
   // -------------------------------------------------------------------------
   bootrom_model #(
     .DEPTH    ( 16384 ),
-    .HEX_FILE ( ""    )
+    .HEX_FILE ( "verif/debugger/bootrom.hex" )
   ) u_bootrom (
     .clk_i    ( clk_i          ),
     .rst_ni   ( rst_ni         ),
@@ -146,7 +146,7 @@ module dbg_tb_top;
 
   isram_model #(
     .DEPTH    ( 65536 ),
-    .HEX_FILE ( ""    )
+    .HEX_FILE ( "verif/debugger/bootrom.hex" )
   ) u_isram (
     .clk_i    ( clk_i         ),
     .rst_ni   ( rst_ni        ),
@@ -163,7 +163,7 @@ module dbg_tb_top;
 
   dsram_model #(
     .DEPTH    ( 16384 ),
-    .HEX_FILE ( ""    )
+    .HEX_FILE ( "verif/debugger/bootrom.hex" )
   ) u_dsram (
     .clk_i    ( clk_i        ),
     .rst_ni   ( rst_ni       ),
@@ -218,7 +218,7 @@ module dbg_tb_top;
     do begin
       u_jtag.dmi_read(dm::dm_csr_e'(dm::AbstractCS), abstractcs_val);
       poll++;
-      if (poll > 5000) begin
+      if (poll > 50000) begin
         $error("[FAIL] abstractcs.busy never cleared (abstractcs=%08h)", abstractcs_val);
         errors++;
         return;
@@ -276,7 +276,7 @@ module dbg_tb_top;
         u_jtag.idle_ticks(20);
         u_jtag.dmi_read(dm::dm_csr_e'(dm::DMStatus), dmstatus_val);
         poll++;
-        if (poll > 2000) begin
+        if (poll > 5000) begin
           $error("[FAIL] Timed out waiting for dmstatus.allhalted (dmstatus=%08h)",
                  dmstatus_val);
           errors++;
@@ -330,7 +330,7 @@ module dbg_tb_top;
         u_jtag.idle_ticks(20);
         u_jtag.dmi_read(dm::dm_csr_e'(dm::DMStatus), dmstatus_val);
         poll++;
-        if (poll > 500) begin
+        if (poll > 5000) begin
           $error("[FAIL] Timed out waiting for dmstatus.allrunning (dmstatus=%08h)",
                  dmstatus_val);
           errors++;

@@ -44,7 +44,6 @@ module bootrom_model #(
         rdata_q <= mem[idx];
         // probe: let sim see every bootrom access
         $display("[BOOTROM @%0t] addr=0x%08h rdata=0x%08h we=%0b",
-                 $time, addr_i, mem[idx], we_i);
       end
     end
   end

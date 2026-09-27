@@ -95,6 +95,7 @@ rtl/soc/soc_sram.sv
 # (which references dm::DataCount / dm::DataAddr in its hartinfo_i hookup).
 # Paths below assume you drop the 12 files I gave you into rtl/riscv-dbg/src/ --
 # adjust the directory to wherever you actually place them.
+
 rtl/riscv-dbg/debug_rom/debug_rom.sv
 rtl/riscv-dbg/src/dm_pkg.sv
 rtl/riscv-dbg/src/dm_mem.sv
@@ -103,6 +104,7 @@ rtl/riscv-dbg/src/dm_sba.sv
 rtl/riscv-dbg/src/dm_obi_top.sv
 rtl/riscv-dbg/src/dm_top.sv
 rtl/riscv-dbg/src/dmi_cdc.sv
+./.bender/git/checkouts/tech_cells_generic-c280dda8b91b4f97/src/rtl/tc_clk.sv
 rtl/riscv-dbg/src/dmi_jtag_tap.sv
 rtl/riscv-dbg/src/dmi_jtag.sv
 rtl/riscv-dbg/src/dmi_intf.sv

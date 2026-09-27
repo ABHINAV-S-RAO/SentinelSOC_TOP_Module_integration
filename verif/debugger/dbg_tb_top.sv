@@ -392,4 +392,20 @@ module dbg_tb_top;
     $finish;
   end
 
+logic data_req_q, data_gnt_q, data_we_q;
+logic [31:0] data_addr_q;
+always @(posedge clk_i) begin
+  data_req_q  <= u_dut.u_ibex_top.data_req_o;
+  data_gnt_q  <= u_dut.u_ibex_top.data_gnt_i;
+  data_we_q   <= u_dut.u_ibex_top.data_we_o;
+  data_addr_q <= u_dut.u_ibex_top.data_addr_o;
+  if (u_dut.u_ibex_top.data_req_o !== data_req_q ||
+      u_dut.u_ibex_top.data_gnt_i !== data_gnt_q ||
+      u_dut.u_ibex_top.data_addr_o !== data_addr_q) begin
+    $display("[%0t] DBUS_PROBE req=%0b gnt=%0b we=%0b addr=%08h",
+             $time, u_dut.u_ibex_top.data_req_o, u_dut.u_ibex_top.data_gnt_i,
+             u_dut.u_ibex_top.data_we_o, u_dut.u_ibex_top.data_addr_o);
+  end
+end
+
 endmodule : dbg_tb_top

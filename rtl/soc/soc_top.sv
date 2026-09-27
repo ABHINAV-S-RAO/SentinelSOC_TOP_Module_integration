@@ -552,10 +552,13 @@ typedef struct packed {
     end
   end
 
-  always_ff @(posedge clk_i) begin
-    if (tag_req_core && tag_we)
-      tag_mem[tag_addr[TAG_AW-1:0]] <= tag_wdata;
+  always_ff @(posedge clk_i or negedge rst_ni) begin
+  if (!rst_ni) begin
+    for (int i = 0; i < DSRAM_SIZE_WORDS; i++) tag_mem[i] <= 1'b0;
+  end else if (tag_req_core && tag_we) begin
+    tag_mem[tag_addr[TAG_AW-1:0]] <= tag_wdata;
   end
+end
 
   // Out-of-DSRAM addresses return 1 (tainted — safe default)
   assign tag_rdata = is_data_sram_q ? tag_mem[tag_rd_addr_q] : 1'b1;

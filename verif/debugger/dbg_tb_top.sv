@@ -353,6 +353,7 @@ module dbg_tb_top;
   // Global watchdog
   initial begin
     #5ms;
+          $display(">>> CORE STATE AT HANG: PC=0x%08x INSTR_REQ=%b INSTR_GNT=%b INSTR_RVALID=%b INSTR_ADDR=0x%08x", u_soc.u_core.u_ibex_core.pc_id_o, u_soc.core_instr_req, u_soc.core_instr_gnt, u_soc.core_instr_rvalid, u_soc.core_instr_addr);
     $error("[FAIL] Global watchdog timeout -- simulation hung");
     $finish;
   end

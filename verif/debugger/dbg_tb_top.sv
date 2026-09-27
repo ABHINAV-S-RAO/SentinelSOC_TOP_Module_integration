@@ -490,6 +490,12 @@ always @(posedge clk_i) begin
   end
 end
 
-
+always @(posedge clk_i) begin
+  $display("[%0t] DETAIL instr_req=%0b instr_gnt=%0b instr_rvalid=%0b instr_addr=%08h dbg_req=%0b dbg_gnt=%0b dbg_rvalid=%0b if_busy=%0b",
+           $time,
+           u_dut.instr_req_int, u_dut.instr_gnt_int, u_dut.instr_rvalid_int, u_dut.instr_addr_int,
+           u_dut.dbg_req, u_dut.dbg_gnt, u_dut.dbg_rvalid,
+           u_dut.u_ibex_top.u_ibex_core.if_busy);
+end
 
 endmodule : dbg_tb_top

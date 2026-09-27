@@ -89,11 +89,6 @@ rtl/soc/soc_sram.sv
 // riscv-dbg
 rtl/riscv-dbg/src/dm_pkg.sv
 rtl/riscv-dbg/src/dm_mem.sv
-rtl/riscv-dbg/debug_rom
-rtl/riscv-dbg/debug_rom/debug_rom.h
-rtl/riscv-dbg/debug_rom/debug_rom_one_scratch.h
-rtl/riscv-dbg/debug_rom/debug_rom_one_scratch.sv
-rtl/riscv-dbg/debug_rom/debug_rom.S
 rtl/riscv-dbg/debug_rom/debug_rom.sv
 rtl/riscv-dbg/src/dm_csrs.sv
 rtl/riscv-dbg/src/dm_sba.sv

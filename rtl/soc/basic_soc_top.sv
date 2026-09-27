@@ -302,7 +302,9 @@ module basic_soc_top (
     .data_obi_aid_o     ( )
   );
  
-  // Corrected Tag RAM Indexing (Word-aligned index [TAG_AW+1:2])
+  // Tag RAM indexing: tag_addr is ALREADY a word address (shim drops
+  // addr[1:0]), so index with tag_addr[TAG_AW-1:0] = byte addr[TAG_AW+1:2].
+  // (Was tag_addr[TAG_AW+1:2] -- a double shift giving one tag per 4 words.)
   // NOTE: tag_mem still has no reset branch (flagged separately, not fixed
   // in this diff) -- every entry is X until explicitly written.
 `ifdef DIFT
@@ -314,7 +316,7 @@ module basic_soc_top (
     if (!sys_rst_n) begin
       tag_rd_addr_q <= '0;
     end else if (tag_req) begin
-      tag_rd_addr_q <= tag_addr[TAG_AW+1:2];
+      tag_rd_addr_q <= tag_addr[TAG_AW-1:0];
     end
   end
  
@@ -323,7 +325,7 @@ module basic_soc_top (
   // other writer. Synthesizes identically.
   always @(posedge clk_i) begin
     if (tag_req && tag_we)
-      tag_mem[tag_addr[TAG_AW+1:2]] <= tag_wdata;
+      tag_mem[tag_addr[TAG_AW-1:0]] <= tag_wdata;
   end
   assign tag_rdata = tag_mem[tag_rd_addr_q];
 `else

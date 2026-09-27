@@ -305,6 +305,13 @@ module dift_dbg_tb;
                  `CORE.pc_exception, `CORE.load_exception, `CORE.lsu_tag_err, u_dut.irq_dift);
       end
     end
+    // Tainted load data returning to the core, and the tag-RF write it causes
+    if (mon_print < 12 && u_dut.core_data_rvalid && u_dut.data_rdata_tag === 1'b1) begin
+      mon_print++;
+      $display("[%0t]   LOAD-TAG tag_idx=%0d shim->core=1 lsu_tag=%b rf_we_tag=%b rf_wdata_tag=%b waddr=x%0d",
+               $time, u_dut.tag_rd_addr_q, `CORE.lsu_rdata_tag, `CORE.rf_we_tag_wb,
+               `CORE.rf_wdata_tag_wb, `CORE.rf_waddr_wb);
+    end
     nmi_q <= `CTRL.nmi_mode_q;
     if (`CTRL.nmi_mode_q === 1'b1 && nmi_q !== 1'b1) mon_nmi++;
   end

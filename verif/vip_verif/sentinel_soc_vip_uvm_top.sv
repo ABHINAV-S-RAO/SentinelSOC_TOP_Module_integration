@@ -207,10 +207,10 @@ module sentinel_soc_vip_uvm_top;
   // ---------------------------------------------------------------------------
   // Waveform Dumping
   // ---------------------------------------------------------------------------
-  initial begin
-    $dumpfile("waves_vip.vcd");
-    $dumpvars(0, sentinel_soc_vip_uvm_top);
-  end
+initial begin
+  $shm_open("waves_vip.shm");
+  $shm_probe(sentinel_soc_vip_uvm_top, "AS");
+end
 
 `ifdef NO_CORE
   initial $assertoff(0, u_dut.u_ibex_top);

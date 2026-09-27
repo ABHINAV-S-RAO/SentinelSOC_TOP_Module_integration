@@ -475,4 +475,18 @@ always @(posedge clk_i) begin
              u_dut.u_ibex_top.u_ibex_core.id_stage_i.controller_i.id_wb_pending);
   end
 end
+
+logic pc_set_q, instr_valid_id_q;
+always @(posedge clk_i) begin
+  pc_set_q         <= u_dut.u_ibex_top.u_ibex_core.pc_set;
+  instr_valid_id_q <= u_dut.u_ibex_top.u_ibex_core.instr_valid_id;
+  if (u_dut.u_ibex_top.u_ibex_core.pc_set         !== pc_set_q ||
+      u_dut.u_ibex_top.u_ibex_core.instr_valid_id !== instr_valid_id_q) begin
+    $display("[%0t] IFSTAGE_PROBE pc_set=%0b instr_valid_id=%0b if_busy=%0b",
+             $time,
+             u_dut.u_ibex_top.u_ibex_core.pc_set,
+             u_dut.u_ibex_top.u_ibex_core.instr_valid_id,
+             u_dut.u_ibex_top.u_ibex_core.if_busy);
+  end
+end
 endmodule : dbg_tb_top

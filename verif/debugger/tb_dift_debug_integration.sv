@@ -200,7 +200,8 @@ endtask
 
 task automatic jtag_goto_rti();
     logic d;
-    repeat(5) jtag_clk(1'b1, 1'b0, d);
+    jtag_clk(1'b0, 1'b0, d);  // stay in RTI
+    jtag_clk(1'b0, 1'b0, d);
     jtag_clk(1'b0, 1'b0, d);
 endtask
 
@@ -247,7 +248,6 @@ task automatic dmi_write(input logic [6:0] addr, input logic [31:0] data);
     logic [31:0] rd; logic [1:0] rs;
     jtag_shift_ir(IR_DMIACCESS);
     jtag_shift_dmi(addr, data, 2'h2, rd, rs);
-    jtag_goto_rti();
     repeat(20) @(posedge clk_i);   // let the CDC round-trip land before capturing
     jtag_shift_dmi(7'h0, 32'h0, 2'h0, rd, rs);
     if (rs == 2'h3) begin

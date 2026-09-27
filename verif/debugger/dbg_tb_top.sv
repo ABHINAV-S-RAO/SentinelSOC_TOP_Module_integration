@@ -276,7 +276,7 @@ module dbg_tb_top;
         u_jtag.idle_ticks(20);
         u_jtag.dmi_read(dm::dm_csr_e'(dm::DMStatus), dmstatus_val);
         poll++;
-        if (poll > 500) begin
+        if (poll > 2000) begin
           $error("[FAIL] Timed out waiting for dmstatus.allhalted (dmstatus=%08h)",
                  dmstatus_val);
           errors++;

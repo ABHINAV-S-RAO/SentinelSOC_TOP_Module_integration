@@ -118,12 +118,12 @@ verify_wait:
 
     la   a0, msg_verified
     jal  ra, puts
+    la   a0, msg_jump               # print BEFORE boot_done: after it, ROM data
+    jal  ra, puts                   # reads (these strings) are refused
     lw   s6, 12(s3)                 # ENTRY (read before boot_done hides the window)
     li   t0, CTRL_BASE
     li   t1, 1
-    sw   t1, 12(t0)                 # CTRL1.boot_done_set
-    la   a0, msg_jump
-    jal  ra, puts
+    sw   t1, 12(t0)                 # CTRL1.boot_done_set -- no ROM data reads past here
     jr   s6
 
 bad_image:
@@ -135,6 +135,9 @@ verify_fail:
     jal  ra, puts
     j    halt
 trap:
+    csrr t0, mcause                 # load access fault: after boot_done the ROM strings
+    li   t1, 5                      # are unreadable, so printing would fault again ->
+    beq  t0, t1, halt               # halt silently instead of looping
     la   a0, msg_trap
     jal  ra, puts
 halt:
@@ -219,7 +222,7 @@ puts_done:
 msg_banner:      .asciz "\r\n[BOOT] SentinelSoC secure boot ROM\r\n"
 msg_loaded:      .asciz "[BOOT] image copied from SPI flash to ISRAM\r\n"
 msg_verified:    .asciz "[BOOT] Ed25519 signature VERIFIED\r\n"
-msg_jump:        .asciz "[BOOT] boot_done, jumping to firmware\r\n"
+msg_jump:        .asciz "[BOOT] setting boot_done, jumping to firmware\r\n"
 msg_bad_image:   .asciz "[BOOT] ERROR: bad image header\r\n"
 msg_verify_fail: .asciz "[BOOT] ERROR: signature verification FAILED\r\n"
 msg_trap:        .asciz "[BOOT] ERROR: unexpected trap\r\n"

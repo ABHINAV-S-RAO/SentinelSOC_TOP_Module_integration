@@ -793,6 +793,11 @@ module basic_soc_top #(
       psel_gpio:  begin apb_rsp_struct.prdata = gpio_prdata;  apb_rsp_struct.pready = gpio_pready;  apb_rsp_struct.pslverr = gpio_pslverr;  end
       default: ;
     endcase
+    // PREADY only has meaning in the ACCESS phase. The PULP slaves tie it to
+    // 1, and obi_to_apb (EnableSameCycleRsp=0) tracks the transfer as
+    // "psel & ~pready" -- a ready seen in SETUP ends the transfer before
+    // ACCESS, so rvalid never comes and the core stalls. Gate with PENABLE.
+    apb_rsp_struct.pready &= apb_req_struct.penable;
   end
 
   // UART (16550-style). apb_uart_sv decodes its register index from

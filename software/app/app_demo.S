@@ -2,6 +2,7 @@
 # software/app/app_demo.S -- first signed firmware for the full-SoC flow
 #
 # Linked at the ISRAM entry 0x0001_0044 (image = 17-word header + this code),
+# with a 256-byte aligned vector table (Ibex mtvec is vectored-only),
 # signed with software/tools/sign_image.py and booted by software/boot/bootrom.S.
 # Exercises, in order, printing progress over UART:
 #   1. UART output from verified code
@@ -33,14 +34,27 @@
 
     .text
 _start:
+    j    main
+
+# Ibex implements only VECTORED mtvec with a 256-byte aligned base
+# (mtvec[7:0] are fixed): exceptions go to base+0, interrupt n to base+4*n.
+# Every entry jumps to the common handler, which decodes mcause.
+    .align 8
+vector_table:
+    .rept 32
+    j    trap_handler
+    .endr
+
+main:
     li   sp, STACK_TOP
     li   s0, UART_BASE
     li   s1, DSRAM_BASE
     sw   zero, 0(s1)
     sw   zero, 4(s1)
     sw   zero, 8(s1)
-    la   t0, trap_handler
-    csrw mtvec, t0                    # direct mode (handler is 4-byte aligned)
+    la   t0, vector_table
+    ori  t0, t0, 1                    # MODE=vectored (Ibex ignores/forces it anyway)
+    csrw mtvec, t0
     la   a0, msg_hello
     jal  ra, puts
 

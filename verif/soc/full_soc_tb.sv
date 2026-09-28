@@ -196,6 +196,46 @@ module full_soc_tb;
   end
 
   // ---------------------------------------------------------------------------
+  // Bring-up trace (first TRACE_MAX events of each kind): instruction fetches,
+  // core data-bus transactions, APB handshakes, traps, controller state.
+  // ---------------------------------------------------------------------------
+  localparam int TRACE_MAX = 120;
+  `define TB_CORE u_dut.u_ibex_top.u_ibex_core
+  int n_if = 0, n_d = 0, n_apb = 0, n_trap = 0, n_fsm = 0;
+  logic [3:0] fsm_q;
+
+  always @(posedge clk_i) if (rst_ni) begin
+    if (u_dut.instr_req_int && u_dut.instr_gnt_int && n_if < TRACE_MAX) begin
+      n_if++;
+      $display("[%0t] TR IF  req addr=%08h", $time, u_dut.instr_addr_int);
+    end
+    if (u_dut.instr_rvalid_int && n_if <= TRACE_MAX && n_if > 0)
+      $display("[%0t] TR IF  rsp data=%08h err=%b", $time, u_dut.instr_rdata_int, u_dut.instr_err_int);
+    if (u_dut.core_data_req && n_d < TRACE_MAX) begin
+      if (u_dut.core_data_gnt) n_d++;
+      $display("[%0t] TR D   req addr=%08h we=%b wdata=%08h gnt=%b", $time, u_dut.core_data_addr,
+               u_dut.core_data_we, u_dut.core_data_wdata, u_dut.core_data_gnt);
+    end
+    if (u_dut.core_data_rvalid && n_d <= TRACE_MAX && n_d > 0)
+      $display("[%0t] TR D   rsp rdata=%08h err=%b", $time, u_dut.core_data_rdata, u_dut.core_data_err);
+    if (u_dut.apb_req_struct.psel && n_apb < TRACE_MAX) begin
+      n_apb++;
+      $display("[%0t] TR APB psel paddr=%08h pwrite=%b penable=%b pready=%b pslverr=%b", $time,
+               u_dut.apb_req_struct.paddr, u_dut.apb_req_struct.pwrite, u_dut.apb_req_struct.penable,
+               u_dut.apb_rsp_struct.pready, u_dut.apb_rsp_struct.pslverr);
+    end
+    if (`TB_CORE.id_stage_i.controller_i.pc_set_o &&
+        `TB_CORE.id_stage_i.controller_i.pc_mux_o == ibex_pkg::PC_EXC && n_trap < 20) begin
+      n_trap++;
+      $display("[%0t] TR TRAP pc_id=%08h mcause(next)=%0d", $time, `TB_CORE.pc_id,
+               `TB_CORE.id_stage_i.controller_i.exc_cause_o);
+    end
+    fsm_q <= `TB_CORE.id_stage_i.controller_i.ctrl_fsm_cs;
+    if (`TB_CORE.id_stage_i.controller_i.ctrl_fsm_cs != fsm_q && n_fsm++ < 40)
+      $display("[%0t] TR FSM %s", $time, `TB_CORE.id_stage_i.controller_i.ctrl_fsm_cs.name());
+  end
+
+  // ---------------------------------------------------------------------------
   // Test sequence
   // ---------------------------------------------------------------------------
   int errors = 0;

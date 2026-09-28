@@ -1073,9 +1073,9 @@ module dift_dbg_tb;
     $display("\n=====================================================================");
     $display(" checks=%0d  FAIL=%0d  DIFT-FINDINGS=%0d", checks, errors, findings);
     foreach (finding_log[i]) $display("  - %s", finding_log[i]);
-    if (errors == 0) $display(" TEST PASSED (debug functional)%s",
+    if (errors == 0) $display(" [dift_dbg_tb] TEST PASSED -- debug spec + DIFT interaction + JTAG recovery (legacy verify pin)%s",
                               findings ? " -- review DIFT findings above" : "");
-    else             $display(" TEST FAILED -- %0d functional error(s)", errors);
+    else             $display(" [dift_dbg_tb] TEST FAILED -- %0d functional error(s)", errors);
     $display("=====================================================================");
     $finish;
   end

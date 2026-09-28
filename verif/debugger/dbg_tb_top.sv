@@ -391,8 +391,8 @@ module dbg_tb_top;
     repeat (200) @(posedge clk_i);
 
     $display("=====================================================");
-    if (errors == 0) $display("TEST PASSED -- core+DIFT+riscv-dbg debug session OK");
-    else              $display("TEST FAILED -- %0d error(s)", errors);
+    if (errors == 0) $display("[dbg_tb_top] TEST PASSED -- JTAG smoke test: halt, x1 write/read, resume");
+    else              $display("[dbg_tb_top] TEST FAILED -- %0d error(s)", errors);
     $display("=====================================================");
     $finish;
   end

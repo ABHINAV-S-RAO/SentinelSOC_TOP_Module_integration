@@ -1167,9 +1167,9 @@ module secure_boot_dbg_tb;
     $display("\n=====================================================================");
     $display(" checks=%0d  FAIL=%0d  DIFT-FINDINGS=%0d", checks, errors, findings);
     foreach (finding_log[i]) $display("  - %s", finding_log[i]);
-    if (errors == 0) $display(" TEST PASSED (debug functional)%s",
+    if (errors == 0) $display(" [secure_boot_dbg_tb] TEST PASSED -- debug spec + DIFT + JTAG recovery + hardware Ed25519 secure boot%s",
                               findings ? " -- review DIFT findings above" : "");
-    else             $display(" TEST FAILED -- %0d functional error(s)", errors);
+    else             $display(" [secure_boot_dbg_tb] TEST FAILED -- %0d functional error(s)", errors);
     $display("=====================================================================");
     $finish;
   end

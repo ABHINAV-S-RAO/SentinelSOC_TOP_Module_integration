@@ -795,13 +795,16 @@ module basic_soc_top #(
     endcase
   end
 
-  // UART
+  // UART (16550-style). apb_uart_sv decodes its register index from
+  // PADDR[2:0] (byte-spaced), but Ibex only issues word-aligned addresses,
+  // so the index is taken from paddr[4:2]: register n lives at +4*n,
+  // matching software/soc.h (THR +0x00, LCR +0x0C, LSR +0x14).
   apb_uart_sv #(
     .APB_ADDR_WIDTH ( 12 )
   ) u_apb_uart (
     .CLK            ( clk_i ),
     .RSTN           ( sys_rst_n ),
-    .PADDR          ( apb_req_struct.paddr[11:0] ),
+    .PADDR          ( {2'b00, apb_req_struct.paddr[11:2]} ),
     .PWDATA         ( apb_req_struct.pwdata ),
     .PWRITE         ( apb_req_struct.pwrite ),
     .PSEL           ( psel_uart ),
@@ -846,7 +849,8 @@ module basic_soc_top #(
     .spi_sdi3 ( spi_sdi_i[3] )
   );
 
-  // General-purpose SPI master (single lane)
+  // General-purpose SPI master (single lane). In standard mode
+  // apb_spi_master transmits on sdo0 and RECEIVES on sdi1 (QSPI IO0/IO1).
   logic [1:0] spi2_events;
   assign irq_spi2 = spi2_events[0];
 
@@ -872,8 +876,8 @@ module basic_soc_top #(
     .spi_sdo1 ( ),
     .spi_sdo2 ( ),
     .spi_sdo3 ( ),
-    .spi_sdi0 ( spi2_sdi_i ),
-    .spi_sdi1 ( 1'b0 ),
+    .spi_sdi0 ( 1'b0 ),
+    .spi_sdi1 ( spi2_sdi_i ),       // standard-mode RX samples sdi1 (MISO = IO1)
     .spi_sdi2 ( 1'b0 ),
     .spi_sdi3 ( 1'b0 )
   );

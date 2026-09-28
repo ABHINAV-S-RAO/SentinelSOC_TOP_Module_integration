@@ -407,7 +407,10 @@ module soc_addr_decode #(
   data_sel_e data_sel;
 
   always_comb begin
-    if      ((data_addr_i & BOOTROM_MASK) == BOOTROM_BASE) data_sel = SEL_ERR; // BootROM is fetch-only
+    // BootROM: data READS allowed in the boot phase (strings/constants of the
+    // boot code, .rodata of a C bootrom) or from the debugger; writes, and
+    // reads by post-boot firmware, get an error.
+    if      ((data_addr_i & BOOTROM_MASK) == BOOTROM_BASE) data_sel = (!data_we_i && (!boot_done_i || dbg_mode_i)) ? SEL_BOOTROM : SEL_ERR;
     else if ((data_addr_i & ISRAM_MASK)   == ISRAM_BASE)   data_sel = SEL_ISRAM;
     else if ((data_addr_i & DSRAM_MASK)   == DSRAM_BASE)   data_sel = SEL_DSRAM;
     else if (priv_denied)                                  data_sel = SEL_ERR; // Req 1-3
@@ -484,28 +487,46 @@ module soc_addr_decode #(
 
   // --------------------------------------------------------------------------
   // BootROM — arbiter between fetch demux [FSEL_BOOTROM] and
-  //           data demux [SEL_BOOTROM]
-  // Simple priority: fetch wins over data (instruction fetch is latency-critical)
+  //           data demux [SEL_BOOTROM] (read-only; decode above rejects writes)
+  // Priority: data wins (a load stalls the pipeline; fetch just retries).
+  // Responses are routed by the LATCHED owner of the accepted request, the
+  // same scheme as the ISRAM / DBG arbiters.
   // --------------------------------------------------------------------------
+  logic bootrom_data_active, bootrom_resp_is_data_q;
+
+  always_ff @(posedge clk_i or negedge rst_ni) begin
+    if (!rst_ni)                                bootrom_resp_is_data_q <= 1'b0;
+    else if (bootrom_req_o && bootrom_gnt_i)    bootrom_resp_is_data_q <= bootrom_data_active;
+  end
+
   always_comb begin
-    // Default: fetch port drives BootROM
-    bootrom_req_o   = fetch_mgr_req[FSEL_BOOTROM].req;
-    bootrom_addr_o  = fetch_mgr_req[FSEL_BOOTROM].a.addr;
-    bootrom_we_o    = 1'b0; // BootROM is always read-only
-    bootrom_be_o    = fetch_mgr_req[FSEL_BOOTROM].a.be;
+    bootrom_data_active = data_mgr_req[SEL_BOOTROM].req;
+
+    bootrom_we_o    = 1'b0;   // BootROM is always read-only
     bootrom_wdata_o = '0;
+    bootrom_be_o    = 4'hF;
+    if (bootrom_data_active) begin
+      bootrom_req_o  = 1'b1;
+      bootrom_addr_o = data_mgr_req[SEL_BOOTROM].a.addr;
+    end else begin
+      bootrom_req_o  = fetch_mgr_req[FSEL_BOOTROM].req;
+      bootrom_addr_o = fetch_mgr_req[FSEL_BOOTROM].a.addr;
+    end
 
-    fetch_mgr_rsp[FSEL_BOOTROM].gnt    = bootrom_gnt_i;
-    fetch_mgr_rsp[FSEL_BOOTROM].rvalid = bootrom_rvalid_i;
-    fetch_mgr_rsp[FSEL_BOOTROM].r      = '0;
-    fetch_mgr_rsp[FSEL_BOOTROM].r.rdata = bootrom_rdata_i;
-    fetch_mgr_rsp[FSEL_BOOTROM].r.err   = bootrom_err_i;
+    fetch_mgr_rsp[FSEL_BOOTROM]     = '0;
+    fetch_mgr_rsp[FSEL_BOOTROM].gnt = bootrom_gnt_i & ~bootrom_data_active;
+    data_mgr_rsp[SEL_BOOTROM]       = '0;
+    data_mgr_rsp[SEL_BOOTROM].gnt   = bootrom_gnt_i &  bootrom_data_active;
 
-    // Data port to BootROM: stall (not implemented yet)
-    data_mgr_rsp[SEL_BOOTROM].gnt    = 1'b0;
-    data_mgr_rsp[SEL_BOOTROM].rvalid = 1'b0;
-    data_mgr_rsp[SEL_BOOTROM].r      = '0;
-    data_mgr_rsp[SEL_BOOTROM].r.err  = 1'b1; // error: data access to BootROM not supported
+    if (bootrom_resp_is_data_q) begin
+      data_mgr_rsp[SEL_BOOTROM].rvalid  = bootrom_rvalid_i;
+      data_mgr_rsp[SEL_BOOTROM].r.rdata = bootrom_rdata_i;
+      data_mgr_rsp[SEL_BOOTROM].r.err   = bootrom_err_i;
+    end else begin
+      fetch_mgr_rsp[FSEL_BOOTROM].rvalid  = bootrom_rvalid_i;
+      fetch_mgr_rsp[FSEL_BOOTROM].r.rdata = bootrom_rdata_i;
+      fetch_mgr_rsp[FSEL_BOOTROM].r.err   = bootrom_err_i;
+    end
   end
 
   // --------------------------------------------------------------------------

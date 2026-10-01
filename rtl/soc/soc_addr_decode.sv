@@ -74,7 +74,7 @@ module soc_addr_decode #(
   parameter logic [31:0] DBG_BASE      = 32'h1A11_0000,
   parameter logic [31:0] DBG_MASK      = 32'hFFFF_0000,
   parameter logic [31:0] APB_BASE      = 32'h1000_0000,
-  parameter logic [31:0] APB_MASK      = 32'hF000_0000  // 256MB
+  parameter logic [31:0] APB_MASK      = 32'hF000_0000, // 256MB
 
   // Max outstanding transactions through the demux
   parameter int unsigned NumMaxTrans   = 2

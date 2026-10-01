@@ -288,6 +288,21 @@ typedef struct packed {
   logic [31:0] apb_bridge_rdata;
   logic        apb_bridge_err;
 
+  // CLINT OBI slave signals (driven by soc_addr_decode CLINT port)
+  // Base address 0x0200_0000, 64 KB window — decoded inside soc_addr_decode.
+  localparam logic [31:0] CLINT_BASE = 32'h0200_0000;
+  localparam logic [31:0] CLINT_MASK = 32'hFFFF_0000;
+
+  logic        clint_req;
+  logic        clint_gnt;
+  logic        clint_rvalid;
+  logic [31:0] clint_addr;
+  logic        clint_we;
+  logic [ 3:0] clint_be;
+  logic [31:0] clint_wdata;
+  logic [31:0] clint_rdata;
+  logic        clint_err;
+
   // ISRAM write lock from control registers
   logic        ctrl_isram_lock;
   logic ctrl_boot_done;
@@ -581,6 +596,8 @@ soc_addr_decode #(
   .SHA_MASK     ( 32'hFFFF_F000 ),
   .PLIC_BASE    ( 32'h0C00_0000 ),
   .PLIC_MASK    ( 32'hFFC0_0000 ),
+  .CLINT_BASE   ( CLINT_BASE    ),   // 0x0200_0000, 64 KB
+  .CLINT_MASK   ( CLINT_MASK    ),
   .DBG_BASE     ( 32'h1A11_0000 ),
   .DBG_MASK     ( 32'hFFFF_0000 ),
   .APB_BASE     ( 32'h1000_0000 ),
@@ -693,6 +710,17 @@ soc_addr_decode #(
   .plic_wdata_o  ( plic_wdata  ),
   .plic_rdata_i  ( plic_rdata  ),
   .plic_err_i    ( plic_err    ),
+
+  // CLINT — machine timer + software interrupt
+  .clint_req_o    ( clint_req    ),
+  .clint_gnt_i    ( clint_gnt    ),
+  .clint_rvalid_i ( clint_rvalid ),
+  .clint_addr_o   ( clint_addr   ),
+  .clint_we_o     ( clint_we     ),
+  .clint_be_o     ( clint_be     ),
+  .clint_wdata_o  ( clint_wdata  ),
+  .clint_rdata_i  ( clint_rdata  ),
+  .clint_err_i    ( clint_err    ),
 
   // OBI-to-APB bridge
   .apb_req_o    ( apb_bridge_req    ),
@@ -1113,12 +1141,36 @@ soc_addr_decode #(
   );
 
   // ---------------------------------------------------------------------------
-  // CLINT stub
-  // TODO: instantiate CLINT and connect mtime/mtimecmp registers
-  // CLINT outputs → irq_timer, irq_software
+  // CLINT — Core Local Interrupt Controller
+  // Decoded by soc_addr_decode (SEL_CLINT, base 0x0200_0000, 64 KB window).
+  // Drives irq_timer (mtip) and irq_software (msip) directly into Ibex.
+  //
+  // Offsets inside the window (standard RISC-V CLINT memory map):
+  //   0x0000 : msip        (RW, 1-bit, machine software interrupt)
+  //   0x4000 : mtimecmp_lo (RW, lower 32 bits of mtimecmp)
+  //   0x4004 : mtimecmp_hi (RW, upper 32 bits of mtimecmp)
+  //   0xBFF8 : mtime_lo    (RW, lower 32 bits of free-running timer)
+  //   0xBFFC : mtime_hi    (RW, upper 32 bits of free-running timer)
   // ---------------------------------------------------------------------------
-  assign irq_timer    = 1'b0;
-  assign irq_software = 1'b0;
+  clint_obi #(
+    .AW (32),
+    .DW (32)
+  ) u_clint (
+    .clk_i    ( clk_i        ),
+    .rst_ni   ( rst_ni       ),
+    .req_i    ( clint_req    ),
+    .gnt_o    ( clint_gnt    ),
+    .rvalid_o ( clint_rvalid ),
+    .addr_i   ( clint_addr   ),
+    .we_i     ( clint_we     ),
+    .be_i     ( clint_be     ),
+    .wdata_i  ( clint_wdata  ),
+    .rdata_o  ( clint_rdata  ),
+    .err_o    ( clint_err    ),
+    // Interrupt outputs → Ibex irq_timer_i / irq_software_i
+    .msip_o   ( irq_software ),
+    .mtip_o   ( irq_timer    )
+  );
 
   // ---------------------------------------------------------------------------
   // JTAG debug stub

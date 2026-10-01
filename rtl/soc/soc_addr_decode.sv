@@ -55,8 +55,13 @@ module soc_addr_decode #(
   parameter logic [31:0] BUF_MASK      = 32'hFFFF_F000, // 4KB
   parameter logic [31:0] SHA_BASE      = 32'h0005_0000,
   parameter logic [31:0] SHA_MASK      = 32'hFFFF_F000, // 4KB
-  parameter logic [31:0] PLIC_BASE = 32'h0C00_0000,
-  parameter logic [31:0] PLIC_MASK = 32'hFFC0_0000, // 4MB 	
+  parameter logic [31:0] PLIC_BASE  = 32'h0C00_0000,
+  parameter logic [31:0] PLIC_MASK  = 32'hFFC0_0000, // 4MB
+
+  // CLINT — machine timer + software interrupt controller
+  // Standard RISC-V CLINT base, 64 KB window
+  parameter logic [31:0] CLINT_BASE = 32'h0200_0000,
+  parameter logic [31:0] CLINT_MASK = 32'hFFFF_0000, // 64 KB
 
   // ---------------------------------------------------------------------
   // PLACEHOLDER — reserve address space for future privileged blocks.
@@ -69,7 +74,7 @@ module soc_addr_decode #(
   parameter logic [31:0] DBG_BASE      = 32'h1A11_0000,
   parameter logic [31:0] DBG_MASK      = 32'hFFFF_0000,
   parameter logic [31:0] APB_BASE      = 32'h1000_0000,
-  parameter logic [31:0] APB_MASK      = 32'hF000_0000, // 256MB
+  parameter logic [31:0] APB_MASK      = 32'hF000_0000  // 256MB
 
   // Max outstanding transactions through the demux
   parameter int unsigned NumMaxTrans   = 2
@@ -203,7 +208,9 @@ module soc_addr_decode #(
   input  logic [31:0] sha_rdata_i,
   input  logic        sha_err_i,
   
-  //interrupt plic 
+  //--------------------------------------------------------------------
+  // PLIC — interrupt controller
+  //--------------------------------------------------------------------
   output logic        plic_req_o,
   input  logic        plic_gnt_i,
   input  logic        plic_rvalid_i,
@@ -213,6 +220,20 @@ module soc_addr_decode #(
   output logic [31:0] plic_wdata_o,
   input  logic [31:0] plic_rdata_i,
   input  logic        plic_err_i,
+
+  //--------------------------------------------------------------------
+  // CLINT — machine timer + software interrupt (data path only;
+  //         CLINT registers are not executable)
+  //--------------------------------------------------------------------
+  output logic        clint_req_o,
+  input  logic        clint_gnt_i,
+  input  logic        clint_rvalid_i,
+  output logic [31:0] clint_addr_o,
+  output logic        clint_we_o,
+  output logic [ 3:0] clint_be_o,
+  output logic [31:0] clint_wdata_o,
+  input  logic [31:0] clint_rdata_i,
+  input  logic        clint_err_i,
 
   //--------------------------------------------------------------------
   // OBI-to-APB Bridge — OBI subordinate
@@ -270,10 +291,11 @@ module soc_addr_decode #(
     SEL_CTRL    = 4'd3,
     SEL_BUF     = 4'd4,
     SEL_SHA     = 4'd5,
-    SEL_PLIC	= 4'd6,
+    SEL_PLIC    = 4'd6,
     SEL_APB     = 4'd7,
     SEL_DBG     = 4'd8,
-    SEL_ERR     = 4'd9
+    SEL_CLINT   = 4'd9,   // machine timer + software interrupt controller
+    SEL_ERR     = 4'd10
     // If a new privileged slave is added (e.g. SEL_CRYPTO2), widen this
     // enum, bump DataNumMgrPorts below, and add a new manager-port slot.
   } data_sel_e;
@@ -359,15 +381,16 @@ module soc_addr_decode #(
   data_sel_e data_sel;
 
   always_comb begin
-    if      ((data_addr_i & BOOTROM_MASK) == BOOTROM_BASE) data_sel = SEL_ERR; // BootROM is fetch-only
+    if      ((data_addr_i & BOOTROM_MASK) == BOOTROM_BASE) data_sel = SEL_ERR;   // BootROM is fetch-only
     else if ((data_addr_i & ISRAM_MASK)   == ISRAM_BASE)   data_sel = SEL_ISRAM;
     else if ((data_addr_i & DSRAM_MASK)   == DSRAM_BASE)   data_sel = SEL_DSRAM;
-    else if (priv_denied)                                  data_sel = SEL_ERR; // Req 1-3
+    else if ((data_addr_i & CLINT_MASK)   == CLINT_BASE)   data_sel = SEL_CLINT; // CLINT (timer+sw irq)
+    else if (priv_denied)                                  data_sel = SEL_ERR;   // Req 1-3
     else if ((data_addr_i & CTRL_MASK)    == CTRL_BASE)    data_sel = SEL_CTRL;
-    else if ((data_addr_i & BUF_MASK)     == BUF_BASE)     data_sel = SEL_ERR; // BUF unimplemented
-    else if ((data_addr_i & SHA_MASK)     == SHA_BASE)     data_sel = SEL_ERR; // SHA unimplemented
-    else if ((data_addr_i & PLIC_MASK) == PLIC_BASE)       data_sel = SEL_ERR; // PLIC unimplemented
-    else if ((data_addr_i & DBG_MASK)     == DBG_BASE)     data_sel = SEL_ERR; // DBG unimplemented
+    else if ((data_addr_i & BUF_MASK)     == BUF_BASE)     data_sel = SEL_ERR;   // BUF unimplemented
+    else if ((data_addr_i & SHA_MASK)     == SHA_BASE)     data_sel = SEL_ERR;   // SHA unimplemented
+    else if ((data_addr_i & PLIC_MASK)    == PLIC_BASE)    data_sel = SEL_PLIC;
+    else if ((data_addr_i & DBG_MASK)     == DBG_BASE)     data_sel = SEL_DBG;
     else if ((data_addr_i & APB_MASK)     == APB_BASE)     data_sel = SEL_APB;
     else                                                    data_sel = SEL_ERR;
   end
@@ -386,7 +409,7 @@ module soc_addr_decode #(
   // --------------------------------------------------------------------------
   // Data demux — 9 manager ports (8 slaves + 1 error responder)
   // --------------------------------------------------------------------------
-  localparam int unsigned DataNumMgrPorts = 10; // SEL_BOOTROM..SEL_ERR = indices 0..8
+  localparam int unsigned DataNumMgrPorts = 11; // SEL_BOOTROM..SEL_ERR = indices 0..10
 
   soc_obi_req_t [DataNumMgrPorts-1:0] data_mgr_req;
   soc_obi_rsp_t [DataNumMgrPorts-1:0] data_mgr_rsp;
@@ -623,10 +646,7 @@ end
   end
 
   // --------------------------------------------------------------------------
-  // PLIC — data demux only, simple passthrough (not privileged: interrupt
-  // controller config isn't verification-critical state, no gating needed)
-  // NOTE: ports/decode case existed already but the response wiring was
-  // missing — plic_req_o/data_mgr_rsp[SEL_PLIC] were undriven. Added here.
+  // PLIC — data demux only, simple passthrough (not privileged)
   // --------------------------------------------------------------------------
   assign plic_req_o   = data_mgr_req[SEL_PLIC].req;
   assign plic_addr_o  = data_mgr_req[SEL_PLIC].a.addr;
@@ -640,6 +660,24 @@ end
     data_mgr_rsp[SEL_PLIC].rvalid  = plic_rvalid_i;
     data_mgr_rsp[SEL_PLIC].r.rdata = plic_rdata_i;
     data_mgr_rsp[SEL_PLIC].r.err   = plic_err_i;
+  end
+
+  // --------------------------------------------------------------------------
+  // CLINT — data demux only (registers are not executable; no fetch path)
+  // Simple passthrough — clint_obi always accepts in the same cycle (gnt=1)
+  // --------------------------------------------------------------------------
+  assign clint_req_o   = data_mgr_req[SEL_CLINT].req;
+  assign clint_addr_o  = data_mgr_req[SEL_CLINT].a.addr;
+  assign clint_we_o    = data_mgr_req[SEL_CLINT].a.we;
+  assign clint_be_o    = data_mgr_req[SEL_CLINT].a.be;
+  assign clint_wdata_o = data_mgr_req[SEL_CLINT].a.wdata;
+
+  always_comb begin
+    data_mgr_rsp[SEL_CLINT]         = '0;
+    data_mgr_rsp[SEL_CLINT].gnt     = clint_gnt_i;
+    data_mgr_rsp[SEL_CLINT].rvalid  = clint_rvalid_i;
+    data_mgr_rsp[SEL_CLINT].r.rdata = clint_rdata_i;
+    data_mgr_rsp[SEL_CLINT].r.err   = clint_err_i;
   end
 
   // --------------------------------------------------------------------------

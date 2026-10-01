@@ -142,13 +142,15 @@ module tb_clint_top;
   // Force-drive the CLINT OBI inputs via the interface so the TB controls
   // the CLINT directly without going through the full address decoder +
   // Ibex pipeline.  This is valid for a dedicated CLINT block-level bench.
-  initial begin
+  always @(*) begin
     force u_dut.u_clint.req_i   = u_clint_if.req;
     force u_dut.u_clint.addr_i  = u_clint_if.addr;
     force u_dut.u_clint.we_i    = u_clint_if.we;
     force u_dut.u_clint.be_i    = u_clint_if.be;
     force u_dut.u_clint.wdata_i = u_clint_if.wdata;
-    
+  end
+
+  initial begin
     // Hold Ibex core in reset to prevent it from fetching X instructions
     // from uninitialized memory and failing assertions in this CLINT bench.
     force u_dut.u_ibex_top.rst_ni = 1'b0;

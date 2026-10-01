@@ -25,6 +25,13 @@
 // Bender-managed library dependencies (OBI, APB, common_cells, etc.)
 // ---------------------------------------------------------------------------
 -f verif/bender_files.f
+.bender/git/checkouts/obi-75858655e8b256db/src/obi_demux.sv
+.bender/git/checkouts/obi-75858655e8b256db/src/obi_mux.sv
+
+// LowRISC primitive packages (MUST be compiled first)
+rtl/core/ibex_core/vendor/lowrisc_ip/ip/prim_generic/rtl/prim_ram_1p_pkg.sv
+rtl/core/ibex_core/vendor/lowrisc_ip/ip/prim/rtl/prim_secded_pkg.sv
+rtl/core/ibex_core/vendor/lowrisc_ip/ip/prim_generic/rtl/prim_buf.sv
 
 // ---------------------------------------------------------------------------
 // Ibex core
@@ -33,8 +40,6 @@ rtl/core/ibex_core/rtl/ibex_pkg.sv
 rtl/core/ibex_core/rtl/ibex_tracer_pkg.sv
 rtl/core/ibex_core/vendor/lowrisc_ip/ip/prim_generic/rtl/prim_clock_gating.sv
 
--f rtl/core/ibex_core/rtl/ibex_core.f
-
 // ---------------------------------------------------------------------------
 // DIFT modules (always compiled; sentinel_soc_top uses `ifdef DIFT guards)
 // ---------------------------------------------------------------------------
@@ -42,6 +47,13 @@ rtl/core/dift/ibex_dift_logic.sv
 rtl/core/dift/ibex_dift_mem.sv
 rtl/core/dift/ibex_dift_tmu.sv
 rtl/core/dift/ibex_register_file_latch_tag.sv
+
+-f rtl/core/ibex_core/rtl/ibex_core.f
+rtl/core/ibex_core/rtl/ibex_top.sv
+
+// DIFT OBI Controller
+rtl/obi_wrapper/dift_obi/dift_obi_ctrl.sv
+rtl/obi_wrapper/dift_obi/dift_tag_sram_shim.sv
 
 // ---------------------------------------------------------------------------
 // Peripherals (needed by sentinel_soc_top)

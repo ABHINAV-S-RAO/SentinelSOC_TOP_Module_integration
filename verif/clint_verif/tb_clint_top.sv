@@ -139,21 +139,32 @@ module tb_clint_top;
   assign msip_o = u_dut.u_clint.msip_o;
   assign mtip_o = u_dut.u_clint.mtip_o;
 
-  // Force-drive the CLINT OBI inputs via the interface so the TB controls
-  // the CLINT directly without going through the full address decoder +
-  // Ibex pipeline.  This is valid for a dedicated CLINT block-level bench.
-  always @(*) begin
-    force u_dut.u_clint.req_i   = u_clint_if.req;
-    force u_dut.u_clint.addr_i  = u_clint_if.addr;
-    force u_dut.u_clint.we_i    = u_clint_if.we;
-    force u_dut.u_clint.be_i    = u_clint_if.be;
-    force u_dut.u_clint.wdata_i = u_clint_if.wdata;
-  end
+  // Use local wires to ensure the simulator's continuous 'force' evaluation
+  // properly tracks the interface signals (some simulators fail to track
+  // interface variables across hierarchical forces).
+  wire        tb_req   = u_clint_if.req;
+  wire [31:0] tb_addr  = u_clint_if.addr;
+  wire        tb_we    = u_clint_if.we;
+  wire [ 3:0] tb_be    = u_clint_if.be;
+  wire [31:0] tb_wdata = u_clint_if.wdata;
 
   initial begin
+    force u_dut.u_clint.req_i   = tb_req;
+    force u_dut.u_clint.addr_i  = tb_addr;
+    force u_dut.u_clint.we_i    = tb_we;
+    force u_dut.u_clint.be_i    = tb_be;
+    force u_dut.u_clint.wdata_i = tb_wdata;
+
     // Hold Ibex core in reset to prevent it from fetching X instructions
     // from uninitialized memory and failing assertions in this CLINT bench.
     force u_dut.u_ibex_top.rst_ni = 1'b0;
+  end
+
+  always @(posedge clk_i) begin
+    if (tb_req || u_dut.u_clint.req_i || u_clint_if.rvalid) begin
+      $display("[%0t] DBG: tb_req=%b dut_req_i=%b gnt=%b rvalid=%b rdata=%h", 
+               $time, tb_req, u_dut.u_clint.req_i, u_clint_if.gnt, u_clint_if.rvalid, u_clint_if.rdata);
+    end
   end
 
 

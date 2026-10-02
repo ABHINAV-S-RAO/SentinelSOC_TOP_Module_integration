@@ -11,6 +11,7 @@
 #   4. PLIC external interrupt from the APB timer compare (source 5 -> mcause 11,
 #      claim/complete)
 #   5. writes TEST_PASS (0xB007B007) to DSRAM[0] and idles
+# Startup: mtvec first, then the whole DSRAM data area is cleared.
 # Any unexpected trap writes 0xDEAD0000|mcause to DSRAM[0] and halts.
 # =============================================================================
 
@@ -46,15 +47,23 @@ vector_table:
     .endr
 
 main:
-    li   sp, STACK_TOP
-    li   s0, UART_BASE
-    li   s1, DSRAM_BASE
-    sw   zero, 0(s1)
-    sw   zero, 4(s1)
-    sw   zero, 8(s1)
+    # Firmware rules (docs/SOC_MODES_AND_SECURITY.md): mtvec FIRST -- it resets
+    # to the BootROM, which is no longer executable after the handoff -- then
+    # clear the DSRAM data area so nothing left by a recovery session (or a
+    # previous boot) is trusted. Clearing with clean registers also clears the
+    # DIFT tags of every word.
     la   t0, vector_table
     ori  t0, t0, 1                    # MODE=vectored (Ibex ignores/forces it anyway)
     csrw mtvec, t0
+    li   t0, DSRAM_BASE
+    li   t1, STACK_TOP
+clear_dsram:
+    sw   zero, 0(t0)
+    addi t0, t0, 4
+    bltu t0, t1, clear_dsram
+    li   sp, STACK_TOP
+    li   s0, UART_BASE
+    li   s1, DSRAM_BASE
     la   a0, msg_hello
     jal  ra, puts
 

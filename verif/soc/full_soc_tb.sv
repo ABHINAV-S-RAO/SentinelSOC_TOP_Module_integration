@@ -5,18 +5,29 @@
 //   BootROM (verif/soc/images/bootrom.hex, from software/boot/bootrom.S)
 //     -> reads the signed image from the external SPI flash model
 //     -> copies it to ISRAM, locks ISRAM, starts hardware Ed25519 verification
-//     -> verified: sets boot_done and jumps to the firmware entry
+//     -> verified: jumps to the firmware entry; HARDWARE sets boot_done on
+//        that first verified fetch (docs/SOC_MODES_AND_SECURITY.md)
 //   Firmware (software/app/app_demo.S, signed into app.flash.hex)
 //     -> UART, SPI #2 byte, CLINT timer IRQ, PLIC external IRQ, PASS signature
 // The only model-level shortcut: the TEST-ONLY public key is forced into the
 // OTP model (on silicon it is fused at manufacturing).
 //
 // Checks: UART transcript (decoded from the uart_tx pin), SPI #2 byte on the
-// pins, DSRAM result word, boot_done, interrupt counts.
+// pins, DSRAM result word, interrupt counts, and the boot handoff:
+//   - boot_done rises in the cycle after the first fetch at ENTRY is accepted,
+//     never before; the ISRAM write lock is on before the handoff
+//   - no instruction-fetch errors after the handoff (the sequential fetch
+//     right behind ENTRY is allowed: single-entry rule)
+//   - no BootROM fetch reaches the ROM after the handoff
+//   - power-on to handoff fits the boot watchdog (BOOT_WDT_CYCLES default)
 //
-// +TRACE   bounded bring-up trace (fetches, data bus, APB, traps, FSM)
-// +TAMPER  flips one bit of the firmware in flash: the ROM must report the
-//          verification failure and the firmware must never run.
+// +TRACE    bounded bring-up trace (fetches, data bus, APB, traps, FSM)
+// +TAMPER   flips one bit of the firmware in flash: the ROM must report the
+//           verification failure, the firmware must never run, boot_done must
+//           never rise, and the boot watchdog must put the SoC into JTAG
+//           recovery (STATUS recovery + watchdog bits) with the core halted.
+// +BIGIMAGE boots the largest image that fits ISRAM (8 KB, app_max.flash.hex)
+//           and checks it fits the boot watchdog -- the basis of its value.
 // Build images first: software/build_sim_images.sh (run from repo root).
 // =============================================================================
 `timescale 1ns/1ps
@@ -27,10 +38,13 @@ module full_soc_tb;
   localparam int unsigned UART_BIT    = 16;                  // bootrom UART_DIV+1
   localparam logic [31:0] TEST_PASS   = 32'hB007_B007;
 
-  logic clk_i = 1'b0, rst_ni = 1'b0;
+  // rst_ni starts high and falls at #1 so every async reset sees an edge
+  // (Verilator does not create a time-0 negedge).
+  logic clk_i = 1'b0, rst_ni = 1'b1;
+  initial #1 rst_ni = 1'b0;
   always #(CLK_PERIOD/2) clk_i = ~clk_i;
 
-  bit tamper;
+  bit tamper, bigimage;
 
   // ---------------------------------------------------------------------------
   // DUT
@@ -57,8 +71,7 @@ module full_soc_tb;
 
   assign qspi_sdi = {2'b00, flash_miso, 1'b0};   // standard SPI: MISO on IO1
 
-  basic_soc_top #(
-    .BOOT_WDT_CYCLES   ( 3_000_000 ),
+  basic_soc_top #(                                // BOOT_WDT_CYCLES: SoC default
     .SECURE_BOOT       ( 1'b1      ),
     .CRYPTO_CLK_DIV    ( 2         )
   ) u_dut (
@@ -69,7 +82,6 @@ module full_soc_tb;
     .uart_tx_o         ( uart_tx        ),
     .uart_rx_i         ( 1'b1           ),
 `ifdef DIFT
-    .dift_en_i         ( 1'b1           ),
 `endif
     .bootrom_req_o     ( bootrom_req    ),
     .bootrom_gnt_i     ( bootrom_gnt    ),
@@ -144,7 +156,11 @@ module full_soc_tb;
   initial begin
     $readmemh("verif/soc/images/app.pubkey.mem", otp_key_w);
     foreach (otp_key_w[i]) otp_key[32*i +: 32] = otp_key_w[i];
+`ifdef VERILATOR
+    #2 u_dut.g_secure_boot.u_secure_boot.u_otp.otp_mem = otp_key;   // no force on always_ff vars
+`else
     force u_dut.g_secure_boot.u_secure_boot.u_otp.otp_mem = otp_key;
+`endif
   end
 
   // ---------------------------------------------------------------------------
@@ -258,9 +274,59 @@ module full_soc_tb;
     return 0;
   endfunction
 
+  // ---------------------------------------------------------------------------
+  // Boot-handoff monitors
+  // ---------------------------------------------------------------------------
+  localparam logic [31:0] ENTRY = 32'h0001_0044;
+  longint cyc = 0, cyc_entry = -1, cyc_bd = -1;
+  int  n_entry_fetch = 0;      // accepted fetches at ENTRY
+  int  n_fetch_err_fw = 0;     // fetch errors after the handoff (not in debug)
+  int  n_rom_fetch_fw = 0;     // BootROM fetches that reach the ROM after the handoff
+  int  n_isram_wr_locked = 0;  // ISRAM writes that reach the memory while locked
+  bit  bd_before_entry = 0;    // boot_done seen before the ENTRY fetch
+  bit  lock_at_handoff;
+  logic bd_q = 1'b0;
+
+  always @(posedge clk_i) if (rst_ni) begin
+    cyc++;
+    if (u_dut.instr_req_int && u_dut.instr_gnt_int && u_dut.instr_addr_int == ENTRY) begin
+      n_entry_fetch++;
+      if (cyc_entry < 0) begin
+        cyc_entry = cyc;
+        lock_at_handoff = u_dut.isram_lock;
+        if (u_dut.boot_done === 1'b1) bd_before_entry = 1;
+      end
+    end
+    if (u_dut.boot_done === 1'b1 && bd_q !== 1'b1 && cyc_bd < 0) cyc_bd = cyc;
+    if (u_dut.boot_done === 1'b1 && cyc_entry < 0) bd_before_entry = 1;
+    bd_q <= u_dut.boot_done;
+    if (u_dut.boot_done === 1'b1 && !u_dut.core_debug_mode &&
+        u_dut.instr_rvalid_int && u_dut.instr_err_int)
+      n_fetch_err_fw++;
+    if (u_dut.boot_done === 1'b1 && bootrom_req && !u_dut.u_soc_addr_decode.bootrom_data_active)
+      n_rom_fetch_fw++;
+    if (u_dut.isram_lock && isram_req && isram_we && isram_gnt)
+      n_isram_wr_locked++;
+  end
+
+  // ---------------------------------------------------------------------------
+  // Test sequence
+  // ---------------------------------------------------------------------------
   initial begin
-    tamper = $test$plusargs("TAMPER");
-    #1;
+    longint unsigned wdt;
+    longint limit;
+    tamper   = $test$plusargs("TAMPER");
+    bigimage = $test$plusargs("BIGIMAGE");
+    wdt      = u_dut.BOOT_WDT_CYCLES;
+    #3;
+    if (bigimage) begin
+      foreach (u_flash.mem[i]) u_flash.mem[i] = 8'hFF;
+      $readmemh("verif/soc/images/app_max.flash.hex", u_flash.mem);
+      $display("*** +BIGIMAGE: largest image that fits ISRAM (8 KB) loaded into flash ***");
+    end
+    // Stale data in DSRAM (as left by a previous boot or a recovery session):
+    // the firmware must clear it before trusting anything there.
+    for (int i = 0; i < 1024; i++) u_dsram.mem[i] = 32'hA5A5_A5A5;
     if (tamper) begin
       u_flash.mem[16'h0080] ^= 8'h01;               // one bit inside the signed code
       $display("*** +TAMPER: flipped one firmware bit in flash ***");
@@ -269,14 +335,16 @@ module full_soc_tb;
     rst_ni = 1'b1;
 
     // Poll (every 1k cycles) until the flow reaches its end state
+    limit = wdt + 1_000_000;
     if (!tamper) begin
-      while (!(u_dsram.mem[0] == TEST_PASS || u_dsram.mem[0][31:16] == 16'hDEAD || has("ERROR")))
+      while (!(u_dsram.mem[0] == TEST_PASS || u_dsram.mem[0][31:16] == 16'hDEAD || has("ERROR") ||
+               u_dut.recovery === 1'b1) && cyc < limit)
         repeat (1000) @(posedge clk_i);
       repeat (2000) @(posedge clk_i);              // let the last UART line drain
     end else begin
-      while (!(has("verification FAILED") || u_dut.boot_done === 1'b1))
+      while (!(u_dut.recovery === 1'b1 && u_dut.core_debug_mode === 1'b1) && cyc < limit)
         repeat (1000) @(posedge clk_i);
-      repeat (20000) @(posedge clk_i);
+      repeat (2000) @(posedge clk_i);
     end
 
     $display("\n================ full_soc_tb summary ================");
@@ -285,7 +353,18 @@ module full_soc_tb;
           $sformatf("image read from external SPI flash (%0d READ commands)", u_flash.reads));
     if (!tamper) begin
       check(has("[BOOT] Ed25519 signature VERIFIED"), "hardware Ed25519 verification passed");
-      check(u_dut.boot_done === 1'b1, "boot_done set by the ROM");
+      check(cyc_entry > 0 && n_entry_fetch >= 1, $sformatf("bootrom jumped to ENTRY (first accepted fetch at cycle %0d)", cyc_entry));
+      check(!bd_before_entry, "boot_done stayed 0 until the first fetch at ENTRY");
+      check(cyc_bd == cyc_entry + 1,
+            $sformatf("HARDWARE set boot_done in the cycle after the ENTRY fetch (entry=%0d boot_done=%0d)", cyc_entry, cyc_bd));
+      check(lock_at_handoff === 1'b1, "ISRAM write lock on at the handoff");
+      check(n_isram_wr_locked == 0, $sformatf("no ISRAM write reached the memory while locked (%0d)", n_isram_wr_locked));
+      check(n_fetch_err_fw == 0, $sformatf("no fetch errors after the handoff -- single entry lets the code run (%0d)", n_fetch_err_fw));
+      check(n_rom_fetch_fw == 0, $sformatf("no BootROM fetch reached the ROM after the handoff (%0d)", n_rom_fetch_fw));
+      check(u_dut.recovery === 1'b0, "no recovery on a normal boot");
+      check(cyc_bd > 0 && cyc_bd < wdt,
+            $sformatf("power-on to handoff = %0d cycles < BOOT_WDT_CYCLES %0d (%0d%%)%s",
+                      cyc_bd, wdt, cyc_bd * 100 / wdt, bigimage ? " [8 KB image]" : " [demo image]"));
       check(has("[APP] hello from verified firmware in ISRAM"), "firmware running from ISRAM");
       check(spi2_bytes.size() == 1 && spi2_bytes[0] == 8'hA5,
             $sformatf("SPI #2 transmitted 0xA5 (%0d byte(s))", spi2_bytes.size()));
@@ -294,17 +373,27 @@ module full_soc_tb;
       check(has("[APP] PLIC external interrupt OK") && u_dsram.mem[2] == 5,
             $sformatf("PLIC claimed source 5 (APB timer) (id=%0d)", u_dsram.mem[2]));
       check(u_dsram.mem[0] == TEST_PASS, $sformatf("firmware result = %08h", u_dsram.mem[0]));
+      begin
+        int stale = 0;
+        for (int i = 3; i < 1000; i++) if (u_dsram.mem[i] == 32'hA5A5_A5A5) stale++;  // below the stack
+        check(stale == 0, $sformatf("firmware cleared the stale DSRAM data area (%0d stale words left)", stale));
+      end
       check(!has("ERROR") && !has("FAIL"), "no errors reported on UART");
     end else begin
       check(has("[BOOT] ERROR: signature verification FAILED"), "tampered image rejected by the ROM");
-      check(u_dut.boot_done !== 1'b1, "boot_done NOT set for a tampered image");
+      check(cyc_bd < 0 && u_dut.boot_done !== 1'b1, "boot_done never set for a tampered image");
+      check(n_entry_fetch == 0, "bootrom never jumped to the firmware");
       check(!has("[APP]") && u_dsram.mem[0] != TEST_PASS, "tampered firmware never executed");
+      check(u_dut.recovery === 1'b1 && u_dut.recovery_by_wdt === 1'b1,
+            $sformatf("boot watchdog (%0d cycles) put the SoC into JTAG recovery (recovery=%b by_wdt=%b)",
+                      wdt, u_dut.recovery, u_dut.recovery_by_wdt));
+      check(u_dut.core_debug_mode === 1'b1, "core halted for the debugger (debug mode)");
     end
     $display("=====================================================");
-    if (errors == 0) $display("[full_soc_tb] TEST PASSED%s -- power-on to %s",
-                              tamper ? " (+TAMPER)" : "",
-                              tamper ? "rejected tampered firmware" : "verified firmware running");
-    else             $display("[full_soc_tb] TEST FAILED -- %0d error(s)", errors);
+    if (errors != 0)   $display("[full_soc_tb] TEST FAILED -- %0d error(s)", errors);
+    else if (tamper)   $display("[full_soc_tb] TEST PASSED (+TAMPER) -- tampered firmware rejected, never executed, watchdog -> recovery");
+    else if (bigimage) $display("[full_soc_tb] TEST PASSED (+BIGIMAGE) -- 8 KB image boots within the boot watchdog");
+    else               $display("[full_soc_tb] TEST PASSED -- power-on reset to verified firmware running");
     $finish;
   end
 

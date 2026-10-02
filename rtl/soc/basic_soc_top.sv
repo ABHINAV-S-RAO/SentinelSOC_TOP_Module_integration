@@ -5,10 +5,17 @@
 module basic_soc_top #(
   // Boot watchdog for JTAG recovery (soc_recovery.sv): cycles of core
   // execution without boot_done before recovery is forced. 0 = disabled.
-  parameter int unsigned BOOT_WDT_CYCLES = 32'd1_000_000,  // 10 ms @ 100 MHz
+  // Sized from the largest image that fits ISRAM (8 KB = 2048 words):
+  // flash copy ~250k + SHA-512 ~35k + Ed25519 ~400k + bootrom ~30k
+  // = ~0.7M cycles, x ~3 margin. Re-derive if the clock or the bootrom's
+  // UART baud rate changes (docs/SOC_MODES_AND_SECURITY.md, section 9).
+  parameter int unsigned BOOT_WDT_CYCLES = 32'd2_000_000,  // 20 ms @ 100 MHz
 
   // 1 = hardware-fed Ed25519 secure boot (soc_secure_boot): ISRAM executes
   //     only the signature-verified code range. crypto_verified_i is unused.
+  //     boot_done is set by HARDWARE on the first verified fetch at the
+  //     firmware entry (CTRL1 ignored), ISRAM locks when a verification
+  //     starts, and the BootROM is executable only during a normal boot.
   // 0 = legacy: ISRAM fetch gated directly by the crypto_verified_i pin
   //     (for testbenches that predate secure boot).
   parameter bit          SECURE_BOOT     = 1'b1,
@@ -31,11 +38,6 @@ module basic_soc_top #(
   // UART Interface
   output logic        uart_tx_o,
   input  logic        uart_rx_i,
- 
-  // DIFT Control
-`ifdef DIFT
-  input  logic        dift_en_i,
-`endif
  
   // BootROM OBI Interface (real backing memory, testbench-preloaded with
   // the loader code; read-only in practice -- soc_addr_decode already
@@ -275,7 +277,7 @@ module basic_soc_top #(
     .data_rdata_tag_i     ( data_rdata_tag ),
     .data_wdata_tag_o     ( data_wdata_tag ),
     .dift_exception_o     ( dift_exception ),
-    .dift_en_i            ( dift_en_i )
+    .dift_en_i            ( 1'b1 )            // DIFT always on: no external switch
 `endif
   );
  
@@ -321,7 +323,7 @@ module basic_soc_top #(
     .core_data_wdata_tag_i ( data_wdata_tag ),
     .core_data_rdata_tag_o ( data_rdata_tag ),
     .dift_exception_i      ( dift_exception ),
-    .dift_en_i             ( dift_en_i ),
+    .dift_en_i             ( 1'b1 ),
 `endif
  
     .dift_exception_o   ( irq_dift ),
@@ -403,6 +405,8 @@ module basic_soc_top #(
   logic [3:0]  sha_be;
   logic [31:0] sha_addr, sha_wdata, sha_rdata;
   logic        fw_fetch_ok, fw_verified;
+  logic        boot_done_hw;      // hardware handoff: first verified fetch at entry
+  logic        verify_started;    // a verification was started -> ISRAM locked
 
   if (SECURE_BOOT) begin : g_secure_boot
     soc_secure_boot #(
@@ -428,8 +432,11 @@ module basic_soc_top #(
       .ver_rdata_i   ( ver_rdata       ),
       .isram_write_i ( isram_req_o & isram_we_o & isram_gnt_i ),
       .fetch_addr_i  ( instr_addr_int  ),
+      .fetch_accept_i( instr_req_int & instr_gnt_int ),
       .fetch_ok_o    ( fw_fetch_ok     ),
-      .verified_o    ( fw_verified     )
+      .verified_o    ( fw_verified     ),
+      .fw_entered_o  ( boot_done_hw    ),
+      .verify_started_o ( verify_started )
     );
   end else begin : g_legacy_verify
     assign ver_req     = 1'b0;
@@ -440,6 +447,8 @@ module basic_soc_top #(
     assign sha_err     = 1'b0;
     assign fw_fetch_ok = crypto_verified_i;
     assign fw_verified = crypto_verified_i;
+    assign boot_done_hw   = 1'b0;          // legacy: boot_done set by software
+    assign verify_started = 1'b0;
   end
 
   // PLIC (OBI -> reg bus) and CLINT slave signals
@@ -454,7 +463,8 @@ module basic_soc_top #(
     .ISRAM_MASK          ( ISRAM_MASK  ),
     .SHA_IMPL            ( SECURE_BOOT ),
     .PLIC_IMPL           ( 1'b1        ),
-    .CLINT_IMPL          ( 1'b1        )
+    .CLINT_IMPL          ( 1'b1        ),
+    .BOOTROM_XGATE       ( SECURE_BOOT )
   ) u_soc_addr_decode (
     .clk_i               ( clk_i ),
     .rst_ni              ( sys_rst_n ),
@@ -698,7 +708,9 @@ module basic_soc_top #(
   // ---------------------------------------------------------------------------
   // SOC Control Registers
   // ---------------------------------------------------------------------------
-  soc_ctrl_regs u_soc_ctrl_regs (
+  soc_ctrl_regs #(
+    .HW_BOOT_DONE        ( SECURE_BOOT )
+  ) u_soc_ctrl_regs (
     .clk_i               ( clk_i ),
     .rst_ni              ( sys_rst_n ),
     .req_i               ( ctrl_req ),
@@ -713,6 +725,8 @@ module basic_soc_top #(
     .crypto_verified_i   ( fw_verified ),
     .recovery_i          ( recovery ),
     .recovery_wdt_i      ( recovery_by_wdt ),
+    .boot_done_hw_i      ( boot_done_hw ),
+    .isram_lock_hw_i     ( verify_started ),
     .boot_done_o         ( boot_done ),
     .isram_lock_o        ( isram_lock )
   );

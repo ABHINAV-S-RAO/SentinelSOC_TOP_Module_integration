@@ -18,6 +18,7 @@ VL_ATTR_COLD void Vtb_secure_boot___024root___eval_static(Vtb_secure_boot___024r
         vlSelfRef.tb_secure_boot__DOT__clk = 0U;
         vlSelfRef.tb_secure_boot__DOT__rst_n = 1U;
         vlSelfRef.tb_secure_boot__DOT__faddr = 0U;
+        vlSelfRef.tb_secure_boot__DOT__facc = 0U;
         vlSelfRef.tb_secure_boot__DOT__fails = 0U;
     }
     vlSelfRef.__Vtrigprevexpr___TOP__tb_secure_boot__DOT__clk__0 = 0U;
@@ -296,14 +297,6 @@ VL_ATTR_COLD void Vtb_secure_boot___024root___stl_sequent__TOP__0(Vtb_secure_boo
     vlSelfRef.tb_secure_boot__DOT__dut__DOT____Vcellinp__u_crypto__start_verify_i 
         = ((IData)(vlSelfRef.tb_secure_boot__DOT__dut__DOT__g_div__DOT__div_q) 
            & (7U == (IData)(vlSelfRef.tb_secure_boot__DOT__dut__DOT__state_q)));
-    vlSelfRef.tb_secure_boot__DOT__fok = ((IData)(vlSelfRef.tb_secure_boot__DOT__dut__DOT__verified_q) 
-                                          & ((0x00010044U 
-                                              <= vlSelfRef.tb_secure_boot__DOT__faddr) 
-                                             & (vlSelfRef.tb_secure_boot__DOT__faddr 
-                                                < ((IData)(0x00010044U) 
-                                                   + 
-                                                   ((IData)(vlSelfRef.tb_secure_boot__DOT__dut__DOT__code_words_q) 
-                                                    << 2U)))));
     vlSelfRef.tb_secure_boot__DOT__dut__DOT__u_crypto__DOT__ed_valid 
         = (IData)((((0x22U == (IData)(vlSelfRef.tb_secure_boot__DOT__dut__DOT__u_crypto__DOT__u_ed__DOT__u_fsm__DOT__state)) 
                     & (IData)(vlSelfRef.tb_secure_boot__DOT__dut__DOT__u_crypto__DOT__u_ed__DOT__u_fsm__DOT__x_eq_flag)) 
@@ -335,6 +328,23 @@ VL_ATTR_COLD void Vtb_secure_boot___024root___stl_sequent__TOP__0(Vtb_secure_boo
            | ((IData)(vlSelfRef.tb_secure_boot__DOT__dut__DOT__u_crypto__DOT__sha_wen) 
               & ((0x20U > (IData)(vlSelfRef.tb_secure_boot__DOT__dut__DOT__u_crypto__DOT__sha_addr)) 
                  & (1U == (IData)(vlSelfRef.tb_secure_boot__DOT__dut__DOT__u_crypto__DOT__u_sha__DOT__state)))));
+    vlSelfRef.tb_secure_boot__DOT__dut__DOT__start_w 
+        = ((IData)(vlSelfRef.tb_secure_boot__DOT__req) 
+           & ((IData)(vlSelfRef.tb_secure_boot__DOT__we) 
+              & ((0U == (0x00000fffU & vlSelfRef.tb_secure_boot__DOT__addr)) 
+                 & vlSelfRef.tb_secure_boot__DOT__wdata)));
+    vlSelfRef.tb_secure_boot__DOT__fok = ((IData)(vlSelfRef.tb_secure_boot__DOT__dut__DOT__verified_q) 
+                                          & ((IData)(vlSelfRef.tb_secure_boot__DOT__dut__DOT__entered_q)
+                                              ? ((0x00010044U 
+                                                  <= vlSelfRef.tb_secure_boot__DOT__faddr) 
+                                                 & (vlSelfRef.tb_secure_boot__DOT__faddr 
+                                                    < 
+                                                    ((IData)(0x00010044U) 
+                                                     + 
+                                                     ((IData)(vlSelfRef.tb_secure_boot__DOT__dut__DOT__code_words_q) 
+                                                      << 2U))))
+                                              : (0x00010044U 
+                                                 == vlSelfRef.tb_secure_boot__DOT__faddr)));
     vlSelfRef.tb_secure_boot__DOT__dut__DOT__u_crypto__DOT__u_ed__DOT__u_alu__DOT__u_booth_mult__DOT__shift_amt 
         = (7U & ((3U & (IData)(vlSelfRef.tb_secure_boot__DOT__dut__DOT__u_crypto__DOT__u_ed__DOT__u_alu__DOT__u_booth_mult__DOT__count)) 
                  + (3U & ((IData)(vlSelfRef.tb_secure_boot__DOT__dut__DOT__u_crypto__DOT__u_ed__DOT__u_alu__DOT__u_booth_mult__DOT__count) 
@@ -1289,6 +1299,9 @@ VL_ATTR_COLD void Vtb_secure_boot___024root___ctor_var_reset(Vtb_secure_boot___0
     vlSelf->tb_secure_boot__DOT__dut__DOT__err_q = VL_SCOPED_RAND_RESET_I(1, __VscopeHash, 7817194263369487589ull);
     vlSelf->tb_secure_boot__DOT__dut__DOT__ran_q = VL_SCOPED_RAND_RESET_I(1, __VscopeHash, 9241648672135131403ull);
     vlSelf->tb_secure_boot__DOT__dut__DOT__dirty_q = VL_SCOPED_RAND_RESET_I(1, __VscopeHash, 9820789178567812416ull);
+    vlSelf->tb_secure_boot__DOT__dut__DOT__start_w = VL_SCOPED_RAND_RESET_I(1, __VscopeHash, 10830087533736004108ull);
+    vlSelf->tb_secure_boot__DOT__dut__DOT__entered_q = VL_SCOPED_RAND_RESET_I(1, __VscopeHash, 11214999533637516499ull);
+    vlSelf->tb_secure_boot__DOT__dut__DOT__started_q = VL_SCOPED_RAND_RESET_I(1, __VscopeHash, 10781535253513305322ull);
     vlSelf->tb_secure_boot__DOT__dut__DOT__g_div__DOT__div_q = VL_SCOPED_RAND_RESET_I(1, __VscopeHash, 17308612562713687088ull);
     vlSelf->tb_secure_boot__DOT__dut__DOT__u_crypto__DOT__sha_addr = VL_SCOPED_RAND_RESET_I(6, __VscopeHash, 7323711648301526964ull);
     vlSelf->tb_secure_boot__DOT__dut__DOT__u_crypto__DOT__sha_wen = VL_SCOPED_RAND_RESET_I(1, __VscopeHash, 17691563746706081089ull);

@@ -27,6 +27,7 @@ class alignas(VL_CACHE_LINE_BYTES) Vtb_secure_boot___024root final {
         CData/*0:0*/ tb_secure_boot__DOT__req;
         CData/*0:0*/ tb_secure_boot__DOT__we;
         CData/*0:0*/ tb_secure_boot__DOT__fok;
+        CData/*0:0*/ tb_secure_boot__DOT__facc;
         CData/*0:0*/ tb_secure_boot__DOT__dut__DOT__clk_crypto;
         CData/*0:0*/ tb_secure_boot__DOT__dut__DOT__c_we;
         CData/*0:0*/ tb_secure_boot__DOT__dut__DOT__c_gnt;
@@ -40,6 +41,9 @@ class alignas(VL_CACHE_LINE_BYTES) Vtb_secure_boot___024root final {
         CData/*0:0*/ tb_secure_boot__DOT__dut__DOT__err_q;
         CData/*0:0*/ tb_secure_boot__DOT__dut__DOT__ran_q;
         CData/*0:0*/ tb_secure_boot__DOT__dut__DOT__dirty_q;
+        CData/*0:0*/ tb_secure_boot__DOT__dut__DOT__start_w;
+        CData/*0:0*/ tb_secure_boot__DOT__dut__DOT__entered_q;
+        CData/*0:0*/ tb_secure_boot__DOT__dut__DOT__started_q;
         CData/*0:0*/ tb_secure_boot__DOT__dut__DOT__g_div__DOT__div_q;
         CData/*5:0*/ tb_secure_boot__DOT__dut__DOT__u_crypto__DOT__sha_addr;
         CData/*0:0*/ tb_secure_boot__DOT__dut__DOT__u_crypto__DOT__sha_wen;
@@ -80,12 +84,12 @@ class alignas(VL_CACHE_LINE_BYTES) Vtb_secure_boot___024root final {
         CData/*0:0*/ tb_secure_boot__DOT__dut__DOT__u_crypto__DOT__u_ed__DOT__u_fsm__DOT__x_eq_flag;
         CData/*0:0*/ tb_secure_boot__DOT__dut__DOT__u_crypto__DOT__u_ed__DOT__u_fsm__DOT__y_eq_flag;
         CData/*0:0*/ tb_secure_boot__DOT__dut__DOT__u_crypto__DOT__u_ed__DOT__u_fsm__DOT__start_seq_reg;
+    };
+    struct {
         CData/*2:0*/ tb_secure_boot__DOT__dut__DOT__u_crypto__DOT__u_sha__DOT__state;
         CData/*6:0*/ tb_secure_boot__DOT__dut__DOT__u_crypto__DOT__u_sha__DOT__round_count;
         CData/*5:0*/ tb_secure_boot__DOT__dut__DOT__u_crypto__DOT__u_sha__DOT__word_count;
         CData/*0:0*/ tb_secure_boot__DOT__dut__DOT__u_crypto__DOT__u_sha__DOT__is_last_block;
-    };
-    struct {
         CData/*0:0*/ tb_secure_boot__DOT__dut__DOT__u_crypto__DOT__u_sha__DOT__prep_start;
         CData/*0:0*/ tb_secure_boot__DOT__dut__DOT__u_crypto__DOT__u_sha__DOT__prep_word_ack;
         CData/*4:0*/ tb_secure_boot__DOT__dut__DOT__u_crypto__DOT__u_sha__DOT__sched_addr;
@@ -146,12 +150,12 @@ class alignas(VL_CACHE_LINE_BYTES) Vtb_secure_boot___024root final {
         SData/*10:0*/ tb_secure_boot__DOT__dut__DOT__left_q;
         SData/*10:0*/ tb_secure_boot__DOT__dut__DOT__code_words_q;
         SData/*10:0*/ __VdfgRegularize_h6e95ff9d_0_0;
+    };
+    struct {
         SData/*10:0*/ __Vdly__tb_secure_boot__DOT__dut__DOT__idx_q;
         IData/*31:0*/ tb_secure_boot__DOT__vrdata;
         IData/*31:0*/ tb_secure_boot__DOT__addr;
         IData/*31:0*/ tb_secure_boot__DOT__wdata;
-    };
-    struct {
         IData/*31:0*/ tb_secure_boot__DOT__rdata;
         IData/*31:0*/ tb_secure_boot__DOT__faddr;
         IData/*31:0*/ tb_secure_boot__DOT__fails;
@@ -212,12 +216,12 @@ class alignas(VL_CACHE_LINE_BYTES) Vtb_secure_boot___024root final {
         QData/*63:0*/ tb_secure_boot__DOT__dut__DOT__u_crypto__DOT__u_sha__DOT__h;
         QData/*63:0*/ tb_secure_boot__DOT__dut__DOT__u_crypto__DOT__u_sha__DOT__w_i;
         QData/*63:0*/ tb_secure_boot__DOT__dut__DOT__u_crypto__DOT__u_sha__DOT__k_i;
+    };
+    struct {
         QData/*63:0*/ tb_secure_boot__DOT__dut__DOT__u_crypto__DOT__u_sha__DOT__u_round__DOT__t1;
         QData/*63:0*/ tb_secure_boot__DOT__dut__DOT__u_crypto__DOT__u_sha__DOT__u_sched__DOT__w_next;
         QData/*63:0*/ __Vdly__tb_secure_boot__DOT__dut__DOT__u_crypto__DOT__u_sha__DOT__a;
         QData/*63:0*/ __Vdly__tb_secure_boot__DOT__dut__DOT__u_crypto__DOT__u_sha__DOT__b;
-    };
-    struct {
         QData/*63:0*/ __Vdly__tb_secure_boot__DOT__dut__DOT__u_crypto__DOT__u_sha__DOT__c;
         QData/*63:0*/ __Vdly__tb_secure_boot__DOT__dut__DOT__u_crypto__DOT__u_sha__DOT__d;
         QData/*63:0*/ __Vdly__tb_secure_boot__DOT__dut__DOT__u_crypto__DOT__u_sha__DOT__e;

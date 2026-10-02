@@ -11,7 +11,9 @@
 #   4. lock ISRAM (CTRL0.isram_lock)
 #   5. VERIFY_CTRL.start -> hardware reads ISRAM and checks the signature
 #      against the OTP public key (soc_secure_boot); poll VERIFY_STATUS
-#   6. verified: read VERIFY ENTRY, set boot_done, jump to the image entry.
+#   6. verified: read VERIFY ENTRY and jump to the image entry. The jump
+#      itself is the handoff: hardware sets boot_done on the first verified
+#      fetch at the entry (CTRL1 is ignored on secure-boot SoCs).
 #      not verified / bad header: print why and halt (JTAG recovery then
 #      takes over via the boot watchdog).
 #
@@ -42,7 +44,7 @@
 
     .equ ISRAM_BASE,   0x00010000
     .equ ISRAM_WORDS,  2048          # 8 KB
-    .equ CTRL_BASE,    0x00030000    # +0 CTRL0 (isram_lock) +C CTRL1 (boot_done_set)
+    .equ CTRL_BASE,    0x00030000    # +0 CTRL0 (isram_lock)
     .equ VERIFY_BASE,  0x00050000    # +0 CTRL +4 STATUS +8 CODE_WORDS +C ENTRY
     .equ STACK_TOP,    0x00021000
     .equ FLASH_IMAGE,  0x000000      # image offset in flash
@@ -118,13 +120,10 @@ verify_wait:
 
     la   a0, msg_verified
     jal  ra, puts
-    la   a0, msg_jump               # print BEFORE boot_done: after it, ROM data
-    jal  ra, puts                   # reads (these strings) are refused
-    lw   s6, 12(s3)                 # ENTRY (read before boot_done hides the window)
-    li   t0, CTRL_BASE
-    li   t1, 1
-    sw   t1, 12(t0)                 # CTRL1.boot_done_set -- no ROM data reads past here
-    jr   s6
+    la   a0, msg_jump
+    jal  ra, puts
+    lw   s6, 12(s3)                 # ENTRY (VERIFY window closes at the handoff)
+    jr   s6                         # handoff: hardware sets boot_done on this fetch
 
 bad_image:
     la   a0, msg_bad_image
@@ -222,7 +221,7 @@ puts_done:
 msg_banner:      .asciz "\r\n[BOOT] SentinelSoC secure boot ROM\r\n"
 msg_loaded:      .asciz "[BOOT] image copied from SPI flash to ISRAM\r\n"
 msg_verified:    .asciz "[BOOT] Ed25519 signature VERIFIED\r\n"
-msg_jump:        .asciz "[BOOT] setting boot_done, jumping to firmware\r\n"
+msg_jump:        .asciz "[BOOT] jumping to firmware (hardware sets boot_done)\r\n"
 msg_bad_image:   .asciz "[BOOT] ERROR: bad image header\r\n"
 msg_verify_fail: .asciz "[BOOT] ERROR: signature verification FAILED\r\n"
 msg_trap:        .asciz "[BOOT] ERROR: unexpected trap\r\n"

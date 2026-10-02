@@ -811,6 +811,8 @@ soc_addr_decode #(
     .crypto_verified_i ( sha_signature_valid ),
     .recovery_i        ( 1'b0 ),   // JTAG recovery boot not integrated in this top
     .recovery_wdt_i    ( 1'b0 ),
+    .boot_done_hw_i    ( 1'b0 ),   // legacy: boot_done set by software (CTRL1)
+    .isram_lock_hw_i   ( 1'b0 ),
     // Control outputs
     .boot_done_o    ( ctrl_boot_done ),
     .isram_lock_o   ( ctrl_isram_lock )

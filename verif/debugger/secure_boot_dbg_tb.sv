@@ -8,7 +8,7 @@
 //   Part B  DIFT <-> debugger interaction, one scenario per SoC boot:
 //     S1 tainted GPRs, no checks      -> tag tracking across debug ops
 //     S2 tainted t1, full TCR policy  -> TCR/TPR lockout, reads, progbuf faults
-//     S5 same as S2 but dift_en_i=0   -> is DIFT really bypassed?
+//     S5 DIFT has no off switch       -> core dift_en tied on inside the SoC
 //     S3 tainted s0, full policy      -> can the hart still be halted?
 //     S4 tainted FLAGS tag alias      -> can the hart still be halted/resumed?
 //     S6 X tag on FLAGS alias         -> uninitialised tag RAM (sim only)
@@ -18,14 +18,31 @@
 //   Part C  no SBA: not advertised, forced SBA pokes are ignored
 //   Part E  JTAG recovery boot + hardware-fed Ed25519 secure boot
 //           (soc_secure_boot; power-on resets, faulty bootrom):
-//     R-STRAP  strap -> halted before first insn, debugger loads the signed
-//              image (verif/debugger/images, TEST-ONLY key in OTP); it does
-//              not run unverified; a tampered copy is rejected; the engine is
-//              one-shot per reset; the signed copy verifies and runs from its
-//              entry; the header (outside the code range) never executes
-//     R-WDT    boot watchdog forces recovery; ISRAM write after verification
-//              clears the verdict (no swap-after-verify); re-verify runs
-//     R-NORMAL good bootrom, no strap -> no recovery
+//     R-STRAP  strap -> halted before first insn; the BootROM is not
+//              executable in recovery; TCR/TPR stay locked; the debugger
+//              loads the signed image (verif/debugger/images, TEST-ONLY key in
+//              OTP); it does not run unverified; a tampered copy is rejected;
+//              ISRAM locks when the verification starts; the engine is
+//              one-shot per reset; the signed copy verifies; only ENTRY may be
+//              entered (header / entry+4 fault); resuming at ENTRY makes the
+//              HARDWARE set boot_done; afterwards the debugger can no longer
+//              write ISRAM / VERIFY / CTRL
+//     R-WDT    faulty bootrom: boot watchdog forces recovery; the ISRAM lock
+//              blocks swap-after-verify; ndmreset clears lock + boot_done,
+//              keeps ISRAM and recovery; retry verifies and runs
+//     R-NORMAL good bootrom, no strap -> real secure boot, hardware boot_done,
+//              no recovery; BootROM not executable after the handoff; ndmreset
+//              clears boot_done and the boot runs again
+//   Part F  hardware boot handoff vs. a buggy bootrom (strap = 0):
+//     F-CTRL1  bootrom writes CTRL1 (old boot_done_set) and hangs -> ignored,
+//              watchdog -> recovery (the bug that used to brick the chip)
+//     F-SKIPV  bootrom jumps to ENTRY without verifying -> fetch refused,
+//              no boot_done, watchdog -> recovery
+//     F-JOFF   bootrom verifies, then jumps to ENTRY+8 -> single entry
+//              refuses it, no boot_done, watchdog -> recovery
+//     F-ISRW   bootrom writes ISRAM after VERIFY start -> bus error (lock),
+//              image intact, boots normally
+//     F-TAMPER tampered image, good bootrom -> rejected, watchdog -> recovery
 //
 // Result classes:
 //   [FAIL]     debug functionality broken / RTL feature not behaving as coded
@@ -33,11 +50,16 @@
 //              review item -- the debugger "works", DIFT semantics break)
 //   [OBS]      observed DIFT-specific behaviour, reported for the record
 //
-// Firmware is assembled here and backdoor-loaded into the bootrom model, so
-// there is no hex file dependency. Scenario config (TPR/TCR and secret
-// values) is backdoor-written into DSRAM, and taint is injected by writing
-// the SoC's shadow tag RAM (u_dut.tag_mem) before an ndmreset boot; the
-// firmware's loads then propagate that taint into GPR tags (TPR EN_SOURCE).
+// Every boot is a real secure boot. A small bootrom is assembled here and
+// backdoor-loaded into the bootrom model: it starts the hardware verification,
+// waits for it and jumps to ENTRY (hardware then sets boot_done). Switches in
+// DSRAM make it misbehave on purpose (Part F). The DIFT test firmware is a
+// signed ISRAM image (verif/debugger/images/dift_fw_signed.mem) that is
+// backdoor-copied into ISRAM before each boot, standing in for the flash copy.
+// Scenario config (TPR/TCR and secret values) is backdoor-written into DSRAM,
+// and taint is injected by writing the SoC's shadow tag RAM (u_dut.tag_mem)
+// before an ndmreset boot; the firmware's loads then propagate that taint
+// into GPR tags (TPR EN_SOURCE).
 // =============================================================================
 `timescale 1ns/1ps
 
@@ -64,7 +86,8 @@ module secure_boot_dbg_tb;
   always #(CLK_PERIOD/2) clk_i = ~clk_i;
 
   initial begin
-    rst_ni = 1'b0;
+    rst_ni = 1'b1;
+    #1 rst_ni = 1'b0;          // a real edge: Verilator has no time-0 negedge
     repeat (10) @(posedge clk_i);
     rst_ni = 1'b1;
   end
@@ -79,11 +102,12 @@ module secure_boot_dbg_tb;
   wire jtag_tdo_dut;
   assign u_jtag.tdo = jtag_tdo_dut;
 
-  logic dift_en   = 1'b1;
   logic boot_mode = 1'b0;   // recovery strap
 
-  // Short boot watchdog so R-WDT runs quickly (2e4 cycles = 200 us)
-  localparam int unsigned WDT_CYCLES = 20000;
+  // Boot watchdog: must cover one hardware verification (~0.42M cycles, the
+  // real boot flow runs before every scenario), kept short so R-WDT / Part F
+  // run quickly. The SoC default (2M) is checked by full_soc_tb +BIGIMAGE.
+  localparam int unsigned WDT_CYCLES = 600_000;
 
   // ---------------------------------------------------------------------------
   // DUT + memory models
@@ -110,9 +134,6 @@ module secure_boot_dbg_tb;
     .boot_mode_i       ( boot_mode      ),
     .uart_tx_o         ( uart_tx        ),
     .uart_rx_i         ( 1'b1           ),
-`ifdef DIFT
-    .dift_en_i         ( dift_en        ),
-`endif
     .bootrom_req_o     ( bootrom_req    ),
     .bootrom_gnt_i     ( bootrom_gnt    ),
     .bootrom_rvalid_i  ( bootrom_rvalid ),
@@ -188,6 +209,11 @@ module secure_boot_dbg_tb;
   localparam int W_TPR = 4, W_TCR = 5, W_BD = 6, W_S0 = 8, W_A0 = 9, W_T1 = 10,
                  W_S1 = 11, W_HB = 12, W_MCAUSE = 13, W_TRAPCNT = 14, W_MARK = 15,
                  W_DBGWR = 16;
+  // TB bootrom switches (W_BD = hand over to the firmware; 0 = spin in ROM)
+  localparam int W_ROM_CTRL1 = 17,   // write CTRL1 (old boot_done_set) first
+                 W_ROM_SKIPV = 18,   // jump to ENTRY without verifying
+                 W_ROM_ISRW  = 19,   // write ISRAM after VERIFY start
+                 W_ROM_JOFF  = 20;   // byte offset added to ENTRY for the jump
 
   // SoC map
   localparam logic [31:0] ISRAM_BASE = 32'h0001_0000, DSRAM_BASE = 32'h0002_0000,
@@ -197,13 +223,17 @@ module secure_boot_dbg_tb;
   localparam logic [31:0] SB_BASE = 32'h0005_0000;          // soc_secure_boot VERIFY registers
   localparam logic [31:0] ENTRY   = ISRAM_BASE + 32'h44;    // first signed code word
   localparam int          IMG_WORDS = 25;                   // header(17) + code(8)
+  localparam int          FW_WORDS  = 119;                  // DIFT test firmware image
+  localparam logic [31:0] ROM_FAIL  = 32'hFFFF_FFFF;        // W_MARK: bootrom saw "not verified"
 
   localparam logic [31:0] SEC_S0 = 32'h5EC0_0008, SEC_A0 = 32'h5EC0_000A,
                           SEC_T1 = 32'h5EC0_0006, VAL_S1 = 32'hC1EA_0009;
 
-  // Firmware loop addresses (see fw_load)
-  localparam logic [31:0] PC_LOOP0 = 32'h0000_00B8, PC_LOOP1 = 32'h0000_00BC,
-                          PC_LOOP2 = 32'h0000_00C0;
+  // Firmware heartbeat loop in ISRAM (gen_signed_image.py, dift_fw_signed.mem)
+  localparam logic [31:0] PC_LOOP0 = 32'h0001_01B4, PC_LOOP1 = 32'h0001_01B8,
+                          PC_LOOP2 = 32'h0001_01BC;
+  // TB bootrom spin loop (W_BD = 0)
+  localparam logic [31:0] ROM_LOOP0 = 32'h0000_00E8, ROM_LOOP2 = 32'h0000_00F0;
 
   // Shadow tag RAM is indexed by addr[11:2] for EVERY data address, so DM
   // accesses alias onto DSRAM word tags:
@@ -218,6 +248,7 @@ module secure_boot_dbg_tb;
   localparam logic [31:0] TCR_FULL = 32'h0001_56F2;
   localparam logic [31:0] TCR_NONE = 32'h0;
 
+  localparam logic [11:0] CSR_MEPC_I = 12'h341, CSR_MCAUSE_I = 12'h342;
   localparam logic [15:0] CSR_DCSR = 16'h07B0, CSR_DPC = 16'h07B1,
                           CSR_MSCRATCH = 16'h0340, CSR_TCR = 16'h07C2,
                           CSR_TPR = 16'h07C3, CSR_BOGUS = 16'h07FF;
@@ -250,6 +281,16 @@ module secure_boot_dbg_tb;
     logic [12:0] o = off;
     return {o[12], o[10:5], 5'(rs2), 5'(rs1), 3'b000, o[4:1], o[11], 7'h63};
   endfunction
+  function automatic logic [31:0] bne (int rs1, int rs2, int off);
+    logic [12:0] o = off;
+    return {o[12], o[10:5], 5'(rs2), 5'(rs1), 3'b001, o[4:1], o[11], 7'h63};
+  endfunction
+  function automatic logic [31:0] andi(int rd, int rs1, int imm); return enc_i(imm, rs1, 7, rd, 7'h13); endfunction
+  function automatic logic [31:0] jalr(int rd, int rs1, int imm); return enc_i(imm, rs1, 0, rd, 7'h67); endfunction
+  function automatic logic [31:0] add (int rd, int rs1, int rs2);
+    return {7'h00, 5'(rs2), 5'(rs1), 3'b000, 5'(rd), 7'h33};
+  endfunction
+  localparam logic [31:0] MRET    = 32'h3020_0073;
   localparam logic [31:0] EBREAK  = 32'h0010_0073;
   localparam logic [31:0] ILLEGAL = 32'h0000_0000;
 
@@ -257,40 +298,87 @@ module secure_boot_dbg_tb;
     u_bootrom.mem[addr >> 2] = insn;
   endtask
 
-  // Firmware (boot_addr=0 -> reset PC 0x80, trap vectors at 0x00..0x7C)
-  task automatic fw_load();
-    // Every vector -> trap handler at 0x100
+  // TB bootrom (boot_addr=0 -> reset PC 0x80, trap vectors at 0x00..0x7C).
+  // A minimal secure-boot ROM: the signed image is already in ISRAM (backdoor,
+  // standing in for the flash copy). It starts the hardware verification,
+  // waits, and jumps to ENTRY -- the jump is the handoff, hardware sets
+  // boot_done. DSRAM switches inject bootrom bugs (Part F).
+  localparam int A2 = 12, A3 = 13, A4 = 14, A5 = 15, T6 = 31;
+  task automatic rom_load();
     for (int i = 0; i < 32; i++) fw_put(4*i, jal(0, 32'h100 - 4*i));
-    fw_put(32'h80, lui (T0, 32'h20));            // t0 = 0x2_0000 (DSRAM)
-    fw_put(32'h84, lw  (T2, T0, 4*W_TPR));
-    fw_put(32'h88, csrw(CSR_TPR, T2));           // TPR from config word
-    fw_put(32'h8C, lw  (S0, T0, 4*W_S0));        // s0 <- secret (tag = tag_mem[8])
-    fw_put(32'h90, lw  (A0, T0, 4*W_A0));        // a0 <- secret (tag = tag_mem[9])
-    fw_put(32'h94, lw  (T1, T0, 4*W_T1));        // t1 <- secret (tag = tag_mem[10])
-    fw_put(32'h98, lw  (S1, T0, 4*W_S1));        // s1 <- clean  (tag = tag_mem[11])
-    fw_put(32'h9C, lw  (T2, T0, 4*W_TCR));
-    fw_put(32'hA0, csrw(CSR_TCR, T2));           // TCR last: checks armed now
-    fw_put(32'hA4, lw  (T2, T0, 4*W_BD));        // config: set boot_done?
-    fw_put(32'hA8, beq (T2, 0, 12));
-    fw_put(32'hAC, lui (T3, 32'h30));            // CTRL base
-    fw_put(32'hB0, sw  (T2, T3, 32'hC));         // CTRL1.boot_done_set = 1
-    fw_put(32'hB4, addi(A1, 0, 0));
-    fw_put(32'hB8, addi(A1, A1, 1));             // loop: heartbeat++
-    fw_put(32'hBC, sw  (A1, T0, 4*W_HB));
-    fw_put(32'hC0, jal (0, -8));
-    // Trap handler: record mcause, bump trap counter, park
-    fw_put(32'h100, lui (T3, 32'h20));
-    fw_put(32'h104, csrr(T4, 12'h342));
-    fw_put(32'h108, sw  (T4, T3, 4*W_MCAUSE));
-    fw_put(32'h10C, lw  (T5, T3, 4*W_TRAPCNT));
-    fw_put(32'h110, addi(T5, T5, 1));
-    fw_put(32'h114, sw  (T5, T3, 4*W_TRAPCNT));
-    fw_put(32'h118, jal (0, 0));
+    fw_put(32'h80, lui (T0, 32'h20));            // t0 = DSRAM
+    fw_put(32'h84, lw  (T2, T0, 4*W_ROM_CTRL1));
+    fw_put(32'h88, beq (T2, 0, 12));
+    fw_put(32'h8C, lui (T3, 32'h30));            // CTRL base
+    fw_put(32'h90, sw  (T2, T3, 32'hC));         // BUG: CTRL1 (old boot_done_set)
+    fw_put(32'h94, lw  (T2, T0, 4*W_BD));        // hand over at all?
+    fw_put(32'h98, beq (T2, 0, 32'hE4 - 32'h98));
+    fw_put(32'h9C, lui (T4, 32'h50));            // VERIFY base
+    fw_put(32'hA0, lw  (T2, T0, 4*W_ROM_SKIPV));
+    fw_put(32'hA4, bne (T2, 0, 32'hD4 - 32'hA4));// BUG: skip the verification
+    fw_put(32'hA8, addi(T5, 0, 1));
+    fw_put(32'hAC, sw  (T5, T4, 0));             // VERIFY_CTRL.start (ISRAM locks)
+    fw_put(32'hB0, lw  (T2, T0, 4*W_ROM_ISRW));
+    fw_put(32'hB4, beq (T2, 0, 12));
+    fw_put(32'hB8, lui (T3, 32'h10));            // ISRAM base
+    fw_put(32'hBC, sw  (T2, T3, 0));             // BUG: write ISRAM after start
+    fw_put(32'hC0, lw  (T5, T4, 4));             // poll VERIFY_STATUS
+    fw_put(32'hC4, andi(T6, T5, 2));             //   done?
+    fw_put(32'hC8, beq (T6, 0, -8));
+    fw_put(32'hCC, andi(T6, T5, 8));             //   verified?
+    fw_put(32'hD0, beq (T6, 0, 32'hF4 - 32'hD0));
+    fw_put(32'hD4, lw  (T6, T4, 32'hC));         // ENTRY
+    fw_put(32'hD8, lw  (T2, T0, 4*W_ROM_JOFF));
+    fw_put(32'hDC, add (T6, T6, T2));            // BUG if non-zero: wrong entry
+    fw_put(32'hE0, jalr(0, T6, 0));              // handoff
+    fw_put(32'hE4, addi(A1, 0, 0));              // spin (boot phase): heartbeat
+    fw_put(32'hE8, addi(A1, A1, 1));
+    fw_put(32'hEC, sw  (A1, T0, 4*W_HB));
+    fw_put(32'hF0, jal (0, -8));
+    fw_put(32'hF4, addi(T6, 0, -1));             // not verified: mark, park
+    fw_put(32'hF8, sw  (T6, T0, 4*W_MARK));
+    fw_put(32'hFC, jal (0, 0));
+    // Trap handler: record mcause, count; a store fault (7) is skipped (F-ISRW),
+    // anything else parks. Uses a2..a5 only (t-regs are live in the ROM flow).
+    fw_put(32'h100, lui (A2, 32'h20));
+    fw_put(32'h104, csrr(A3, CSR_MCAUSE_I));
+    fw_put(32'h108, sw  (A3, A2, 4*W_MCAUSE));
+    fw_put(32'h10C, lw  (A4, A2, 4*W_TRAPCNT));
+    fw_put(32'h110, addi(A4, A4, 1));
+    fw_put(32'h114, sw  (A4, A2, 4*W_TRAPCNT));
+    fw_put(32'h118, addi(A5, 0, 7));
+    fw_put(32'h11C, bne (A3, A5, 20));
+    fw_put(32'h120, csrr(A5, CSR_MEPC_I));
+    fw_put(32'h124, addi(A5, A5, 4));
+    fw_put(32'h128, csrw(CSR_MEPC_I, A5));
+    fw_put(32'h12C, MRET);
+    fw_put(32'h130, jal (0, 0));
+  endtask
+
+  // Signed DIFT test firmware image (gen_signed_image.py)
+  logic [31:0] fimg [FW_WORDS];
+  initial $readmemh("verif/debugger/images/dift_fw_signed.mem", fimg);
+
+  // Backdoor copy of the signed firmware into ISRAM (stands in for the
+  // bootrom's flash copy). tamper = flip one bit of the signed code.
+  task automatic isram_load_fw(bit tamper = 1'b0);
+    foreach (fimg[i]) u_isram.mem[ISRAM_IDX0 + i] = fimg[i];
+    if (tamper) u_isram.mem[ISRAM_IDX0 + 40] ^= 32'h0000_0100;
+  endtask
+
+  // TB bootrom switches
+  task automatic rom_cfg(bit handoff, bit ctrl1 = 1'b0, bit skipv = 1'b0,
+                         bit isrw = 1'b0, int joff = 0);
+    u_dsram.mem[W_BD]        = handoff;
+    u_dsram.mem[W_ROM_CTRL1] = ctrl1;
+    u_dsram.mem[W_ROM_SKIPV] = skipv;
+    u_dsram.mem[W_ROM_ISRW]  = isrw;
+    u_dsram.mem[W_ROM_JOFF]  = joff;
   endtask
 
   initial begin
-    #1;          // after the models' own initial blocks
-    fw_load();
+    #2;          // after the models' own initial blocks
+    rom_load();
   end
 
   // ---------------------------------------------------------------------------
@@ -329,12 +417,36 @@ module secure_boot_dbg_tb;
   int mon_nmi;           // NMI entries
   int mon_exc_run;       // exceptions taken outside debug mode
   int mon_print;         // cap on DIFT event prints
-  logic nmi_q;
+  int mon_rom_fetch;     // BootROM fetches that reached the ROM after handoff / in recovery
+  int mon_bd_rise;       // boot_done 0 -> 1 transitions
+  int mon_entry_fetch;   // accepted (gate-approved) fetches at ENTRY
+  bit mon_bd_early;      // boot_done rose without an ENTRY fetch in the cycle before
+  logic nmi_q, bd_q, entry_acc_q;
 
   task automatic mon_clear();
     mon_rom_exc = 0; mon_dift_dbg = 0; mon_dift_run = 0; mon_nmi = 0; mon_print = 0;
-    mon_exc_run = 0;
+    mon_exc_run = 0; mon_rom_fetch = 0; mon_bd_rise = 0; mon_entry_fetch = 0; mon_bd_early = 0;
   endtask
+
+  // Boot-handoff monitors: boot_done may only rise in the cycle after an
+  // accepted fetch at ENTRY; no BootROM fetch may reach the ROM once the
+  // BootROM is not executable (after the handoff, or in recovery).
+  always @(posedge clk_i) begin
+    if (u_dut.boot_done === 1'b1 && bd_q === 1'b0) begin
+      mon_bd_rise++;
+      if (entry_acc_q !== 1'b1) mon_bd_early = 1;
+    end
+    // accepted = granted AND allowed by the fetch gate (a refused fetch is
+    // granted too, then answered with an error)
+    entry_acc_q <= u_dut.instr_req_int && u_dut.instr_gnt_int && u_dut.fw_fetch_ok &&
+                   u_dut.instr_addr_int == ENTRY;
+    if (u_dut.instr_req_int && u_dut.instr_gnt_int && u_dut.fw_fetch_ok && u_dut.instr_addr_int == ENTRY)
+      mon_entry_fetch++;
+    bd_q <= u_dut.boot_done;
+    if ((u_dut.boot_done === 1'b1 || u_dut.recovery === 1'b1) &&
+        bootrom_req && !u_dut.u_soc_addr_decode.bootrom_data_active)
+      mon_rom_fetch++;
+  end
 
   always @(posedge clk_i) begin
     // Debug-mode exception actually taken (controller redirects to
@@ -467,17 +579,21 @@ module secure_boot_dbg_tb;
   // Scenario boot: hold core in ndmreset, program config + taint, release.
   // taint = {s1, t1, a0, s0} -> tag_mem[11,10,9,8]
   // ---------------------------------------------------------------------------
+  // handoff=1: the TB bootrom verifies the signed firmware and jumps to it
+  // (real secure boot, hardware boot_done). handoff=0: it spins in the ROM,
+  // i.e. the SoC stays in the boot phase (boot_done=0).
   task automatic boot(string name, logic [31:0] tpr, logic [31:0] tcr,
                       logic [3:0] taint, bit en, output bit ok,
-                      input bit set_boot_done = 1'b1);
+                      input bit handoff = 1'b1);
     scen = name;
     $display("\n==================== %s ====================", name);
-    $display("  TPR=%08h TCR=%08h taint{s1,t1,a0,s0}=%04b dift_en=%0b", tpr, tcr, taint, en);
+    $display("  TPR=%08h TCR=%08h taint{s1,t1,a0,s0}=%04b handoff=%0b", tpr, tcr, taint, handoff);
     dm_w(DMControl, 32'h0000_0003);  // dmactive + ndmreset: core held in reset
-    dift_en = en;
+    isram_load_fw();                 // "flash copy" of the signed firmware
+    rom_cfg(handoff);
+    u_dsram.mem[W_MARK]    = 0;
     u_dsram.mem[W_TPR]     = tpr;
     u_dsram.mem[W_TCR]     = tcr;
-    u_dsram.mem[W_BD]      = set_boot_done;
     u_dsram.mem[W_S0]      = SEC_S0;
     u_dsram.mem[W_A0]      = SEC_A0;
     u_dsram.mem[W_T1]      = SEC_T1;
@@ -493,13 +609,17 @@ module secure_boot_dbg_tb;
     dm_w(DMControl, 32'h1000_0001);  // release ndmreset, ackhavereset
     dm_w(AbstractCS, 32'h0000_0700); // clear any stale cmderr
     mon_clear();
-    heartbeat(ok, 3, 4000);
+    heartbeat(ok, 3, 1_500_000);     // includes one hardware verification
     if (!ok) begin
       fail("firmware did not start after ndmreset (no heartbeat)");
       return;
     end
-    check(u_dut.boot_done === set_boot_done,
-          $sformatf("firmware boot_done=%0b (requested %0b)", u_dut.boot_done, set_boot_done));
+    check(u_dut.boot_done === handoff,
+          $sformatf("boot_done=%0b after %s", u_dut.boot_done,
+                    handoff ? "secure boot + hardware handoff" : "boot phase (bootrom spinning)"));
+    if (!handoff) return;
+    check(mon_bd_rise == 1 && !mon_bd_early && mon_entry_fetch >= 1,
+          "hardware set boot_done exactly at the first verified fetch at ENTRY");
     // Sanity: DIFT propagated the injected taint into GPR tags
     begin
       logic [3:0] exp = (en && tpr[15]) ? taint : 4'b0;
@@ -513,18 +633,30 @@ module secure_boot_dbg_tb;
   // ---------------------------------------------------------------------------
   // Power-on reset (whole SoC incl. DM/DTM), optional strap / faulty bootrom
   // ---------------------------------------------------------------------------
-  task automatic por(string name, bit strap, bit faulty_rom);
+  // faulty_rom: every bootrom word is an illegal instruction. Otherwise the
+  // TB bootrom with the given switches; load_fw copies the signed firmware
+  // into ISRAM first (tamper: with one bit flipped).
+  task automatic por(string name, bit strap, bit faulty_rom, bit load_fw = 1'b0,
+                     bit handoff = 1'b1, bit ctrl1 = 1'b0, bit skipv = 1'b0,
+                     bit isrw = 1'b0, int joff = 0, bit tamper = 1'b0);
     scen = name;
     $display("\n==================== %s ====================", name);
-    $display("  power-on reset: boot_mode strap=%0b bootrom=%s", strap, faulty_rom ? "FAULTY (all illegal)" : "good");
+    $display("  power-on reset: boot_mode strap=%0b bootrom=%s", strap,
+             faulty_rom ? "FAULTY (all illegal)" :
+             $sformatf("TB rom handoff=%0b ctrl1=%0b skipv=%0b isrw=%0b joff=%0d fw=%s",
+                       handoff, ctrl1, skipv, isrw, joff, !load_fw ? "(ISRAM as is)" : tamper ? "TAMPERED" : "signed"));
     rst_ni = 1'b0;
     boot_mode = strap;
     if (faulty_rom) for (int a = 0; a < 32'h200; a += 4) fw_put(a, ILLEGAL);
-    else            fw_load();
-    u_dsram.mem[W_BD]   = 1;      // good firmware sets boot_done
+    else            rom_load();
+    if (load_fw) isram_load_fw(tamper);
+    rom_cfg(handoff, ctrl1, skipv, isrw, joff);
     u_dsram.mem[W_TPR]  = TPR_OR;
     u_dsram.mem[W_TCR]  = TCR_NONE;
     u_dsram.mem[W_MARK] = 0;
+    u_dsram.mem[W_HB]   = 0;
+    u_dsram.mem[W_MCAUSE]  = 0;
+    u_dsram.mem[W_TRAPCNT] = 0;
     repeat (10) @(posedge clk_i);
     mon_clear();
     rst_ni = 1'b1;
@@ -542,6 +674,24 @@ module secure_boot_dbg_tb;
     ok = s[9];
   endtask
 
+  // Wait (cycle-accurate, no JTAG traffic) for the boot watchdog to force
+  // recovery, then for the core to be halted.
+  task automatic wait_recovery(output bit ok, input int max_cycles = WDT_CYCLES + 1_600_000);
+    int c = 0;
+    while (u_dut.recovery !== 1'b1 && c < max_cycles) begin @(posedge clk_i); c++; end
+    obs($sformatf("recovery after %0d cycles (watchdog %0d)", c, WDT_CYCLES));
+    wait_halted(ok);
+    ok = ok && (u_dut.recovery === 1'b1);
+  endtask
+
+  // Read a SoC word through the program buffer (t3 = address, result in s1)
+  task automatic dbg_lw(logic [31:0] addr, output logic [31:0] v, output logic [2:0] e);
+    logic [2:0] e2;
+    reg_write(gpr(T3), addr, e2);
+    progbuf_run(lw(S1, T3, 0), EBREAK, e);
+    v = `GPR[S1];
+  endtask
+
   // Signed recovery image (verif/debugger/images/gen_signed_image.py): header
   // [sha_len, R, S] + code that marks DSRAM word W_MARK and heartbeats. The
   // matching TEST-ONLY public key is forced into the OTP model (a real part
@@ -554,7 +704,11 @@ module secure_boot_dbg_tb;
     $readmemh("verif/debugger/images/recovery_signed.mem", rimg);
     $readmemh("verif/debugger/images/otp_pubkey.mem", otp_key_w);
     foreach (otp_key_w[i]) otp_key[32*i +: 32] = otp_key_w[i];
+`ifdef VERILATOR
+    #2 `SB.u_otp.otp_mem = otp_key;   // (no force on always_ff variables in this simulator)
+`else
     force `SB.u_otp.otp_mem = otp_key;
+`endif
   end
 
   // Write one ISRAM word through the debugger (allowed only in recovery)
@@ -882,19 +1036,12 @@ module secure_boot_dbg_tb;
     else pass("no deferred DIFT NMI/trap leaks into firmware after resume");
 
     // -------------------------------------------------------------------------
-    // S5: same state, dift_en_i dropped to 0 before debugging
+    // S5: DIFT has no off switch -- the dift_en_i pin was removed from the
+    // SoC (anyone with the board could have tied it low); the core input is
+    // tied on inside basic_soc_top.
     // -------------------------------------------------------------------------
-    boot("S5-DIFT-OFF", TPR_OR, TCR_FULL, 4'b0100, 1'b1, ok);
-    dift_en = 1'b0;
-    repeat (20) @(posedge clk_i);
-    halt(ok);
-    check(ok, "halt with dift_en_i=0");
-    progbuf_run(addi(S1, T1, 0), EBREAK, err);
-    if (err == 3'd3)
-      finding("D12", "dift_en_i=0 does not disable DIFT enforcement: ex_tag_err path into the controller is not gated by dift_en_i, so stale GPR tags still fault debugger program-buffer code");
-    else pass($sformatf("dift_en_i=0 bypasses DIFT enforcement for progbuf (err=%0d)", err));
-    resume(ok);
-    dift_en = 1'b1;
+    scen = "S5-NO-OFF-SWITCH";
+    check(`CORE.dift_en_i === 1'b1, "core DIFT enable tied on inside the SoC (no external dift_en_i pin)");
 
     // -------------------------------------------------------------------------
     // S3: tainted s0 + full policy -> the debug ROM itself computes on s0
@@ -968,10 +1115,23 @@ module secure_boot_dbg_tb;
     heartbeat(ok);
     check(ok && u_dut.tag_mem[W_HB] === 1'b0, "firmware stores after resume are clean again");
 
-    // D-PRIV: boot phase (boot_done=0), halted core must not write SoC CSRs or ISRAM
+    // D-PRIV: boot phase (boot_done=0, bootrom spinning), halted core must not
+    // write SoC CSRs or ISRAM
     boot("D-PRIV", TPR_OR, TCR_NONE, 4'b0000, 1'b1, ok, 1'b0);
     halt(ok);
     check(ok, "halt during boot phase (boot_done=0)");
+    // The BootROM stays executable for the debugger during a normal boot
+    reg_read(CSR_DPC, dpc0, err);
+    reg_read(CSR_DCSR, dcsr, err);
+    reg_write(CSR_DCSR, dcsr | 32'h4, err);   // step=1
+    resume(ok);
+    npoll = 0;
+    do begin dmstatus(r); npoll++; end while (!r[9] && npoll < 60);
+    reg_read(CSR_DPC, dpc1, err);
+    reg_read(CSR_DCSR, dcsr, err);
+    check(r[9] && dpc0 inside {[ROM_LOOP0:ROM_LOOP2]} && dpc1 == ((dpc0 == ROM_LOOP2) ? ROM_LOOP0 : dpc0 + 4),
+          $sformatf("single-step inside the bootrom during boot: %08h -> %08h (BootROM executable in boot phase)", dpc0, dpc1));
+    reg_write(CSR_DCSR, dcsr & ~32'h4, err);
     reg_write(gpr(T3), CTRL_BASE, err);
     reg_write(gpr(S1), 32'h1, err);
     progbuf_run(sw(S1, T3, 32'h0), EBREAK, err);          // CTRL0.isram_lock
@@ -980,6 +1140,8 @@ module secure_boot_dbg_tb;
     progbuf_run(sw(S1, T3, 32'hC), EBREAK, err);          // CTRL1.boot_done_set
     check(err == 3'd3 && u_dut.boot_done == 1'b0,
           $sformatf("debugger write to CTRL1 (boot_done) denied (err=%0d boot_done=%0b)", err, u_dut.boot_done));
+    reg_write(CSR_TCR, 32'h0, err);
+    check(err == 3'd3, $sformatf("debugger write of TCR denied in boot phase (err=%0d)", err));
     reg_write(gpr(S1), 32'hFFFF_FFFF, err);
     progbuf_run(lw(S1, T3, 32'h8), EBREAK, err);          // BOOT_STATUS read
     check(err == 0 && `GPR[S1] == 32'h0,
@@ -1031,6 +1193,25 @@ module secure_boot_dbg_tb;
     check(mon_exc_run == 0, $sformatf("no bootrom instruction executed (exceptions=%0d)", mon_exc_run));
     reg_read(CSR_DPC, r, err);
     check(err == 0 && r == 32'h80, $sformatf("halted at the reset vector before executing it (dpc=%08h)", r));
+    check(mon_rom_fetch == 0, $sformatf("no BootROM fetch reached the ROM in recovery (%0d)", mon_rom_fetch));
+
+    // TCR/TPR cannot be configured by the recovery debugger
+    reg_write(CSR_TCR, 32'hFFFF_FFFF, err);
+    check(err == 3'd3 && `CSRS.tcr_q == 32'h0, $sformatf("recovery: abstract write TCR rejected (err=%0d tcr=%08h)", err, `CSRS.tcr_q));
+    reg_write(gpr(S1), 32'hFFFF_FFFF, err);
+    progbuf_run(csrw(CSR_TPR, S1), EBREAK, err);
+    check(err == 3'd3 && `CSRS.tpr_q == 32'h0, $sformatf("recovery: progbuf csrw TPR rejected (err=%0d tpr=%08h)", err, `CSRS.tpr_q));
+
+    // The BootROM is not executable in recovery (no gadgets): resuming into it
+    // faults; no fetch reaches the ROM; the core stays haltable.
+    mon_clear();
+    resume(ok);
+    repeat (500) @(posedge clk_i);
+    check(mon_exc_run != 0 && mon_rom_fetch == 0 && u_dut.boot_done === 1'b0,
+          $sformatf("recovery: resume into the BootROM faults, nothing fetched from the ROM (exceptions=%0d rom fetches=%0d)",
+                    mon_exc_run, mon_rom_fetch));
+    halt(ok);
+    check(ok, "core haltable after the refused BootROM fetches");
 
     load_image(npoll);
     check(npoll == 0 && image_in_isram(), $sformatf("debugger loaded recovery image into ISRAM (failed words=%0d)", npoll));
@@ -1038,8 +1219,8 @@ module secure_boot_dbg_tb;
     progbuf_run(sw(S1, T3, 32'hC), EBREAK, err);
     check(err == 3'd3 && u_dut.boot_done == 1'b0, "CSR writes stay blocked in recovery");
     progbuf_run(lw(S1, T3, 32'h4), EBREAK, err);           // STATUS0
-    check(err == 0 && `GPR[S1][3:2] == 2'b01,
-          $sformatf("STATUS0 recovery_mode=1 recovery_wdt=0 (STATUS0=%08h)", `GPR[S1]));
+    check(err == 0 && `GPR[S1][3:1] == 3'b010,
+          $sformatf("STATUS0 recovery_mode=1 recovery_wdt=0 isram_locked=0 (STATUS0=%08h)", `GPR[S1]));
 
     // Unverified image must not run
     reg_write(CSR_DPC, ENTRY, err);
@@ -1057,6 +1238,12 @@ module secure_boot_dbg_tb;
     sb_verify(r, err);
     check(err == 0 && r[1] && !r[2] && !r[3] && !r[4],
           $sformatf("TAMPERED image: signature rejected (VERIFY_STATUS=%05b)", r[4:0]));
+    // ISRAM locked once a verification was started
+    isram_poke(20, 32'h0BAD_C0DE, err);
+    check(err == 3'd3 && u_isram.mem[ISRAM_IDX0 + 20] == (rimg[20] ^ 32'h1),
+          $sformatf("ISRAM write after VERIFY start refused, image unchanged (err=%0d)", err));
+    dbg_lw(CTRL_BASE + 4, r2, err);
+    check(r2[1], $sformatf("STATUS0.isram_locked=1 after VERIFY start (STATUS0=%08h)", r2));
     reg_write(CSR_DPC, ENTRY, err);
     mon_clear();
     resume(ok);
@@ -1080,6 +1267,8 @@ module secure_boot_dbg_tb;
     reg_read(CSR_DPC, r, err);
     check(ok && r == 32'h80 && mon_exc_run == 0,
           $sformatf("ndmreset in recovery -> halted at reset vector again (dpc=%08h exc=%0d)", r, mon_exc_run));
+    check(u_dut.recovery === 1'b1 && u_dut.isram_lock === 1'b0 && u_dut.boot_done === 1'b0,
+          "ndmreset keeps recovery, clears the ISRAM lock (retry possible)");
 
     // Restore the signed copy: verifies
     isram_poke(20, rimg[20], err);
@@ -1099,21 +1288,52 @@ module secure_boot_dbg_tb;
     mon_clear();
     resume(ok);
     repeat (2000) @(posedge clk_i);
-    check(u_dsram.mem[W_MARK] != MARK_OK && mon_exc_run != 0,
-          "image header (outside the verified code range) does not execute");
+    check(u_dsram.mem[W_MARK] != MARK_OK && mon_exc_run != 0 && u_dut.boot_done === 1'b0,
+          "image header (outside the verified code range) does not execute, no boot_done");
     halt(ok);
 
-    // Verified image runs from its entry point
+    // Single entry: a verified image cannot be entered anywhere but ENTRY
+    reg_write(CSR_DPC, ENTRY + 4, err);
+    mon_clear();
+    resume(ok);
+    repeat (2000) @(posedge clk_i);
+    check(u_dsram.mem[W_MARK] != MARK_OK && mon_exc_run != 0 && u_dut.boot_done === 1'b0 &&
+          `SB.verified_q === 1'b1,
+          $sformatf("resume at ENTRY+4 refused although verified (exceptions=%0d boot_done=%0b)", mon_exc_run, u_dut.boot_done));
+    halt(ok);
+    check(ok, "core haltable after the refused mid-image entry");
+
+    // Verified image runs from its entry point: the resume is the handoff
     reg_write(CSR_DPC, ENTRY, err);
+    mon_clear();
     resume(ok);
     heartbeat(ok);
     check(ok && u_dsram.mem[W_MARK] == MARK_OK,
           $sformatf("VERIFIED recovery image runs from ISRAM entry (mark=%08h)", u_dsram.mem[W_MARK]));
+    check(u_dut.boot_done === 1'b1 && mon_bd_rise == 1 && !mon_bd_early,
+          "recovery: HARDWARE set boot_done at the resume fetch at ENTRY (no software involved)");
+    check(u_dut.recovery === 1'b1, "recovery flag stays set until power-on reset");
+
+    // After the handoff the debugger loses the recovery rights
+    halt(ok);
+    isram_poke(21, 32'h0BAD_C0DE, err);
+    check(err == 3'd3 && u_isram.mem[ISRAM_IDX0 + 21] == rimg[21],
+          $sformatf("after handoff: debugger ISRAM write refused (err=%0d)", err));
+    reg_write(gpr(T3), SB_BASE, err);
+    reg_write(gpr(S1), 32'h1, err);
+    progbuf_run(sw(S1, T3, 0), EBREAK, err);
+    check(err == 3'd3, $sformatf("after handoff: debugger VERIFY write refused (err=%0d)", err));
+    reg_write(gpr(T3), CTRL_BASE, err);
+    progbuf_run(sw(S1, T3, 0), EBREAK, err);
+    check(err == 3'd3, $sformatf("after handoff: debugger CTRL write refused (err=%0d)", err));
+    resume(ok);
+    heartbeat(ok);
+    check(ok, "recovered firmware keeps running after the debug session");
 
     // R-WDT: faulty bootrom, no strap -> watchdog forces recovery
     por("R-WDT", 1'b0, 1'b1);
     check(u_dut.recovery === 1'b0, "no recovery right after POR without strap");
-    wait_halted(ok, 120);
+    wait_recovery(ok);
     check(ok && u_dut.recovery === 1'b1 && mon_exc_run != 0,
           $sformatf("boot watchdog -> recovery + halt after faulty bootrom ran (allhalted=%0b exceptions=%0d)", ok, mon_exc_run));
     check(image_in_isram(), "ISRAM image survived power-on reset (model)");
@@ -1125,41 +1345,113 @@ module secure_boot_dbg_tb;
     sb_verify(r, err);
     check(r[3], $sformatf("signed image verified after watchdog recovery (VERIFY_STATUS=%05b)", r[4:0]));
 
-    // Swap-after-verify: any ISRAM write (even of the same value) kills the verdict
-    isram_poke(20, rimg[20], err);
+    // Swap-after-verify is now blocked by the lock: the write never lands,
+    // the verdict stands
+    isram_poke(20, 32'h0BAD_C0DE, err);
     reg_write(gpr(T3), SB_BASE, err);
-    progbuf_run(lw(S1, T3, 32'h4), EBREAK, err);
-    check(!`GPR[S1][3], $sformatf("ISRAM write after verification clears 'verified' (VERIFY_STATUS=%05b)", `GPR[S1][4:0]));
-    u_dsram.mem[W_MARK] = 0;
-    reg_write(CSR_DPC, ENTRY, err);
-    mon_clear();
-    resume(ok);
-    repeat (2000) @(posedge clk_i);
-    check(u_dsram.mem[W_MARK] != MARK_OK && mon_exc_run != 0, "image modified after verification does not execute");
-    halt(ok);
+    progbuf_run(lw(S1, T3, 32'h4), EBREAK, r2);
+    check(err == 3'd3 && image_in_isram() && `GPR[S1][3],
+          $sformatf("swap-after-verify refused by the ISRAM lock, verdict stands (err=%0d VERIFY_STATUS=%05b)", err, `GPR[S1][4:0]));
 
-    // Reset + re-verify -> runs
+    // Reset + re-verify -> runs (retry path: ndmreset clears the lock and
+    // boot_done, keeps ISRAM and recovery)
     dm_w(DMControl, 32'h0000_0003);
     dm_w(DMControl, 32'h1000_0001);
     wait_halted(ok);
+    check(ok && u_dut.recovery === 1'b1 && u_dut.isram_lock === 1'b0 && u_dut.boot_done === 1'b0 && image_in_isram(),
+          "ndmreset: halted again, recovery kept, lock + boot_done cleared, ISRAM kept");
+    isram_poke(20, rimg[20], err);
+    check(err == 0, "ISRAM writable again for the retry");
+    u_dsram.mem[W_MARK] = 0;
     sb_verify(r, err);
     reg_write(CSR_DPC, ENTRY, err);
+    mon_clear();
     resume(ok);
     heartbeat(ok);
-    check(r[3] && ok && u_dsram.mem[W_MARK] == MARK_OK, "re-verified image runs after reset");
+    check(r[3] && ok && u_dsram.mem[W_MARK] == MARK_OK && u_dut.boot_done === 1'b1,
+          "re-verified image runs after reset, hardware boot_done");
 
     // R-NORMAL: good bootrom, no strap -> never enters recovery
-    por("R-NORMAL", 1'b0, 1'b0);
-    heartbeat(ok);
+    por("R-NORMAL", 1'b0, 1'b0, 1'b1);
+    heartbeat(ok, 3, 1_500_000);
     repeat (WDT_CYCLES + 1000) @(posedge clk_i);
     check(ok && u_dut.boot_done === 1'b1 && u_dut.recovery === 1'b0 && !`CTRL.debug_mode_q,
-          "good bootrom: boot_done set, no recovery, hart running");
+          "good bootrom: secure boot, hardware boot_done, no recovery, hart running");
+    check(mon_bd_rise == 1 && !mon_bd_early && mon_rom_fetch == 0,
+          $sformatf("boot_done rose once, at the ENTRY fetch; no BootROM fetch after it (%0d)", mon_rom_fetch));
     halt(ok);
     reg_write(gpr(T3), CTRL_BASE, err);
     progbuf_run(lw(S1, T3, 32'h4), EBREAK, err);           // STATUS0 (debug read allowed post-boot)
-    check(err == 0 && `GPR[S1][3:2] == 2'b00,
-          $sformatf("STATUS0 recovery bits clear on normal boot (STATUS0=%08h)", `GPR[S1]));
+    check(err == 0 && `GPR[S1][3:1] == 3'b001,
+          $sformatf("STATUS0 recovery bits clear, ISRAM locked on normal boot (STATUS0=%08h)", `GPR[S1]));
+    progbuf_run(lw(S1, T3, 32'h8), EBREAK, err);           // BOOT_STATUS
+    check(err == 0 && `GPR[S1] == 32'h1, $sformatf("BOOT_STATUS reads the hardware boot_done (%08h)", `GPR[S1]));
+
+    // After the handoff the BootROM is not executable, even via the debugger
+    reg_write(CSR_DPC, 32'h80, err);
+    mon_clear();
     resume(ok);
+    repeat (500) @(posedge clk_i);
+    check(u_dsram.mem[W_TRAPCNT] == 1 && u_dsram.mem[W_MCAUSE] == 32'h1 && mon_rom_fetch == 0,
+          $sformatf("resume into the BootROM after boot -> instruction access fault in the firmware's handler (mcause=%0d traps=%0d rom fetches=%0d)",
+                    u_dsram.mem[W_MCAUSE], u_dsram.mem[W_TRAPCNT], mon_rom_fetch));
+    halt(ok);
+
+    // ndmreset after boot: boot_done back to 0, the full boot runs again
+    dm_w(DMControl, 32'h0000_0003);
+    repeat (5) @(posedge clk_i);
+    check(u_dut.boot_done === 1'b0 && u_dut.isram_lock === 1'b0, "ndmreset clears boot_done and the ISRAM lock");
+    u_dsram.mem[W_HB] = 0;
+    u_dsram.mem[W_TRAPCNT] = 0;
+    mon_clear();
+    dm_w(DMControl, 32'h1000_0001);
+    heartbeat(ok, 3, 1_500_000);
+    check(ok && u_dut.boot_done === 1'b1 && mon_bd_rise == 1 && !mon_bd_early && u_dut.recovery === 1'b0,
+          "after ndmreset the bootrom verifies and hands over again (hardware boot_done)");
+
+    // =========================================================================
+    // PART F -- hardware boot handoff vs. a buggy bootrom (strap = 0)
+    // =========================================================================
+
+    // F-CTRL1: the old boot_done_set write is ignored; the bootrom hangs.
+    // Before: boot_done=1 stopped the watchdog -> stuck forever. Now: recovery.
+    por("F-CTRL1", 1'b0, 1'b0, 1'b1, 1'b0, 1'b1);
+    heartbeat(ok, 3, 20000);
+    check(ok && u_dut.boot_done === 1'b0,
+          $sformatf("bootrom wrote CTRL1 (boot_done_set): ignored, boot_done=%0b", u_dut.boot_done));
+    wait_recovery(ok);
+    check(ok && u_dut.recovery_by_wdt === 1'b1 && mon_bd_rise == 0,
+          "hanging bootrom -> boot watchdog -> recovery, core halted (the L1 brick is gone)");
+    check(mon_nmi == 0, $sformatf("clean halt when the watchdog cuts the running bootrom (exceptions before halt=%0d)", mon_exc_run));
+    obs($sformatf("F-CTRL1: refused BootROM fetches between recovery and halt -> %0d exception(s)", mon_exc_run));
+
+    // F-SKIPV: bootrom jumps to ENTRY without verifying
+    por("F-SKIPV", 1'b0, 1'b0, 1'b1, 1'b1, 1'b0, 1'b1);
+    wait_recovery(ok);
+    check(ok && mon_bd_rise == 0 && mon_entry_fetch == 0 && u_dsram.mem[W_MCAUSE] == 32'h1,
+          $sformatf("unverified jump to ENTRY refused (mcause=%0d), no boot_done, watchdog -> recovery",
+                    u_dsram.mem[W_MCAUSE]));
+
+    // F-JOFF: verified, but the bootrom jumps to ENTRY+8
+    por("F-JOFF", 1'b0, 1'b0, 1'b1, 1'b1, 1'b0, 1'b0, 1'b0, 8);
+    wait_recovery(ok);
+    check(ok && `SB.verified_q === 1'b1 && mon_bd_rise == 0 && u_dsram.mem[W_MCAUSE] == 32'h1,
+          $sformatf("verified image entered at ENTRY+8 refused (single entry), no boot_done, watchdog -> recovery (verified=%0b)",
+                    `SB.verified_q));
+
+    // F-ISRW: bootrom writes ISRAM after VERIFY start
+    por("F-ISRW", 1'b0, 1'b0, 1'b1, 1'b1, 1'b0, 1'b0, 1'b1);
+    heartbeat(ok, 3, 1_500_000);
+    check(u_dsram.mem[W_MCAUSE] == 32'h7 && u_dsram.mem[W_TRAPCNT] == 1 && u_isram.mem[ISRAM_IDX0] == fimg[0],
+          $sformatf("ISRAM write after VERIFY start -> store access fault, image intact (mcause=%0d)", u_dsram.mem[W_MCAUSE]));
+    check(ok && u_dut.boot_done === 1'b1 && u_dut.recovery === 1'b0,
+          "verification unaffected, firmware boots (hardware boot_done)");
+
+    // F-TAMPER: good bootrom, tampered image
+    por("F-TAMPER", 1'b0, 1'b0, 1'b1, 1'b1, 1'b0, 1'b0, 1'b0, 0, 1'b1);
+    wait_recovery(ok);
+    check(ok && u_dsram.mem[W_MARK] == ROM_FAIL && mon_bd_rise == 0 && mon_entry_fetch == 0 && u_dut.recovery_by_wdt === 1'b1,
+          "tampered image rejected by the hardware, bootrom never hands over, watchdog -> recovery");
 
     // =========================================================================
     // Summary
@@ -1167,7 +1459,7 @@ module secure_boot_dbg_tb;
     $display("\n=====================================================================");
     $display(" checks=%0d  FAIL=%0d  DIFT-FINDINGS=%0d", checks, errors, findings);
     foreach (finding_log[i]) $display("  - %s", finding_log[i]);
-    if (errors == 0) $display(" [secure_boot_dbg_tb] TEST PASSED -- debug spec + DIFT + JTAG recovery + hardware Ed25519 secure boot%s",
+    if (errors == 0) $display(" [secure_boot_dbg_tb] TEST PASSED -- debug spec + DIFT + JTAG recovery + hardware Ed25519 secure boot + hardware boot handoff%s",
                               findings ? " -- review DIFT findings above" : "");
     else             $display(" [secure_boot_dbg_tb] TEST FAILED -- %0d functional error(s)", errors);
     $display("=====================================================================");
@@ -1175,7 +1467,7 @@ module secure_boot_dbg_tb;
   end
 
   initial begin
-    #120ms;   // each Ed25519 verification is ~4 ms at CRYPTO_CLK_DIV=2
+    #400ms;   // each Ed25519 verification is ~4 ms at CRYPTO_CLK_DIV=2
     $display("[FAIL] Global watchdog timeout in scenario %s", scen);
     $finish;
   end

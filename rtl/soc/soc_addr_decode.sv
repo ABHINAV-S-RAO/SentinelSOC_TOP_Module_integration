@@ -38,6 +38,13 @@
 // range), add a BASE/MASK parameter pair and OR its hit condition into
 // priv_hit — no other change needed.
 //
+// BootROM execution (BOOTROM_XGATE=1, secure-boot SoCs): instruction fetches
+// from the BootROM are served only while boot_done_i=0 and recovery_i=0, i.e.
+// during a normal boot. After the handoff, and in recovery (debug mode
+// included -- the debugger runs from the Debug Module's own ROM and never
+// needs the BootROM), a BootROM fetch gets an error response: no bootrom
+// code can be re-used as gadgets. Data reads are unaffected (see data decode).
+//
 // NOTE ISRAM_write lock (ctrl_isram_lock_i) is a SEPARATE, orthogonal
 // mechanism: it gates *firmware writes into ISRAM* (bootloader sets it
 // once done copying firmware in). It is unrelated to the CSR privilege
@@ -87,7 +94,9 @@ module soc_addr_decode #(
   parameter bit          SHA_IMPL      = 1'b0,
   // 1 = PLIC / CLINT windows routed to their ports; 0 = error response
   parameter bit          PLIC_IMPL     = 1'b0,
-  parameter bit          CLINT_IMPL    = 1'b0
+  parameter bit          CLINT_IMPL    = 1'b0,
+  // 1 = BootROM executable only during a normal boot (see header); 0 = always
+  parameter bit          BOOTROM_XGATE = 1'b0
 ) (
   input  logic clk_i,
   input  logic rst_ni,
@@ -493,10 +502,22 @@ module soc_addr_decode #(
   // same scheme as the ISRAM / DBG arbiters.
   // --------------------------------------------------------------------------
   logic bootrom_data_active, bootrom_resp_is_data_q;
+  logic bootrom_fetch_ok, bootrom_fetch_blocked_q;
+
+  // BootROM execute gate (header): normal boot only.
+  assign bootrom_fetch_ok = !BOOTROM_XGATE || (!boot_done_i && !recovery_i);
 
   always_ff @(posedge clk_i or negedge rst_ni) begin
     if (!rst_ni)                                bootrom_resp_is_data_q <= 1'b0;
     else if (bootrom_req_o && bootrom_gnt_i)    bootrom_resp_is_data_q <= bootrom_data_active;
+  end
+
+  // A refused fetch never reaches the ROM; it is answered with an error one
+  // cycle after its grant (same scheme as the ISRAM fetch gate).
+  always_ff @(posedge clk_i or negedge rst_ni) begin
+    if (!rst_ni) bootrom_fetch_blocked_q <= 1'b0;
+    else         bootrom_fetch_blocked_q <= fetch_mgr_req[FSEL_BOOTROM].req &
+                                            ~bootrom_data_active & ~bootrom_fetch_ok;
   end
 
   always_comb begin
@@ -509,12 +530,13 @@ module soc_addr_decode #(
       bootrom_req_o  = 1'b1;
       bootrom_addr_o = data_mgr_req[SEL_BOOTROM].a.addr;
     end else begin
-      bootrom_req_o  = fetch_mgr_req[FSEL_BOOTROM].req;
+      bootrom_req_o  = fetch_mgr_req[FSEL_BOOTROM].req & bootrom_fetch_ok;
       bootrom_addr_o = fetch_mgr_req[FSEL_BOOTROM].a.addr;
     end
 
     fetch_mgr_rsp[FSEL_BOOTROM]     = '0;
-    fetch_mgr_rsp[FSEL_BOOTROM].gnt = bootrom_gnt_i & ~bootrom_data_active;
+    fetch_mgr_rsp[FSEL_BOOTROM].gnt = bootrom_fetch_ok ? (bootrom_gnt_i & ~bootrom_data_active)
+                                                       : (fetch_mgr_req[FSEL_BOOTROM].req & ~bootrom_data_active);
     data_mgr_rsp[SEL_BOOTROM]       = '0;
     data_mgr_rsp[SEL_BOOTROM].gnt   = bootrom_gnt_i &  bootrom_data_active;
 
@@ -526,6 +548,12 @@ module soc_addr_decode #(
       fetch_mgr_rsp[FSEL_BOOTROM].rvalid  = bootrom_rvalid_i;
       fetch_mgr_rsp[FSEL_BOOTROM].r.rdata = bootrom_rdata_i;
       fetch_mgr_rsp[FSEL_BOOTROM].r.err   = bootrom_err_i;
+    end
+
+    if (bootrom_fetch_blocked_q) begin
+      fetch_mgr_rsp[FSEL_BOOTROM].rvalid  = 1'b1;
+      fetch_mgr_rsp[FSEL_BOOTROM].r.rdata = 32'hDEAD_BEEF;
+      fetch_mgr_rsp[FSEL_BOOTROM].r.err   = 1'b1;
     end
   end
 

@@ -11,7 +11,7 @@ Vtb_secure_boot__Syms::Vtb_secure_boot__Syms(VerilatedContext* contextp, const c
     , TOP{this, namep}
 {
     // Check resources
-    Verilated::stackCheck(4544);
+    Verilated::stackCheck(4616);
     // Setup sub module instances
     TOP__sha512_pkg.ctor(this, "sha512_pkg");
     // Configure time unit / time precision

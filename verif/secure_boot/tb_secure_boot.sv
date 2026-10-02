@@ -23,6 +23,7 @@ module tb_secure_boot;
   logic [31:0] addr, wdata, rdata;
   logic        rvalid, fok, verified;
   logic [31:0] faddr = '0;
+  logic        facc = 1'b0, entered, started;
   int          fails = 0;
 
   assign vgnt = vreq;                              // ISRAM model: gnt=req, rvalid next cycle
@@ -36,7 +37,8 @@ module tb_secure_boot;
     .req_i(req), .we_i(we), .be_i(4'hF), .addr_i(addr), .wdata_i(wdata),
     .gnt_o(), .rvalid_o(rvalid), .rdata_o(rdata), .err_o(),
     .ver_req_o(vreq), .ver_addr_o(vaddr), .ver_gnt_i(vgnt), .ver_rvalid_i(vrv), .ver_rdata_i(vrdata),
-    .isram_write_i(1'b0), .fetch_addr_i(faddr), .fetch_ok_o(fok), .verified_o(verified));
+    .isram_write_i(1'b0), .fetch_addr_i(faddr), .fetch_accept_i(facc), .fetch_ok_o(fok),
+    .verified_o(verified), .fw_entered_o(entered), .verify_started_o(started));
 
   logic [31:0]  pk [8];
   logic [255:0] otp_key;
@@ -58,12 +60,25 @@ module tb_secure_boot;
     dut.u_otp.otp_mem = otp_key;                   // TEST-ONLY key "fused"
     reg_wr(32'h0, 32'h1);                          // VERIFY_CTRL.start
     do begin reg_rd(32'h4, st); n++; end while (!st[1] && n < 1_000_000);
+    if (started !== 1'b1) begin fails++; $display("  FAIL verify_started=%b after start", started); end
+    // Before the handoff: single entry -- only ENTRY may be fetched
+    if (entered !== 1'b0) begin fails++; $display("  FAIL fw_entered=%b before any fetch", entered); end
     faddr = 32'h1_0044; #1; if (fok !== expect_ok) begin fails++; $display("  FAIL fetch_ok(entry)=%b", fok); end
+    faddr = 32'h1_0048; #1; if (fok !== 1'b0)      begin fails++; $display("  FAIL fetch_ok(entry+4, before handoff)=%b", fok); end
     faddr = 32'h1_0040; #1; if (fok !== 1'b0)      begin fails++; $display("  FAIL fetch_ok(header)=%b", fok); end
+    // A fetch handshake somewhere else never hands over
+    @(negedge clk); faddr = 32'h1_0048; facc = 1; @(negedge clk); facc = 0;
+    if (entered !== 1'b0) begin fails++; $display("  FAIL fw_entered after a fetch at entry+4"); end
+    // Fetch handshake at ENTRY: hands over only if verified
+    @(negedge clk); faddr = 32'h1_0044; facc = 1; @(negedge clk); facc = 0;
+    if (entered !== expect_ok) begin fails++; $display("  FAIL fw_entered=%b after fetch at entry", entered); end
+    faddr = 32'h1_0048; #1; if (fok !== expect_ok) begin fails++; $display("  FAIL fetch_ok(entry+4, after handoff)=%b", fok); end
+    faddr = 32'h1_0060; #1; if (fok !== expect_ok) begin fails++; $display("  FAIL fetch_ok(last code word)=%b", fok); end
     faddr = 32'h1_0064; #1; if (fok !== 1'b0)      begin fails++; $display("  FAIL fetch_ok(past end)=%b", fok); end
+    faddr = 32'h1_0040; #1; if (fok !== 1'b0)      begin fails++; $display("  FAIL fetch_ok(header, after handoff)=%b", fok); end
     if (st[3] !== expect_ok || st[2] !== expect_ok || st[4]) begin fails++; $display("  FAIL status"); end
-    $display("%-16s err=%b verified=%b valid=%b done=%b busy=%b  fetch-gate checks ok  (%0d polls)",
-             name, st[4], st[3], st[2], st[1], st[0], n);
+    $display("%-16s err=%b verified=%b valid=%b done=%b busy=%b entered=%b started=%b (%0d polls)",
+             name, st[4], st[3], st[2], st[1], st[0], entered, started, n);
   endtask
 
   initial begin

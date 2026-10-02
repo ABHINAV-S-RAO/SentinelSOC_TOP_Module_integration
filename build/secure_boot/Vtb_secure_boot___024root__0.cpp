@@ -117,7 +117,7 @@ VlCoroutine Vtb_secure_boot___024root___eval_initial__TOP__Vtiming__0(Vtb_secure
     __Vtask_tb_secure_boot__DOT__run__0__n = 0U;
     co_await vlSelfRef.__VdlySched.delay(0x00000000000003e8ULL, 
                                          nullptr, "verif/secure_boot/tb_secure_boot.sv", 
-                                         57);
+                                         59);
     vlSelfRef.tb_secure_boot__DOT__rst_n = 0U;
     __Vtask_tb_secure_boot__DOT__run__0__tb_secure_boot__DOT__unnamedblk1_1__DOT____Vrepeat0 = 5U;
     while (VL_LTS_III(32, 0U, __Vtask_tb_secure_boot__DOT__run__0__tb_secure_boot__DOT__unnamedblk1_1__DOT____Vrepeat0)) {
@@ -127,7 +127,7 @@ VlCoroutine Vtb_secure_boot___024root___eval_initial__TOP__Vtiming__0(Vtb_secure
                                                              nullptr, 
                                                              "@(posedge tb_secure_boot.clk)", 
                                                              "verif/secure_boot/tb_secure_boot.sv", 
-                                                             57);
+                                                             59);
         __Vtask_tb_secure_boot__DOT__run__0__tb_secure_boot__DOT__unnamedblk1_1__DOT____Vrepeat0 
             = (__Vtask_tb_secure_boot__DOT__run__0__tb_secure_boot__DOT__unnamedblk1_1__DOT____Vrepeat0 
                - (IData)(1U));
@@ -141,7 +141,7 @@ VlCoroutine Vtb_secure_boot___024root___eval_initial__TOP__Vtiming__0(Vtb_secure
                                                              nullptr, 
                                                              "@(posedge tb_secure_boot.clk)", 
                                                              "verif/secure_boot/tb_secure_boot.sv", 
-                                                             57);
+                                                             59);
         __Vtask_tb_secure_boot__DOT__run__0__tb_secure_boot__DOT__unnamedblk1_2__DOT____Vrepeat1 
             = (__Vtask_tb_secure_boot__DOT__run__0__tb_secure_boot__DOT__unnamedblk1_2__DOT____Vrepeat1 
                - (IData)(1U));
@@ -170,7 +170,7 @@ VlCoroutine Vtb_secure_boot___024root___eval_initial__TOP__Vtiming__0(Vtb_secure
                                                          nullptr, 
                                                          "@(negedge tb_secure_boot.clk)", 
                                                          "verif/secure_boot/tb_secure_boot.sv", 
-                                                         45);
+                                                         47);
     vlSelfRef.tb_secure_boot__DOT__req = 1U;
     vlSelfRef.tb_secure_boot__DOT__we = 1U;
     vlSelfRef.tb_secure_boot__DOT__addr = __Vtask_tb_secure_boot__DOT__reg_wr__1__a;
@@ -181,7 +181,7 @@ VlCoroutine Vtb_secure_boot___024root___eval_initial__TOP__Vtiming__0(Vtb_secure
                                                          nullptr, 
                                                          "@(negedge tb_secure_boot.clk)", 
                                                          "verif/secure_boot/tb_secure_boot.sv", 
-                                                         46);
+                                                         48);
     vlSelfRef.tb_secure_boot__DOT__req = 0U;
     vlSelfRef.tb_secure_boot__DOT__we = 0U;
     do {
@@ -193,7 +193,7 @@ VlCoroutine Vtb_secure_boot___024root___eval_initial__TOP__Vtiming__0(Vtb_secure
                                                              nullptr, 
                                                              "@(negedge tb_secure_boot.clk)", 
                                                              "verif/secure_boot/tb_secure_boot.sv", 
-                                                             49);
+                                                             51);
         vlSelfRef.tb_secure_boot__DOT__req = 1U;
         vlSelfRef.tb_secure_boot__DOT__we = 0U;
         vlSelfRef.tb_secure_boot__DOT__addr = __Vtask_tb_secure_boot__DOT__reg_rd__2__a;
@@ -203,7 +203,7 @@ VlCoroutine Vtb_secure_boot___024root___eval_initial__TOP__Vtiming__0(Vtb_secure
                                                              nullptr, 
                                                              "@(negedge tb_secure_boot.clk)", 
                                                              "verif/secure_boot/tb_secure_boot.sv", 
-                                                             50);
+                                                             52);
         vlSelfRef.tb_secure_boot__DOT__req = 0U;
         __Vtask_tb_secure_boot__DOT__reg_rd__2__d = vlSelfRef.tb_secure_boot__DOT__rdata;
         __Vtask_tb_secure_boot__DOT__run__0__st = __Vtask_tb_secure_boot__DOT__reg_rd__2__d;
@@ -212,9 +212,22 @@ VlCoroutine Vtb_secure_boot___024root___eval_initial__TOP__Vtiming__0(Vtb_secure
     } while (((~ (__Vtask_tb_secure_boot__DOT__run__0__st 
                   >> 1U)) & VL_GTS_III(32, 0x000f4240U, __Vtask_tb_secure_boot__DOT__run__0__n)));
     vlSelfRef.tb_secure_boot__DOT__faddr = 0x00010044U;
+    if (VL_UNLIKELY(((1U & (~ (IData)(vlSelfRef.tb_secure_boot__DOT__dut__DOT__started_q)))))) {
+        vlSelfRef.tb_secure_boot__DOT__fails = ((IData)(1U) 
+                                                + vlSelfRef.tb_secure_boot__DOT__fails);
+        VL_WRITEF_NX("  FAIL verify_started=%b after start\n",1
+                     , '#',1,vlSelfRef.tb_secure_boot__DOT__dut__DOT__started_q);
+    }
+    if (VL_UNLIKELY((vlSelfRef.tb_secure_boot__DOT__dut__DOT__entered_q))) {
+        vlSelfRef.tb_secure_boot__DOT__fails = ((IData)(1U) 
+                                                + vlSelfRef.tb_secure_boot__DOT__fails);
+        VL_WRITEF_NX("  FAIL fw_entered=%b before any fetch\n",1
+                     , '#',1,vlSelfRef.tb_secure_boot__DOT__dut__DOT__entered_q);
+    }
     co_await vlSelfRef.__VdlySched.delay(0x00000000000003e8ULL, 
                                          nullptr, "verif/secure_boot/tb_secure_boot.sv", 
-                                         61);
+                                         66);
+    vlSelfRef.tb_secure_boot__DOT__faddr = 0x00010048U;
     if (VL_UNLIKELY((((IData)(vlSelfRef.tb_secure_boot__DOT__fok) 
                       != (IData)(__Vtask_tb_secure_boot__DOT__run__0__expect_ok))))) {
         vlSelfRef.tb_secure_boot__DOT__fails = ((IData)(1U) 
@@ -222,24 +235,111 @@ VlCoroutine Vtb_secure_boot___024root___eval_initial__TOP__Vtiming__0(Vtb_secure
         VL_WRITEF_NX("  FAIL fetch_ok(entry)=%b\n",1
                      , '#',1,vlSelfRef.tb_secure_boot__DOT__fok);
     }
-    vlSelfRef.tb_secure_boot__DOT__faddr = 0x00010040U;
     co_await vlSelfRef.__VdlySched.delay(0x00000000000003e8ULL, 
                                          nullptr, "verif/secure_boot/tb_secure_boot.sv", 
-                                         62);
-    vlSelfRef.tb_secure_boot__DOT__faddr = 0x00010064U;
+                                         67);
+    vlSelfRef.tb_secure_boot__DOT__faddr = 0x00010040U;
+    if (VL_UNLIKELY((vlSelfRef.tb_secure_boot__DOT__fok))) {
+        vlSelfRef.tb_secure_boot__DOT__fails = ((IData)(1U) 
+                                                + vlSelfRef.tb_secure_boot__DOT__fails);
+        VL_WRITEF_NX("  FAIL fetch_ok(entry+4, before handoff)=%b\n",1
+                     , '#',1,vlSelfRef.tb_secure_boot__DOT__fok);
+    }
+    co_await vlSelfRef.__VdlySched.delay(0x00000000000003e8ULL, 
+                                         nullptr, "verif/secure_boot/tb_secure_boot.sv", 
+                                         68);
     if (VL_UNLIKELY((vlSelfRef.tb_secure_boot__DOT__fok))) {
         vlSelfRef.tb_secure_boot__DOT__fails = ((IData)(1U) 
                                                 + vlSelfRef.tb_secure_boot__DOT__fails);
         VL_WRITEF_NX("  FAIL fetch_ok(header)=%b\n",1
                      , '#',1,vlSelfRef.tb_secure_boot__DOT__fok);
     }
+    Vtb_secure_boot___024root____VbeforeTrig_hedba20e2__0(vlSelf, 
+                                                          "@(negedge tb_secure_boot.clk)");
+    co_await vlSelfRef.__VtrigSched_hedba20e2__0.trigger(0U, 
+                                                         nullptr, 
+                                                         "@(negedge tb_secure_boot.clk)", 
+                                                         "verif/secure_boot/tb_secure_boot.sv", 
+                                                         70);
+    vlSelfRef.tb_secure_boot__DOT__faddr = 0x00010048U;
+    vlSelfRef.tb_secure_boot__DOT__facc = 1U;
+    Vtb_secure_boot___024root____VbeforeTrig_hedba20e2__0(vlSelf, 
+                                                          "@(negedge tb_secure_boot.clk)");
+    co_await vlSelfRef.__VtrigSched_hedba20e2__0.trigger(0U, 
+                                                         nullptr, 
+                                                         "@(negedge tb_secure_boot.clk)", 
+                                                         "verif/secure_boot/tb_secure_boot.sv", 
+                                                         70);
+    vlSelfRef.tb_secure_boot__DOT__facc = 0U;
+    if (VL_UNLIKELY((vlSelfRef.tb_secure_boot__DOT__dut__DOT__entered_q))) {
+        vlSelfRef.tb_secure_boot__DOT__fails = ((IData)(1U) 
+                                                + vlSelfRef.tb_secure_boot__DOT__fails);
+        VL_WRITEF_NX("  FAIL fw_entered after a fetch at entry+4\n",0);
+    }
+    Vtb_secure_boot___024root____VbeforeTrig_hedba20e2__0(vlSelf, 
+                                                          "@(negedge tb_secure_boot.clk)");
+    co_await vlSelfRef.__VtrigSched_hedba20e2__0.trigger(0U, 
+                                                         nullptr, 
+                                                         "@(negedge tb_secure_boot.clk)", 
+                                                         "verif/secure_boot/tb_secure_boot.sv", 
+                                                         73);
+    vlSelfRef.tb_secure_boot__DOT__faddr = 0x00010044U;
+    vlSelfRef.tb_secure_boot__DOT__facc = 1U;
+    Vtb_secure_boot___024root____VbeforeTrig_hedba20e2__0(vlSelf, 
+                                                          "@(negedge tb_secure_boot.clk)");
+    co_await vlSelfRef.__VtrigSched_hedba20e2__0.trigger(0U, 
+                                                         nullptr, 
+                                                         "@(negedge tb_secure_boot.clk)", 
+                                                         "verif/secure_boot/tb_secure_boot.sv", 
+                                                         73);
+    vlSelfRef.tb_secure_boot__DOT__facc = 0U;
+    if (VL_UNLIKELY((((IData)(vlSelfRef.tb_secure_boot__DOT__dut__DOT__entered_q) 
+                      != (IData)(__Vtask_tb_secure_boot__DOT__run__0__expect_ok))))) {
+        vlSelfRef.tb_secure_boot__DOT__fails = ((IData)(1U) 
+                                                + vlSelfRef.tb_secure_boot__DOT__fails);
+        VL_WRITEF_NX("  FAIL fw_entered=%b after fetch at entry\n",1
+                     , '#',1,vlSelfRef.tb_secure_boot__DOT__dut__DOT__entered_q);
+    }
+    vlSelfRef.tb_secure_boot__DOT__faddr = 0x00010048U;
     co_await vlSelfRef.__VdlySched.delay(0x00000000000003e8ULL, 
                                          nullptr, "verif/secure_boot/tb_secure_boot.sv", 
-                                         63);
+                                         75);
+    vlSelfRef.tb_secure_boot__DOT__faddr = 0x00010060U;
+    if (VL_UNLIKELY((((IData)(vlSelfRef.tb_secure_boot__DOT__fok) 
+                      != (IData)(__Vtask_tb_secure_boot__DOT__run__0__expect_ok))))) {
+        vlSelfRef.tb_secure_boot__DOT__fails = ((IData)(1U) 
+                                                + vlSelfRef.tb_secure_boot__DOT__fails);
+        VL_WRITEF_NX("  FAIL fetch_ok(entry+4, after handoff)=%b\n",1
+                     , '#',1,vlSelfRef.tb_secure_boot__DOT__fok);
+    }
+    co_await vlSelfRef.__VdlySched.delay(0x00000000000003e8ULL, 
+                                         nullptr, "verif/secure_boot/tb_secure_boot.sv", 
+                                         76);
+    if (VL_UNLIKELY((((IData)(vlSelfRef.tb_secure_boot__DOT__fok) 
+                      != (IData)(__Vtask_tb_secure_boot__DOT__run__0__expect_ok))))) {
+        vlSelfRef.tb_secure_boot__DOT__fails = ((IData)(1U) 
+                                                + vlSelfRef.tb_secure_boot__DOT__fails);
+        VL_WRITEF_NX("  FAIL fetch_ok(last code word)=%b\n",1
+                     , '#',1,vlSelfRef.tb_secure_boot__DOT__fok);
+    }
+    vlSelfRef.tb_secure_boot__DOT__faddr = 0x00010064U;
+    co_await vlSelfRef.__VdlySched.delay(0x00000000000003e8ULL, 
+                                         nullptr, "verif/secure_boot/tb_secure_boot.sv", 
+                                         77);
+    vlSelfRef.tb_secure_boot__DOT__faddr = 0x00010040U;
     if (VL_UNLIKELY((vlSelfRef.tb_secure_boot__DOT__fok))) {
         vlSelfRef.tb_secure_boot__DOT__fails = ((IData)(1U) 
                                                 + vlSelfRef.tb_secure_boot__DOT__fails);
         VL_WRITEF_NX("  FAIL fetch_ok(past end)=%b\n",1
+                     , '#',1,vlSelfRef.tb_secure_boot__DOT__fok);
+    }
+    co_await vlSelfRef.__VdlySched.delay(0x00000000000003e8ULL, 
+                                         nullptr, "verif/secure_boot/tb_secure_boot.sv", 
+                                         78);
+    if (VL_UNLIKELY((vlSelfRef.tb_secure_boot__DOT__fok))) {
+        vlSelfRef.tb_secure_boot__DOT__fails = ((IData)(1U) 
+                                                + vlSelfRef.tb_secure_boot__DOT__fails);
+        VL_WRITEF_NX("  FAIL fetch_ok(header, after handoff)=%b\n",1
                      , '#',1,vlSelfRef.tb_secure_boot__DOT__fok);
     }
     if (VL_UNLIKELY(((1U & ((((1U & (__Vtask_tb_secure_boot__DOT__run__0__st 
@@ -252,7 +352,7 @@ VlCoroutine Vtb_secure_boot___024root___eval_initial__TOP__Vtiming__0(Vtb_secure
                                                 + vlSelfRef.tb_secure_boot__DOT__fails);
         VL_WRITEF_NX("  FAIL status\n",0);
     }
-    VL_WRITEF_NX("%-16s err=%b verified=%b valid=%b done=%b busy=%b  fetch: entry ok, header/past-end blocked  (%0d polls)\n",7
+    VL_WRITEF_NX("%-16s err=%b verified=%b valid=%b done=%b busy=%b entered=%b started=%b (%0d polls)\n",9
                  , 'S',&(vlSelfRef.__Vtask_tb_secure_boot__DOT__run__0__name)
                  , '#',1,(1U & (__Vtask_tb_secure_boot__DOT__run__0__st 
                                 >> 4U)), '#',1,(1U 
@@ -263,6 +363,8 @@ VlCoroutine Vtb_secure_boot___024root___eval_initial__TOP__Vtiming__0(Vtb_secure
                                                 & (__Vtask_tb_secure_boot__DOT__run__0__st 
                                                    >> 1U))
                  , '#',1,(1U & __Vtask_tb_secure_boot__DOT__run__0__st)
+                 , '#',1,(IData)(vlSelfRef.tb_secure_boot__DOT__dut__DOT__entered_q)
+                 , '#',1,vlSelfRef.tb_secure_boot__DOT__dut__DOT__started_q
                  , '~',32,__Vtask_tb_secure_boot__DOT__run__0__n);
     vlSelfRef.tb_secure_boot__DOT__isram[20U] = (1U 
                                                  ^ vlSelfRef.tb_secure_boot__DOT__isram[20U]);
@@ -274,7 +376,7 @@ VlCoroutine Vtb_secure_boot___024root___eval_initial__TOP__Vtiming__0(Vtb_secure
     __Vtask_tb_secure_boot__DOT__run__3__n = 0U;
     co_await vlSelfRef.__VdlySched.delay(0x00000000000003e8ULL, 
                                          nullptr, "verif/secure_boot/tb_secure_boot.sv", 
-                                         57);
+                                         59);
     vlSelfRef.tb_secure_boot__DOT__rst_n = 0U;
     __Vtask_tb_secure_boot__DOT__run__3__tb_secure_boot__DOT__unnamedblk1_1__DOT____Vrepeat0 = 5U;
     while (VL_LTS_III(32, 0U, __Vtask_tb_secure_boot__DOT__run__3__tb_secure_boot__DOT__unnamedblk1_1__DOT____Vrepeat0)) {
@@ -284,7 +386,7 @@ VlCoroutine Vtb_secure_boot___024root___eval_initial__TOP__Vtiming__0(Vtb_secure
                                                              nullptr, 
                                                              "@(posedge tb_secure_boot.clk)", 
                                                              "verif/secure_boot/tb_secure_boot.sv", 
-                                                             57);
+                                                             59);
         __Vtask_tb_secure_boot__DOT__run__3__tb_secure_boot__DOT__unnamedblk1_1__DOT____Vrepeat0 
             = (__Vtask_tb_secure_boot__DOT__run__3__tb_secure_boot__DOT__unnamedblk1_1__DOT____Vrepeat0 
                - (IData)(1U));
@@ -298,7 +400,7 @@ VlCoroutine Vtb_secure_boot___024root___eval_initial__TOP__Vtiming__0(Vtb_secure
                                                              nullptr, 
                                                              "@(posedge tb_secure_boot.clk)", 
                                                              "verif/secure_boot/tb_secure_boot.sv", 
-                                                             57);
+                                                             59);
         __Vtask_tb_secure_boot__DOT__run__3__tb_secure_boot__DOT__unnamedblk1_2__DOT____Vrepeat1 
             = (__Vtask_tb_secure_boot__DOT__run__3__tb_secure_boot__DOT__unnamedblk1_2__DOT____Vrepeat1 
                - (IData)(1U));
@@ -327,7 +429,7 @@ VlCoroutine Vtb_secure_boot___024root___eval_initial__TOP__Vtiming__0(Vtb_secure
                                                          nullptr, 
                                                          "@(negedge tb_secure_boot.clk)", 
                                                          "verif/secure_boot/tb_secure_boot.sv", 
-                                                         45);
+                                                         47);
     vlSelfRef.tb_secure_boot__DOT__req = 1U;
     vlSelfRef.tb_secure_boot__DOT__we = 1U;
     vlSelfRef.tb_secure_boot__DOT__addr = __Vtask_tb_secure_boot__DOT__reg_wr__4__a;
@@ -338,7 +440,7 @@ VlCoroutine Vtb_secure_boot___024root___eval_initial__TOP__Vtiming__0(Vtb_secure
                                                          nullptr, 
                                                          "@(negedge tb_secure_boot.clk)", 
                                                          "verif/secure_boot/tb_secure_boot.sv", 
-                                                         46);
+                                                         48);
     vlSelfRef.tb_secure_boot__DOT__req = 0U;
     vlSelfRef.tb_secure_boot__DOT__we = 0U;
     do {
@@ -350,7 +452,7 @@ VlCoroutine Vtb_secure_boot___024root___eval_initial__TOP__Vtiming__0(Vtb_secure
                                                              nullptr, 
                                                              "@(negedge tb_secure_boot.clk)", 
                                                              "verif/secure_boot/tb_secure_boot.sv", 
-                                                             49);
+                                                             51);
         vlSelfRef.tb_secure_boot__DOT__req = 1U;
         vlSelfRef.tb_secure_boot__DOT__we = 0U;
         vlSelfRef.tb_secure_boot__DOT__addr = __Vtask_tb_secure_boot__DOT__reg_rd__5__a;
@@ -360,7 +462,7 @@ VlCoroutine Vtb_secure_boot___024root___eval_initial__TOP__Vtiming__0(Vtb_secure
                                                              nullptr, 
                                                              "@(negedge tb_secure_boot.clk)", 
                                                              "verif/secure_boot/tb_secure_boot.sv", 
-                                                             50);
+                                                             52);
         vlSelfRef.tb_secure_boot__DOT__req = 0U;
         __Vtask_tb_secure_boot__DOT__reg_rd__5__d = vlSelfRef.tb_secure_boot__DOT__rdata;
         __Vtask_tb_secure_boot__DOT__run__3__st = __Vtask_tb_secure_boot__DOT__reg_rd__5__d;
@@ -368,10 +470,23 @@ VlCoroutine Vtb_secure_boot___024root___eval_initial__TOP__Vtiming__0(Vtb_secure
                                                   + __Vtask_tb_secure_boot__DOT__run__3__n);
     } while (((~ (__Vtask_tb_secure_boot__DOT__run__3__st 
                   >> 1U)) & VL_GTS_III(32, 0x000f4240U, __Vtask_tb_secure_boot__DOT__run__3__n)));
+    if (VL_UNLIKELY(((1U & (~ (IData)(vlSelfRef.tb_secure_boot__DOT__dut__DOT__started_q)))))) {
+        vlSelfRef.tb_secure_boot__DOT__fails = ((IData)(1U) 
+                                                + vlSelfRef.tb_secure_boot__DOT__fails);
+        VL_WRITEF_NX("  FAIL verify_started=%b after start\n",1
+                     , '#',1,vlSelfRef.tb_secure_boot__DOT__dut__DOT__started_q);
+    }
     vlSelfRef.tb_secure_boot__DOT__faddr = 0x00010044U;
+    if (VL_UNLIKELY((vlSelfRef.tb_secure_boot__DOT__dut__DOT__entered_q))) {
+        vlSelfRef.tb_secure_boot__DOT__fails = ((IData)(1U) 
+                                                + vlSelfRef.tb_secure_boot__DOT__fails);
+        VL_WRITEF_NX("  FAIL fw_entered=%b before any fetch\n",1
+                     , '#',1,vlSelfRef.tb_secure_boot__DOT__dut__DOT__entered_q);
+    }
     co_await vlSelfRef.__VdlySched.delay(0x00000000000003e8ULL, 
                                          nullptr, "verif/secure_boot/tb_secure_boot.sv", 
-                                         61);
+                                         66);
+    vlSelfRef.tb_secure_boot__DOT__faddr = 0x00010048U;
     if (VL_UNLIKELY((((IData)(vlSelfRef.tb_secure_boot__DOT__fok) 
                       != (IData)(__Vtask_tb_secure_boot__DOT__run__3__expect_ok))))) {
         vlSelfRef.tb_secure_boot__DOT__fails = ((IData)(1U) 
@@ -379,24 +494,111 @@ VlCoroutine Vtb_secure_boot___024root___eval_initial__TOP__Vtiming__0(Vtb_secure
         VL_WRITEF_NX("  FAIL fetch_ok(entry)=%b\n",1
                      , '#',1,vlSelfRef.tb_secure_boot__DOT__fok);
     }
-    vlSelfRef.tb_secure_boot__DOT__faddr = 0x00010040U;
     co_await vlSelfRef.__VdlySched.delay(0x00000000000003e8ULL, 
                                          nullptr, "verif/secure_boot/tb_secure_boot.sv", 
-                                         62);
-    vlSelfRef.tb_secure_boot__DOT__faddr = 0x00010064U;
+                                         67);
+    vlSelfRef.tb_secure_boot__DOT__faddr = 0x00010040U;
+    if (VL_UNLIKELY((vlSelfRef.tb_secure_boot__DOT__fok))) {
+        vlSelfRef.tb_secure_boot__DOT__fails = ((IData)(1U) 
+                                                + vlSelfRef.tb_secure_boot__DOT__fails);
+        VL_WRITEF_NX("  FAIL fetch_ok(entry+4, before handoff)=%b\n",1
+                     , '#',1,vlSelfRef.tb_secure_boot__DOT__fok);
+    }
+    co_await vlSelfRef.__VdlySched.delay(0x00000000000003e8ULL, 
+                                         nullptr, "verif/secure_boot/tb_secure_boot.sv", 
+                                         68);
     if (VL_UNLIKELY((vlSelfRef.tb_secure_boot__DOT__fok))) {
         vlSelfRef.tb_secure_boot__DOT__fails = ((IData)(1U) 
                                                 + vlSelfRef.tb_secure_boot__DOT__fails);
         VL_WRITEF_NX("  FAIL fetch_ok(header)=%b\n",1
                      , '#',1,vlSelfRef.tb_secure_boot__DOT__fok);
     }
+    Vtb_secure_boot___024root____VbeforeTrig_hedba20e2__0(vlSelf, 
+                                                          "@(negedge tb_secure_boot.clk)");
+    co_await vlSelfRef.__VtrigSched_hedba20e2__0.trigger(0U, 
+                                                         nullptr, 
+                                                         "@(negedge tb_secure_boot.clk)", 
+                                                         "verif/secure_boot/tb_secure_boot.sv", 
+                                                         70);
+    vlSelfRef.tb_secure_boot__DOT__faddr = 0x00010048U;
+    vlSelfRef.tb_secure_boot__DOT__facc = 1U;
+    Vtb_secure_boot___024root____VbeforeTrig_hedba20e2__0(vlSelf, 
+                                                          "@(negedge tb_secure_boot.clk)");
+    co_await vlSelfRef.__VtrigSched_hedba20e2__0.trigger(0U, 
+                                                         nullptr, 
+                                                         "@(negedge tb_secure_boot.clk)", 
+                                                         "verif/secure_boot/tb_secure_boot.sv", 
+                                                         70);
+    if (VL_UNLIKELY((vlSelfRef.tb_secure_boot__DOT__dut__DOT__entered_q))) {
+        vlSelfRef.tb_secure_boot__DOT__fails = ((IData)(1U) 
+                                                + vlSelfRef.tb_secure_boot__DOT__fails);
+        VL_WRITEF_NX("  FAIL fw_entered after a fetch at entry+4\n",0);
+    }
+    vlSelfRef.tb_secure_boot__DOT__facc = 0U;
+    Vtb_secure_boot___024root____VbeforeTrig_hedba20e2__0(vlSelf, 
+                                                          "@(negedge tb_secure_boot.clk)");
+    co_await vlSelfRef.__VtrigSched_hedba20e2__0.trigger(0U, 
+                                                         nullptr, 
+                                                         "@(negedge tb_secure_boot.clk)", 
+                                                         "verif/secure_boot/tb_secure_boot.sv", 
+                                                         73);
+    vlSelfRef.tb_secure_boot__DOT__faddr = 0x00010044U;
+    vlSelfRef.tb_secure_boot__DOT__facc = 1U;
+    Vtb_secure_boot___024root____VbeforeTrig_hedba20e2__0(vlSelf, 
+                                                          "@(negedge tb_secure_boot.clk)");
+    co_await vlSelfRef.__VtrigSched_hedba20e2__0.trigger(0U, 
+                                                         nullptr, 
+                                                         "@(negedge tb_secure_boot.clk)", 
+                                                         "verif/secure_boot/tb_secure_boot.sv", 
+                                                         73);
+    vlSelfRef.tb_secure_boot__DOT__facc = 0U;
+    if (VL_UNLIKELY((((IData)(vlSelfRef.tb_secure_boot__DOT__dut__DOT__entered_q) 
+                      != (IData)(__Vtask_tb_secure_boot__DOT__run__3__expect_ok))))) {
+        vlSelfRef.tb_secure_boot__DOT__fails = ((IData)(1U) 
+                                                + vlSelfRef.tb_secure_boot__DOT__fails);
+        VL_WRITEF_NX("  FAIL fw_entered=%b after fetch at entry\n",1
+                     , '#',1,vlSelfRef.tb_secure_boot__DOT__dut__DOT__entered_q);
+    }
+    vlSelfRef.tb_secure_boot__DOT__faddr = 0x00010048U;
     co_await vlSelfRef.__VdlySched.delay(0x00000000000003e8ULL, 
                                          nullptr, "verif/secure_boot/tb_secure_boot.sv", 
-                                         63);
+                                         75);
+    vlSelfRef.tb_secure_boot__DOT__faddr = 0x00010060U;
+    if (VL_UNLIKELY((((IData)(vlSelfRef.tb_secure_boot__DOT__fok) 
+                      != (IData)(__Vtask_tb_secure_boot__DOT__run__3__expect_ok))))) {
+        vlSelfRef.tb_secure_boot__DOT__fails = ((IData)(1U) 
+                                                + vlSelfRef.tb_secure_boot__DOT__fails);
+        VL_WRITEF_NX("  FAIL fetch_ok(entry+4, after handoff)=%b\n",1
+                     , '#',1,vlSelfRef.tb_secure_boot__DOT__fok);
+    }
+    co_await vlSelfRef.__VdlySched.delay(0x00000000000003e8ULL, 
+                                         nullptr, "verif/secure_boot/tb_secure_boot.sv", 
+                                         76);
+    if (VL_UNLIKELY((((IData)(vlSelfRef.tb_secure_boot__DOT__fok) 
+                      != (IData)(__Vtask_tb_secure_boot__DOT__run__3__expect_ok))))) {
+        vlSelfRef.tb_secure_boot__DOT__fails = ((IData)(1U) 
+                                                + vlSelfRef.tb_secure_boot__DOT__fails);
+        VL_WRITEF_NX("  FAIL fetch_ok(last code word)=%b\n",1
+                     , '#',1,vlSelfRef.tb_secure_boot__DOT__fok);
+    }
+    vlSelfRef.tb_secure_boot__DOT__faddr = 0x00010064U;
+    co_await vlSelfRef.__VdlySched.delay(0x00000000000003e8ULL, 
+                                         nullptr, "verif/secure_boot/tb_secure_boot.sv", 
+                                         77);
+    vlSelfRef.tb_secure_boot__DOT__faddr = 0x00010040U;
     if (VL_UNLIKELY((vlSelfRef.tb_secure_boot__DOT__fok))) {
         vlSelfRef.tb_secure_boot__DOT__fails = ((IData)(1U) 
                                                 + vlSelfRef.tb_secure_boot__DOT__fails);
         VL_WRITEF_NX("  FAIL fetch_ok(past end)=%b\n",1
+                     , '#',1,vlSelfRef.tb_secure_boot__DOT__fok);
+    }
+    co_await vlSelfRef.__VdlySched.delay(0x00000000000003e8ULL, 
+                                         nullptr, "verif/secure_boot/tb_secure_boot.sv", 
+                                         78);
+    if (VL_UNLIKELY((vlSelfRef.tb_secure_boot__DOT__fok))) {
+        vlSelfRef.tb_secure_boot__DOT__fails = ((IData)(1U) 
+                                                + vlSelfRef.tb_secure_boot__DOT__fails);
+        VL_WRITEF_NX("  FAIL fetch_ok(header, after handoff)=%b\n",1
                      , '#',1,vlSelfRef.tb_secure_boot__DOT__fok);
     }
     if (VL_UNLIKELY(((1U & ((((1U & (__Vtask_tb_secure_boot__DOT__run__3__st 
@@ -409,7 +611,7 @@ VlCoroutine Vtb_secure_boot___024root___eval_initial__TOP__Vtiming__0(Vtb_secure
                                                 + vlSelfRef.tb_secure_boot__DOT__fails);
         VL_WRITEF_NX("  FAIL status\n",0);
     }
-    VL_WRITEF_NX("%-16s err=%b verified=%b valid=%b done=%b busy=%b  fetch: entry ok, header/past-end blocked  (%0d polls)\n",7
+    VL_WRITEF_NX("%-16s err=%b verified=%b valid=%b done=%b busy=%b entered=%b started=%b (%0d polls)\n",9
                  , 'S',&(vlSelfRef.__Vtask_tb_secure_boot__DOT__run__3__name)
                  , '#',1,(1U & (__Vtask_tb_secure_boot__DOT__run__3__st 
                                 >> 4U)), '#',1,(1U 
@@ -420,13 +622,15 @@ VlCoroutine Vtb_secure_boot___024root___eval_initial__TOP__Vtiming__0(Vtb_secure
                                                 & (__Vtask_tb_secure_boot__DOT__run__3__st 
                                                    >> 1U))
                  , '#',1,(1U & __Vtask_tb_secure_boot__DOT__run__3__st)
+                 , '#',1,(IData)(vlSelfRef.tb_secure_boot__DOT__dut__DOT__entered_q)
+                 , '#',1,vlSelfRef.tb_secure_boot__DOT__dut__DOT__started_q
                  , '~',32,__Vtask_tb_secure_boot__DOT__run__3__n);
     if ((0U == vlSelfRef.tb_secure_boot__DOT__fails)) {
         VL_WRITEF_NX("TEST PASSED\n",0);
     } else {
         VL_WRITEF_NX("TEST FAILED (%0d)\n",1, '~',32,vlSelfRef.tb_secure_boot__DOT__fails);
     }
-    VL_FINISH_MT("verif/secure_boot/tb_secure_boot.sv", 79, "");
+    VL_FINISH_MT("verif/secure_boot/tb_secure_boot.sv", 94, "");
     co_return;
 }
 
@@ -893,6 +1097,15 @@ void Vtb_secure_boot___024root___nba_sequent__TOP__1(Vtb_secure_boot___024root* 
         vlSelfRef.tb_secure_boot__DOT__dut__DOT__g_div__DOT__div_q 
             = (1U & ((~ (IData)(vlSelfRef.tb_secure_boot__DOT__dut__DOT__g_div__DOT__div_q)) 
                      & ((IData)(1U) + (IData)(vlSelfRef.tb_secure_boot__DOT__dut__DOT__g_div__DOT__div_q))));
+        if ((((IData)(vlSelfRef.tb_secure_boot__DOT__facc) 
+              & (IData)(vlSelfRef.tb_secure_boot__DOT__fok)) 
+             & (0x00010044U == vlSelfRef.tb_secure_boot__DOT__faddr))) {
+            vlSelfRef.tb_secure_boot__DOT__dut__DOT__entered_q = 1U;
+        }
+        if (((0U == (IData)(vlSelfRef.tb_secure_boot__DOT__dut__DOT__state_q)) 
+             & (IData)(vlSelfRef.tb_secure_boot__DOT__dut__DOT__start_w))) {
+            vlSelfRef.tb_secure_boot__DOT__dut__DOT__started_q = 1U;
+        }
         if (((IData)(vlSelfRef.tb_secure_boot__DOT__req) 
              & (~ (IData)(vlSelfRef.tb_secure_boot__DOT__we)))) {
             vlSelfRef.tb_secure_boot__DOT__rdata = 
@@ -1087,10 +1300,7 @@ void Vtb_secure_boot___024root___nba_sequent__TOP__1(Vtb_secure_boot___024root* 
             if (vlSelfRef.tb_secure_boot__DOT__vreq) {
                 __Vdly__tb_secure_boot__DOT__dut__DOT__state_q = 2U;
             }
-        } else if (((IData)(vlSelfRef.tb_secure_boot__DOT__req) 
-                    & ((IData)(vlSelfRef.tb_secure_boot__DOT__we) 
-                       & ((0U == (0x00000fffU & vlSelfRef.tb_secure_boot__DOT__addr)) 
-                          & vlSelfRef.tb_secure_boot__DOT__wdata)))) {
+        } else if (vlSelfRef.tb_secure_boot__DOT__dut__DOT__start_w) {
             vlSelfRef.tb_secure_boot__DOT__dut__DOT__done_q = 0U;
             vlSelfRef.tb_secure_boot__DOT__dut__DOT__valid_q = 0U;
             vlSelfRef.tb_secure_boot__DOT__dut__DOT__verified_q = 0U;
@@ -1114,6 +1324,8 @@ void Vtb_secure_boot___024root___nba_sequent__TOP__1(Vtb_secure_boot___024root* 
                & (~ (IData)(vlSelfRef.tb_secure_boot__DOT__dut__DOT__c_we)));
     } else {
         vlSelfRef.tb_secure_boot__DOT__dut__DOT__g_div__DOT__div_q = 0U;
+        vlSelfRef.tb_secure_boot__DOT__dut__DOT__entered_q = 0U;
+        vlSelfRef.tb_secure_boot__DOT__dut__DOT__started_q = 0U;
         vlSelfRef.tb_secure_boot__DOT__rdata = 0U;
         vlSelfRef.__Vdly__tb_secure_boot__DOT__dut__DOT__idx_q = 0U;
         __Vdly__tb_secure_boot__DOT__dut__DOT__left_q = 0U;
@@ -3755,8 +3967,8 @@ void Vtb_secure_boot___024root___nba_sequent__TOP__4(Vtb_secure_boot___024root* 
 
 extern const VlUnpacked<CData/*0:0*/, 512> Vtb_secure_boot__ConstPool__TABLE_h5dcdb5a1_0;
 
-void Vtb_secure_boot___024root___nba_comb__TOP__2(Vtb_secure_boot___024root* vlSelf) {
-    VL_DEBUG_IF(VL_DBG_MSGF("+    Vtb_secure_boot___024root___nba_comb__TOP__2\n"); );
+void Vtb_secure_boot___024root___nba_comb__TOP__3(Vtb_secure_boot___024root* vlSelf) {
+    VL_DEBUG_IF(VL_DBG_MSGF("+    Vtb_secure_boot___024root___nba_comb__TOP__3\n"); );
     Vtb_secure_boot__Syms* const __restrict vlSymsp VL_ATTR_UNUSED = vlSelf->vlSymsp;
     auto& vlSelfRef = std::ref(*vlSelf).get();
     // Locals
@@ -4164,6 +4376,16 @@ void Vtb_secure_boot___024root___eval_nba(Vtb_secure_boot___024root* vlSelf) {
                    & (IData)(vlSelfRef.tb_secure_boot__DOT__dut__DOT__u_crypto_cg__DOT__en_latch));
         }
     }
+    if ((0x0000000000000019ULL & vlSelfRef.__VnbaTriggered[0U])) {
+        {
+            // Inlined CFunc: _nba_comb__TOP__1
+            vlSelfRef.tb_secure_boot__DOT__dut__DOT__start_w 
+                = ((IData)(vlSelfRef.tb_secure_boot__DOT__req) 
+                   & ((IData)(vlSelfRef.tb_secure_boot__DOT__we) 
+                      & ((0U == (0x00000fffU & vlSelfRef.tb_secure_boot__DOT__addr)) 
+                         & vlSelfRef.tb_secure_boot__DOT__wdata)));
+        }
+    }
     if ((1ULL & vlSelfRef.__VnbaTriggered[0U])) {
         {
             // Inlined CFunc: _nba_sequent__TOP__3
@@ -4177,16 +4399,21 @@ void Vtb_secure_boot___024root___eval_nba(Vtb_secure_boot___024root* vlSelf) {
     }
     if ((0x000000000000001bULL & vlSelfRef.__VnbaTriggered[0U])) {
         {
-            // Inlined CFunc: _nba_comb__TOP__1
+            // Inlined CFunc: _nba_comb__TOP__2
             vlSelfRef.tb_secure_boot__DOT__fok = ((IData)(vlSelfRef.tb_secure_boot__DOT__dut__DOT__verified_q) 
-                                                  & ((0x00010044U 
-                                                      <= vlSelfRef.tb_secure_boot__DOT__faddr) 
-                                                     & (vlSelfRef.tb_secure_boot__DOT__faddr 
-                                                        < 
-                                                        ((IData)(0x00010044U) 
-                                                         + 
-                                                         ((IData)(vlSelfRef.tb_secure_boot__DOT__dut__DOT__code_words_q) 
-                                                          << 2U)))));
+                                                  & ((IData)(vlSelfRef.tb_secure_boot__DOT__dut__DOT__entered_q)
+                                                      ? 
+                                                     ((0x00010044U 
+                                                       <= vlSelfRef.tb_secure_boot__DOT__faddr) 
+                                                      & (vlSelfRef.tb_secure_boot__DOT__faddr 
+                                                         < 
+                                                         ((IData)(0x00010044U) 
+                                                          + 
+                                                          ((IData)(vlSelfRef.tb_secure_boot__DOT__dut__DOT__code_words_q) 
+                                                           << 2U))))
+                                                      : 
+                                                     (0x00010044U 
+                                                      == vlSelfRef.tb_secure_boot__DOT__faddr)));
         }
     }
     if ((3ULL & vlSelfRef.__VnbaTriggered[0U])) {
@@ -4282,11 +4509,11 @@ void Vtb_secure_boot___024root___eval_nba(Vtb_secure_boot___024root* vlSelf) {
         }
     }
     if ((6ULL & vlSelfRef.__VnbaTriggered[0U])) {
-        Vtb_secure_boot___024root___nba_comb__TOP__2(vlSelf);
+        Vtb_secure_boot___024root___nba_comb__TOP__3(vlSelf);
     }
     if ((0x000000000000001fULL & vlSelfRef.__VnbaTriggered[0U])) {
         {
-            // Inlined CFunc: _nba_comb__TOP__3
+            // Inlined CFunc: _nba_comb__TOP__4
             vlSelfRef.tb_secure_boot__DOT__dut__DOT__otp_data 
                 = (((IData)(vlSelfRef.tb_secure_boot__DOT__dut__DOT__otp_rd_en) 
                     & ((~ (IData)(vlSelfRef.tb_secure_boot__DOT__dut__DOT__u_crypto__DOT__ed_done)) 
@@ -4390,13 +4617,21 @@ bool Vtb_secure_boot___024root___eval_phase__act(Vtb_secure_boot___024root* vlSe
             if ((0x0000000000000019ULL & vlSelfRef.__VactTriggered[0U])) {
                 {
                     // Inlined CFunc: _act_comb__TOP__0
+                    vlSelfRef.tb_secure_boot__DOT__dut__DOT__start_w 
+                        = ((IData)(vlSelfRef.tb_secure_boot__DOT__req) 
+                           & ((IData)(vlSelfRef.tb_secure_boot__DOT__we) 
+                              & ((0U == (0x00000fffU 
+                                         & vlSelfRef.tb_secure_boot__DOT__addr)) 
+                                 & vlSelfRef.tb_secure_boot__DOT__wdata)));
                     vlSelfRef.tb_secure_boot__DOT__fok 
                         = ((IData)(vlSelfRef.tb_secure_boot__DOT__dut__DOT__verified_q) 
-                           & ((0x00010044U <= vlSelfRef.tb_secure_boot__DOT__faddr) 
-                              & (vlSelfRef.tb_secure_boot__DOT__faddr 
-                                 < ((IData)(0x00010044U) 
-                                    + ((IData)(vlSelfRef.tb_secure_boot__DOT__dut__DOT__code_words_q) 
-                                       << 2U)))));
+                           & ((IData)(vlSelfRef.tb_secure_boot__DOT__dut__DOT__entered_q)
+                               ? ((0x00010044U <= vlSelfRef.tb_secure_boot__DOT__faddr) 
+                                  & (vlSelfRef.tb_secure_boot__DOT__faddr 
+                                     < ((IData)(0x00010044U) 
+                                        + ((IData)(vlSelfRef.tb_secure_boot__DOT__dut__DOT__code_words_q) 
+                                           << 2U))))
+                               : (0x00010044U == vlSelfRef.tb_secure_boot__DOT__faddr)));
                     vlSelfRef.tb_secure_boot__DOT__dut__DOT__otp_data 
                         = (((IData)(vlSelfRef.tb_secure_boot__DOT__dut__DOT__otp_rd_en) 
                             & ((~ (IData)(vlSelfRef.tb_secure_boot__DOT__dut__DOT__u_crypto__DOT__ed_done)) 
@@ -4533,6 +4768,14 @@ void Vtb_secure_boot___024root____VbeforeTrig_hedba2121__0(Vtb_secure_boot___024
         vlSelfRef.__VtrigSched_hedba20e2__0.ready(__VeventDescription);
         vlSelfRef.__VtrigSched_hedba20e2__0.ready(__VeventDescription);
         vlSelfRef.__VtrigSched_hedba20e2__0.ready(__VeventDescription);
+        vlSelfRef.__VtrigSched_hedba20e2__0.ready(__VeventDescription);
+        vlSelfRef.__VtrigSched_hedba20e2__0.ready(__VeventDescription);
+        vlSelfRef.__VtrigSched_hedba20e2__0.ready(__VeventDescription);
+        vlSelfRef.__VtrigSched_hedba20e2__0.ready(__VeventDescription);
+        vlSelfRef.__VtrigSched_hedba20e2__0.ready(__VeventDescription);
+        vlSelfRef.__VtrigSched_hedba20e2__0.ready(__VeventDescription);
+        vlSelfRef.__VtrigSched_hedba20e2__0.ready(__VeventDescription);
+        vlSelfRef.__VtrigSched_hedba20e2__0.ready(__VeventDescription);
     }
     vlSelfRef.__VactTriggeredAcc[0U] = (vlSelfRef.__VactTriggeredAcc[0U] 
                                         | __VTmp[0U]);
@@ -4558,6 +4801,14 @@ void Vtb_secure_boot___024root____VbeforeTrig_hedba20e2__0(Vtb_secure_boot___024
         vlSelfRef.__VtrigSched_hedba2121__0.ready(__VeventDescription);
     }
     if ((0x0000000000000010ULL & __VTmp[0U])) {
+        vlSelfRef.__VtrigSched_hedba20e2__0.ready(__VeventDescription);
+        vlSelfRef.__VtrigSched_hedba20e2__0.ready(__VeventDescription);
+        vlSelfRef.__VtrigSched_hedba20e2__0.ready(__VeventDescription);
+        vlSelfRef.__VtrigSched_hedba20e2__0.ready(__VeventDescription);
+        vlSelfRef.__VtrigSched_hedba20e2__0.ready(__VeventDescription);
+        vlSelfRef.__VtrigSched_hedba20e2__0.ready(__VeventDescription);
+        vlSelfRef.__VtrigSched_hedba20e2__0.ready(__VeventDescription);
+        vlSelfRef.__VtrigSched_hedba20e2__0.ready(__VeventDescription);
         vlSelfRef.__VtrigSched_hedba20e2__0.ready(__VeventDescription);
         vlSelfRef.__VtrigSched_hedba20e2__0.ready(__VeventDescription);
         vlSelfRef.__VtrigSched_hedba20e2__0.ready(__VeventDescription);

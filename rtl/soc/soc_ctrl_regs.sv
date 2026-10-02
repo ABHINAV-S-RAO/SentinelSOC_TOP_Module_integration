@@ -16,22 +16,27 @@
 //   [0]     crypto_verified: Direct wire from SHA+ED25519 verified output.
 //                            1 = firmware signature verified OK.
 //                            0 = not yet verified or failed.
-//   [1]     isram_locked   : Reflects current state of isram_lock bit (readback)
+//   [1]     isram_locked   : Effective ISRAM write lock: the CTRL0 bit OR the
+//                            hardware lock (isram_lock_hw_i, set when a secure-boot
+//                            verification starts)
 //   [2]     recovery_mode  : 1 = SoC booted in JTAG recovery mode (soc_recovery.sv):
 //                            strap or boot watchdog. Sticky until power-on reset.
 //                            Lets the recovery image know it was debugger-loaded.
 //   [3]     recovery_wdt   : 1 = recovery was forced by the boot watchdog
-//                            (bootrom never set boot_done), 0 = strap / none.
+//                            (boot never handed over), 0 = strap / none.
 //   [31:4]  reserved
 //
 // Offset 0x08 — BOOT_STATUS (RO)
-//   [0]     boot_done      : Set by bootrom code via CTRL1 to indicate
-//                            boot sequence complete. Software-set, never HW-cleared.
+//   [0]     boot_done      : Boot sequence complete. Cleared only by reset.
+//                            HW_BOOT_DONE=0: set by software via CTRL1.
+//                            HW_BOOT_DONE=1: set by hardware (boot_done_hw_i, the
+//                            first verified fetch at the firmware entry); CTRL1 has
+//                            no effect.
 //   [31:1]  reserved
 //
 // Offset 0x0C — CTRL1 (RW)
-//   [0]     boot_done_set  : Write 1 to set boot_done in BOOT_STATUS.
-//                            Self-clearing after one cycle. Read always returns 0.
+//   [0]     boot_done_set  : Write 1 to set boot_done in BOOT_STATUS (HW_BOOT_DONE=0
+//                            only; ignored when HW_BOOT_DONE=1). Read always returns 0.
 //   [31:1]  reserved
 //
 // Access policy (enforced in soc_addr_decode, not here): writes only while
@@ -42,7 +47,12 @@
 //       OBI-accessible control/status registers after wrapper is finalized.
 // =============================================================================
 
-module soc_ctrl_regs (
+module soc_ctrl_regs #(
+  // 1 = boot_done comes from hardware (boot_done_hw_i) and CTRL1 is ignored
+  //     (SECURE_BOOT SoCs: soc_secure_boot fw_entered_o).
+  // 0 = legacy: boot_done is set by software through CTRL1.
+  parameter bit HW_BOOT_DONE = 1'b0
+) (
   input  logic        clk_i,
   input  logic        rst_ni,
 
@@ -65,6 +75,11 @@ module soc_ctrl_regs (
   input  logic        recovery_i,
   input  logic        recovery_wdt_i,
 
+  // Hardware boot_done (used when HW_BOOT_DONE=1) and hardware ISRAM lock
+  // (ORed into the lock in every mode; tie 1'b0 if unused)
+  input  logic        boot_done_hw_i,
+  input  logic        isram_lock_hw_i,
+
   // Control outputs
   output logic        boot_done_o  ,  // feeds soc_addr_decode ctrl_boot_done_i
   output logic        isram_lock_o    // feeds soc_addr_decode ctrl_isram_lock_i
@@ -82,7 +97,7 @@ module soc_ctrl_regs (
   // Internal registers
   // --------------------------------------------------------------------------
   logic isram_lock_q;    // write-once sticky
-  logic boot_done_q;     // set by bootrom, never HW-cleared
+  logic boot_done_q;     // software boot_done (HW_BOOT_DONE=0), cleared only by reset
 
   // --------------------------------------------------------------------------
   // OBI handshake
@@ -118,8 +133,9 @@ module soc_ctrl_regs (
           end
 
           CTRL1_OFFSET: begin
-            // boot_done_set: write 1 to permanently set boot_done
-            if (be_i[0] && wdata_i[0]) begin
+            // boot_done_set: write 1 to permanently set boot_done.
+            // Ignored when boot_done is owned by hardware.
+            if (!HW_BOOT_DONE && be_i[0] && wdata_i[0]) begin
               boot_done_q <= 1'b1;
             end
           end
@@ -142,15 +158,15 @@ module soc_ctrl_regs (
         case (addr_i[11:0])
 
           CTRL0_OFFSET: begin
-            rdata_o <= {31'h0, isram_lock_q};
+            rdata_o <= {31'h0, isram_lock_o};
           end
 
           STATUS0_OFFSET: begin
-            rdata_o <= {28'h0, recovery_wdt_i, recovery_i, isram_lock_q, crypto_verified_i};
+            rdata_o <= {28'h0, recovery_wdt_i, recovery_i, isram_lock_o, crypto_verified_i};
           end
 
           BOOT_STATUS_OFFSET: begin
-            rdata_o <= {31'h0, boot_done_q};
+            rdata_o <= {31'h0, boot_done_o};
           end
 
           CTRL1_OFFSET: begin
@@ -169,7 +185,7 @@ module soc_ctrl_regs (
   // --------------------------------------------------------------------------
   // Output assignments
   // --------------------------------------------------------------------------
-  assign isram_lock_o = isram_lock_q;
-  assign boot_done_o  = boot_done_q;
+  assign isram_lock_o = isram_lock_q | isram_lock_hw_i;
+  assign boot_done_o  = HW_BOOT_DONE ? boot_done_hw_i : boot_done_q;
 
 endmodule

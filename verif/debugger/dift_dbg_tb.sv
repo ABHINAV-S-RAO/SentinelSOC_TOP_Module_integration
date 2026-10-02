@@ -8,7 +8,7 @@
 //   Part B  DIFT <-> debugger interaction, one scenario per SoC boot:
 //     S1 tainted GPRs, no checks      -> tag tracking across debug ops
 //     S2 tainted t1, full TCR policy  -> TCR/TPR lockout, reads, progbuf faults
-//     S5 same as S2 but dift_en_i=0   -> is DIFT really bypassed?
+//     S5 DIFT has no off switch       -> core dift_en tied on inside the SoC
 //     S3 tainted s0, full policy      -> can the hart still be halted?
 //     S4 tainted FLAGS tag alias      -> can the hart still be halted/resumed?
 //     S6 X tag on FLAGS alias         -> uninitialised tag RAM (sim only)
@@ -74,7 +74,6 @@ module dift_dbg_tb;
   wire jtag_tdo_dut;
   assign u_jtag.tdo = jtag_tdo_dut;
 
-  logic dift_en   = 1'b1;
   logic crypto_ok = 1'b1;   // stands in for the SHA/ED25519 verdict
   logic boot_mode = 1'b0;   // recovery strap
 
@@ -110,9 +109,6 @@ module dift_dbg_tb;
     .boot_mode_i       ( boot_mode      ),
     .uart_tx_o         ( uart_tx        ),
     .uart_rx_i         ( 1'b1           ),
-`ifdef DIFT
-    .dift_en_i         ( dift_en        ),
-`endif
     .bootrom_req_o     ( bootrom_req    ),
     .bootrom_gnt_i     ( bootrom_gnt    ),
     .bootrom_rvalid_i  ( bootrom_rvalid ),
@@ -469,9 +465,8 @@ module dift_dbg_tb;
                       input bit set_boot_done = 1'b1);
     scen = name;
     $display("\n==================== %s ====================", name);
-    $display("  TPR=%08h TCR=%08h taint{s1,t1,a0,s0}=%04b dift_en=%0b", tpr, tcr, taint, en);
+    $display("  TPR=%08h TCR=%08h taint{s1,t1,a0,s0}=%04b", tpr, tcr, taint);
     dm_w(DMControl, 32'h0000_0003);  // dmactive + ndmreset: core held in reset
-    dift_en = en;
     u_dsram.mem[W_TPR]     = tpr;
     u_dsram.mem[W_TCR]     = tcr;
     u_dsram.mem[W_BD]      = set_boot_done;
@@ -855,19 +850,12 @@ module dift_dbg_tb;
     else pass("no deferred DIFT NMI/trap leaks into firmware after resume");
 
     // -------------------------------------------------------------------------
-    // S5: same state, dift_en_i dropped to 0 before debugging
+    // S5: DIFT has no off switch -- the dift_en_i pin was removed from the
+    // SoC (anyone with the board could have tied it low); the core input is
+    // tied on inside basic_soc_top.
     // -------------------------------------------------------------------------
-    boot("S5-DIFT-OFF", TPR_OR, TCR_FULL, 4'b0100, 1'b1, ok);
-    dift_en = 1'b0;
-    repeat (20) @(posedge clk_i);
-    halt(ok);
-    check(ok, "halt with dift_en_i=0");
-    progbuf_run(addi(S1, T1, 0), EBREAK, err);
-    if (err == 3'd3)
-      finding("D12", "dift_en_i=0 does not disable DIFT enforcement: ex_tag_err path into the controller is not gated by dift_en_i, so stale GPR tags still fault debugger program-buffer code");
-    else pass($sformatf("dift_en_i=0 bypasses DIFT enforcement for progbuf (err=%0d)", err));
-    resume(ok);
-    dift_en = 1'b1;
+    scen = "S5-NO-OFF-SWITCH";
+    check(`CORE.dift_en_i === 1'b1, "core DIFT enable tied on inside the SoC (no external dift_en_i pin)");
 
     // -------------------------------------------------------------------------
     // S3: tainted s0 + full policy -> the debug ROM itself computes on s0

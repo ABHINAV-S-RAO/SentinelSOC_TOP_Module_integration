@@ -23,6 +23,19 @@
 //   verified code range [entry, entry + 4*M): header and any unsigned tail of
 //   ISRAM never execute.
 //
+// Hardware boot handoff (fw_entered_o = the SoC's boot_done):
+//   Single entry -- until the first verified fetch AT entry is accepted, entry
+//   is the only ISRAM address fetch_ok_o allows. That accepted fetch sets
+//   fw_entered_o (sticky until system reset); from then on the whole signed
+//   range is executable. Software cannot set or fake it: it needs a real jump
+//   (bootrom) or resume (debugger, dpc = entry) into verified code. Debug mode
+//   is deliberately not part of the condition: Ibex issues the fetch at dpc in
+//   the same cycle as dret, while debug_mode still reads 1.
+//
+// ISRAM lock: verify_started_o goes high when a start is accepted and stays
+//   high until system reset; the SoC ORs it into the ISRAM write lock, so the
+//   image cannot change once a verification has begun.
+//
 // Crypto clock: CRYPTO_CLK_DIV-divided, same source, built with a clock gate
 // (one clk_i pulse every CRYPTO_CLK_DIV cycles) -> synchronous, no CDC. The
 // bridge presents each engine CSR access only in the cycle before a crypto
@@ -69,8 +82,13 @@ module soc_secure_boot #(
 
   // ISRAM fetch gate
   input  logic [31:0] fetch_addr_i,
+  input  logic        fetch_accept_i,   // instruction fetch handshake (req & gnt) this cycle
   output logic        fetch_ok_o,
-  output logic        verified_o
+  output logic        verified_o,
+
+  // Hardware boot handoff and ISRAM lock (see header)
+  output logic        fw_entered_o,     // first verified fetch at entry accepted
+  output logic        verify_started_o  // a verification was started since reset
 );
 
   localparam int unsigned HDR_WORDS = 17;                 // sha_len + R + S
@@ -315,9 +333,27 @@ module soc_secure_boot #(
   // Fetch gate
   // ---------------------------------------------------------------------------
   logic [31:0] code_end;
+  logic        entered_q, started_q;
   assign code_end   = ENTRY + {code_words_q, 2'b00};
   assign verified_o = verified_q;
-  assign fetch_ok_o = verified_q && (fetch_addr_i >= ENTRY) && (fetch_addr_i < code_end);
+
+  // Single entry: before the handoff only ENTRY, afterwards the signed range.
+  assign fetch_ok_o = verified_q &&
+                      (entered_q ? ((fetch_addr_i >= ENTRY) && (fetch_addr_i < code_end))
+                                 :  (fetch_addr_i == ENTRY));
+
+  always_ff @(posedge clk_i or negedge rst_ni) begin
+    if (!rst_ni) begin
+      entered_q <= 1'b0;
+      started_q <= 1'b0;
+    end else begin
+      if (fetch_accept_i && fetch_ok_o && (fetch_addr_i == ENTRY)) entered_q <= 1'b1;
+      if (state_q == S_IDLE && start_w)                             started_q <= 1'b1;
+    end
+  end
+
+  assign fw_entered_o     = entered_q;
+  assign verify_started_o = started_q;
 
   // ---------------------------------------------------------------------------
   // VERIFY registers (OBI subordinate: gnt immediately, rvalid next cycle)

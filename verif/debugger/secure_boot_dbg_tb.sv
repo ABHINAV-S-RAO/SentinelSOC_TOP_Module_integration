@@ -1348,10 +1348,10 @@ module secure_boot_dbg_tb;
     // Swap-after-verify is now blocked by the lock: the write never lands,
     // the verdict stands
     isram_poke(20, 32'h0BAD_C0DE, err);
-    reg_write(gpr(T3), SB_BASE, err);
-    progbuf_run(lw(S1, T3, 32'h4), EBREAK, r2);
-    check(err == 3'd3 && image_in_isram() && `GPR[S1][3],
-          $sformatf("swap-after-verify refused by the ISRAM lock, verdict stands (err=%0d VERIFY_STATUS=%05b)", err, `GPR[S1][4:0]));
+    check(err == 3'd3 && image_in_isram(),
+          $sformatf("swap-after-verify: ISRAM write refused by the lock, image unchanged (err=%0d)", err));
+    dbg_lw(SB_BASE + 4, r, err);
+    check(err == 0 && r[3], $sformatf("verdict stands after the refused write (VERIFY_STATUS=%05b)", r[4:0]));
 
     // Reset + re-verify -> runs (retry path: ndmreset clears the lock and
     // boot_done, keeps ISRAM and recovery)

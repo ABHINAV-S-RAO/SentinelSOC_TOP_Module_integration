@@ -419,21 +419,92 @@ package sentinel_soc_vip_uvm_pkg;
     function new(string name = "soc_timer_irq_seq"); super.new(name); endfunction
     task body();
       obi_seq_item item = obi_seq_item::type_id::create("item");
+
+      // 1. Program CMP register (offset 0x08) to 100 cycles
+      `uvm_info("TIMER_SEQ", "Step 1: Programming CMP register (0x10501008) to 100 cycles", UVM_LOW)
       start_item(item);
-      item.addr = 32'h1050_1000; // Timer Base
-      item.data = 32'h0000_0010; 
-      item.we = 1; item.be = 4'hF;
+      item.addr = 32'h1050_1008; // Timer CMP
+      item.data = 32'd100; 
+      item.we   = 1; item.be = 4'hF;
+      finish_item(item);
+
+      // 2. Enable Timer via CTRL register (offset 0x04, bit 0 = 1, prescaler = 0)
+      `uvm_info("TIMER_SEQ", "Step 2: Enabling Timer via CTRL register (0x10501004)", UVM_LOW)
+      start_item(item);
+      item.addr = 32'h1050_1004; // Timer CTRL
+      item.data = 32'h0000_0001; // Enable bit = 1
+      item.we   = 1; item.be = 4'hF;
+      finish_item(item);
+
+      // 3. Read back timer value after 200ns to verify counting
+      #200;
+      `uvm_info("TIMER_SEQ", "Step 3: Reading back TIMER counter value (0x10501000)", UVM_LOW)
+      start_item(item);
+      item.addr = 32'h1050_1000; // Timer VALUE
+      item.we   = 0; item.be = 4'hF;
       finish_item(item);
     endtask
   endclass
 
   class sentinel_soc_vip_timer_test extends sentinel_soc_vip_base_test;
     `uvm_component_utils(sentinel_soc_vip_timer_test)
+    virtual timer_irq_if vif_timer;
+
     function new(string name, uvm_component parent); super.new(name, parent); endfunction
+
+    function void build_phase(uvm_phase phase);
+      super.build_phase(phase);
+      if (!uvm_config_db#(virtual timer_irq_if)::get(this, "", "vif_timer", vif_timer))
+        `uvm_fatal("NO_VIF", "vif_timer not found in config_db")
+    endfunction
+
     task run_phase(uvm_phase phase);
       soc_timer_irq_seq seq;
+      bit irq_received = 0;
       phase.raise_objection(this);
-      #150; seq = soc_timer_irq_seq::type_id::create("seq"); seq.start(cpu_agent.sequencer); #50000;
+
+      #150;
+      `uvm_info("TIMER_TEST", "--- STARTING TIMER VIP INTEGRATION TEST ---", UVM_LOW)
+      seq = soc_timer_irq_seq::type_id::create("seq");
+
+      fork
+        begin : test_flow
+          // 1. Run sequence to program timer
+          seq.start(cpu_agent.sequencer);
+
+          // 2. Wait for timer compare match interrupt to assert
+          if (!irq_received) begin
+            `uvm_info("TIMER_TEST", "Waiting for timer compare interrupt (irq_timer)...", UVM_LOW)
+            @(posedge vif_timer.irq_timer);
+            irq_received = 1;
+            `uvm_info("TIMER_TEST", ">>> SUCCESS: Timer compare interrupt (irq_timer) asserted! <<<", UVM_LOW)
+          end
+        end
+
+        // Concurrent monitor in case interrupt fires during or before sequence ends
+        begin
+          @(posedge vif_timer.irq_timer);
+          irq_received = 1;
+          `uvm_info("TIMER_TEST", ">>> SUCCESS: Timer compare interrupt (irq_timer) asserted! <<<", UVM_LOW)
+        end
+
+        // Watchdog timeout (10 us)
+        begin
+          #10000;
+          if (!irq_received) begin
+            `uvm_error("TIMER_TEST", "TIMEOUT: Timer interrupt did not assert within timeout window!")
+          end
+        end
+      join_any
+      disable fork;
+
+      #100;
+      if (irq_received) begin
+        `uvm_info("TIMER_TEST", "--- TIMER VIP TEST PASSED ---", UVM_LOW)
+      end else begin
+        `uvm_error("TIMER_TEST", "--- TIMER VIP TEST FAILED ---")
+      end
+
       phase.drop_objection(this);
     endtask
   endclass

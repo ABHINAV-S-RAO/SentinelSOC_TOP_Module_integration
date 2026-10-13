@@ -188,6 +188,11 @@ module sentinel_soc_vip_uvm_top;
   // interface net itself continuously so both driver and monitor see
   // dut_uart_tx. 'force' on a logic net beats procedural drivers.
   assign u_uart_if.monitor_rx = dut_uart_tx;
+
+  // ---------------------------------------------------------------------------
+  // Timer IRQ Interface Connection
+  // ---------------------------------------------------------------------------
+  assign u_timer_if.irq_timer = u_dut.irq_timer_periph;
   // ---------------------------------------------------------------------------
   // UVM Initialization
   // ---------------------------------------------------------------------------

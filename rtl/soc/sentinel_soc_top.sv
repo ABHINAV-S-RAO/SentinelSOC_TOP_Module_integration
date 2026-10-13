@@ -1045,11 +1045,26 @@ soc_addr_decode #(
     .interrupt         (irq_gpio)
   );
 
-  // Timer — NOT YET IMPLEMENTED. Same X-tie-off as SPI above.
-  assign irq_timer_periph = 1'b0;
-  assign prdata_timer  = 32'h0;
-  assign pready_timer  = 1'b1;
-  assign pslverr_timer = 1'b0;
+  // Timer (PULP apb_timer)
+  logic [3:0] irq_timer_raw;
+  apb_timer #(
+    .APB_ADDR_WIDTH ( 12 ),
+    .TIMER_CNT      ( 2  )
+  ) u_apb_timer (
+    .HCLK           ( clk_i              ),
+    .HRESETn        ( rst_ni             ),
+    .PADDR          ( apb_req.paddr[11:0] ),
+    .PWDATA         ( apb_req.pwdata     ),
+    .PWRITE         ( apb_req.pwrite     ),
+    .PSEL           ( psel_timer         ),
+    .PENABLE        ( apb_req.penable    ),
+    .PRDATA         ( prdata_timer       ),
+    .PREADY         ( pready_timer       ),
+    .PSLVERR        ( pslverr_timer      ),
+    .irq_o          ( irq_timer_raw      )
+  );
+
+  assign irq_timer_periph = |irq_timer_raw;
 
   // OBI -> PLIC reg adapter
   // OBI is req/gnt/rvalid, reg bus is valid/ready/rdata

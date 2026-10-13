@@ -58,6 +58,9 @@ rtl/peripheral/apb_uart/apb_uart.sv
 
 rtl/peripheral/apb_gpio/rtl/apb_gpio.sv
 
+rtl/peripheral/apb_timer/src/timer.sv
+rtl/peripheral/apb_timer/src/apb_timer.sv
+
 rtl/peripheral/apb_spi_master/apb_spi_master.sv
 rtl/peripheral/apb_spi_master/spi_master_apb_if.sv
 rtl/peripheral/apb_spi_master/spi_master_clkgen.sv

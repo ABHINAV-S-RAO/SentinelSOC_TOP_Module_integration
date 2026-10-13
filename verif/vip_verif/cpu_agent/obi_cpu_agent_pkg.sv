@@ -8,7 +8,7 @@ package obi_cpu_agent_pkg;
     rand logic [31:0] data;
     rand logic        we;
     rand logic [3:0]  be;
-    
+
     `uvm_object_utils_begin(obi_seq_item)
       `uvm_field_int(addr, UVM_ALL_ON)
       `uvm_field_int(data, UVM_ALL_ON)
@@ -36,7 +36,7 @@ package obi_cpu_agent_pkg;
         `uvm_fatal("NO_VIF", "obi_if not found")
     endfunction
 
-        task run_phase(uvm_phase phase);
+    task run_phase(uvm_phase phase);
       vif.req   <= 0;
       vif.we    <= 0;
       vif.addr  <= 0;
@@ -44,35 +44,41 @@ package obi_cpu_agent_pkg;
       vif.be    <= 0;
       @(posedge vif.rst_ni);
       `uvm_info("OBI_DRV", "Out of reset, waiting for items...", UVM_LOW)
-      
+
       forever begin
         seq_item_port.get_next_item(req);
         `uvm_info("OBI_DRV", $sformatf("Driving req to addr 0x%0h", req.addr), UVM_LOW)
-        
-        @(posedge vif.clk_i);
+
+        // Drive at negedge — signals settle before the DUT's next posedge sample,
+        // avoiding a same-edge race between driving req and checking gnt.
+        @(negedge vif.clk_i);
         vif.req   <= 1;
         vif.we    <= req.we;
         vif.addr  <= req.addr;
         vif.wdata <= req.data;
         vif.be    <= req.be;
-        
-        // Wait for gnt with timeout
+
+        // Wait for gnt with timeout — first check happens at the posedge
+        // *after* req was driven, so the DUT has had a real chance to respond.
         begin : gnt_wait
           int unsigned t = 0;
           `uvm_info("OBI_DRV", "Waiting for gnt==1", UVM_LOW)
+          @(posedge vif.clk_i);
           while (vif.gnt !== 1'b1) begin
             @(posedge vif.clk_i);
             if (++t >= 500) `uvm_fatal("OBI_DRV", $sformatf("GNT TIMEOUT addr=0x%08h", req.addr))
           end
         end
         `uvm_info("OBI_DRV", "Got gnt==1, dropping req and waiting for rvalid==1", UVM_LOW)
-        
-        @(posedge vif.clk_i);
+
+        // Drop req at negedge (clean de-assertion, same safe timing discipline)
+        @(negedge vif.clk_i);
         vif.req <= 0;
 
         // Wait for rvalid with timeout + diagnostic prints
         begin : rvalid_wait
           int unsigned t = 0;
+          @(posedge vif.clk_i);
           while (vif.rvalid !== 1'b1) begin
             @(posedge vif.clk_i);
             if (++t == 100)

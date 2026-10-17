@@ -76,11 +76,16 @@ package obi_cpu_agent_pkg;
         vif.req <= 0;
 
         // Wait for rvalid with timeout + diagnostic prints
+        // Sample at negedge to avoid a race with posedge-triggered NBA
+        // updates: rvalid is a combinational function of registered
+        // signals (tsxn_in_progress, apb_rsp_pready_q) whose NBA
+        // updates happen at the same posedge the driver would be
+        // checking.  Negedge sampling guarantees all NBA effects have
+        // settled and the combinational outputs are stable.
         begin : rvalid_wait
           int unsigned t = 0;
-          @(posedge vif.clk_i);
-          while (vif.rvalid !== 1'b1) begin
-            @(posedge vif.clk_i);
+          do begin
+            @(negedge vif.clk_i);
             if (++t == 100)
               $display("[OBI_DRV] %0t: still waiting rvalid, addr=0x%08h rvalid=%b gnt=%b",
                        $time, req.addr, vif.rvalid, vif.gnt);
@@ -91,7 +96,7 @@ package obi_cpu_agent_pkg;
               $display("[OBI_DRV] FATAL: rvalid never came for addr=0x%08h after %0d cycles", req.addr, t);
               `uvm_fatal("OBI_DRV", "rvalid TIMEOUT — check APB bridge / address decode")
             end
-          end
+          end while (vif.rvalid !== 1'b1);
         end
 
         `uvm_info("OBI_DRV", "Got rvalid==1, finishing item", UVM_LOW)

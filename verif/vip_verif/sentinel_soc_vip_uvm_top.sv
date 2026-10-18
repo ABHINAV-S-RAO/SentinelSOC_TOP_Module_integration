@@ -162,21 +162,29 @@ module sentinel_soc_vip_uvm_top;
 
   // DEBUG MONITOR
   always @(posedge clk_i) begin
-    // Only print when there's an active request or a valid response to avoid flooding the terminal
-    if (u_obi_if.req || u_dut.apb_bridge_req || u_dut.core_data_rvalid || u_dut.apb_bridge_rvalid) begin
-      $display("[HW_TRACE] %0t: core_req=%b sbr_req=%b sbr_port_req=%b mgr_req7=%b | sel=%d inflight=%b | demux_gnt=%b apb_req=%b", 
+    if (($time >= 140000 && $time <= 300000) || u_obi_if.req || u_dut.core_data_rvalid || u_dut.apb_bridge_rvalid) begin
+      $display("[HW_TRACE_POS] %0t: req=%b gnt=%b rv=%b | demux_gnt=%b inflight=%0d sel_q=%0d sel_d=%0d | tsxn=%b penable=%b psel_tim=%b pen_gated=%b | pr_comb=%b pr_q=%b apb_pr=%b | port7_rv=%b sbr_rv=%b | irq=%b", 
         $time, 
-        u_dut.core_data_req, u_dut.u_addr_decode.data_req_s.req, u_dut.u_addr_decode.u_data_demux.sbr_port_req_i.req, u_dut.u_addr_decode.u_data_demux.mgr_ports_req_o[7].req,
-        u_dut.u_addr_decode.data_sel, u_dut.u_addr_decode.u_data_demux.in_flight,
-        u_dut.u_addr_decode.u_data_demux.sbr_port_gnt, u_dut.apb_bridge_req
+        u_dut.core_data_req, u_dut.core_data_gnt, u_dut.core_data_rvalid,
+        u_dut.u_addr_decode.u_data_demux.sbr_port_gnt, u_dut.u_addr_decode.u_data_demux.in_flight,
+        u_dut.u_addr_decode.u_data_demux.select_q, u_dut.u_addr_decode.u_data_demux.select_d,
+        u_dut.u_obi_to_apb.gen_hs_buffers.tsxn_in_progress, u_dut.apb_req.penable, u_dut.psel_timer, u_dut.apb_penable_gated,
+        u_dut.apb_rsp_pready_comb, u_dut.apb_rsp_pready_q, u_dut.apb_rsp.pready,
+        u_dut.u_addr_decode.u_data_demux.mgr_ports_rsp_i[7].rvalid, u_dut.u_addr_decode.u_data_demux.sbr_port_rsp_o.rvalid,
+        u_dut.irq_timer_periph
       );
+    end
+  end
 
-      $display("[SELQ_TRACE] %0t: select_q=%0d select_d=%0d port7_rvalid=%b sbr_rvalid=%b",
-          $time,
-          u_dut.u_addr_decode.u_data_demux.select_q,
-          u_dut.u_addr_decode.u_data_demux.select_d,
-          u_dut.u_addr_decode.u_data_demux.mgr_ports_rsp_i[7].rvalid,
-          u_dut.u_addr_decode.u_data_demux.sbr_port_rsp_o.rvalid);
+  always @(negedge clk_i) begin
+    if ($time >= 140000 && $time <= 300000) begin
+      $display("[HW_TRACE_NEG] %0t: vif_req=%b vif_gnt=%b vif_rv=%b | tsxn=%b penable=%b pen_gated=%b pr_q=%b | port7_rv=%b core_rv=%b | irq=%b",
+        $time,
+        u_obi_if.req, u_obi_if.gnt, u_obi_if.rvalid,
+        u_dut.u_obi_to_apb.gen_hs_buffers.tsxn_in_progress, u_dut.apb_req.penable, u_dut.apb_penable_gated, u_dut.apb_rsp_pready_q,
+        u_dut.u_addr_decode.u_data_demux.mgr_ports_rsp_i[7].rvalid, u_dut.core_data_rvalid,
+        u_dut.irq_timer_periph
+      );
     end
   end
 `endif

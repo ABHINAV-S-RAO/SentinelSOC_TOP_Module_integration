@@ -162,7 +162,7 @@ module sentinel_soc_vip_uvm_top;
 
   // DEBUG MONITOR
   always @(posedge clk_i) begin
-    if (($time >= 140000 && $time <= 300000) || u_obi_if.req || u_dut.core_data_rvalid || u_dut.apb_bridge_rvalid) begin
+    if (($time >= 140 && $time <= 350) || ($time >= 140000 && $time <= 350000) || u_obi_if.req || u_dut.core_data_rvalid || u_dut.apb_bridge_rvalid) begin
       $display("[HW_TRACE_POS] %0t: req=%b gnt=%b rv=%b | demux_gnt=%b inflight=%0d sel_q=%0d sel_d=%0d | tsxn=%b penable=%b psel_tim=%b pen_gated=%b | pr_comb=%b pr_q=%b apb_pr=%b | port7_rv=%b sbr_rv=%b | irq=%b", 
         $time, 
         u_dut.core_data_req, u_dut.core_data_gnt, u_dut.core_data_rvalid,
@@ -177,7 +177,7 @@ module sentinel_soc_vip_uvm_top;
   end
 
   always @(negedge clk_i) begin
-    if ($time >= 140000 && $time <= 300000) begin
+    if (($time >= 140 && $time <= 350) || ($time >= 140000 && $time <= 350000)) begin
       $display("[HW_TRACE_NEG] %0t: vif_req=%b vif_gnt=%b vif_rv=%b | tsxn=%b penable=%b pen_gated=%b pr_q=%b | port7_rv=%b core_rv=%b | irq=%b",
         $time,
         u_obi_if.req, u_obi_if.gnt, u_obi_if.rvalid,

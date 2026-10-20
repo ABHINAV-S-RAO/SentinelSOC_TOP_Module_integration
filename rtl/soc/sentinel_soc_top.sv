@@ -1057,7 +1057,7 @@ soc_addr_decode #(
     .PWDATA         ( apb_req.pwdata     ),
     .PWRITE         ( apb_req.pwrite     ),
     .PSEL           ( psel_timer         ),
-    .PENABLE        ( apb_penable_gated ),
+    .PENABLE        ( apb_req.penable    ),
     .PRDATA         ( prdata_timer       ),
     .PREADY         ( pready_timer       ),
     .PSLVERR        ( pslverr_timer      ),

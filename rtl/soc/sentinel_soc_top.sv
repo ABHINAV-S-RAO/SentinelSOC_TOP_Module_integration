@@ -918,14 +918,14 @@ soc_addr_decode #(
     if (psel_gpio)  begin apb_rsp.prdata = prdata_gpio;  apb_rsp_pready_comb = pready_gpio;  apb_rsp.pslverr = pslverr_gpio;  end
   end
 
-  assign apb_rsp_pready_d = apb_rsp_pready_comb & apb_req.penable;
+  assign apb_rsp_pready_d = apb_rsp_pready_comb & apb_req.penable & ~apb_rsp_pready_q;
 
   always_ff @(posedge clk_i or negedge rst_ni) begin
     if (!rst_ni) apb_rsp_pready_q <= 1'b0;
     else         apb_rsp_pready_q <= apb_rsp_pready_d;
   end
 
-  assign apb_rsp.pready = apb_rsp_pready_q;
+  assign apb_rsp.pready = apb_req.penable ? apb_rsp_pready_q : 1'b0;
   wire apb_penable_gated = apb_req.penable & ~apb_rsp_pready_q;
   
   // ---------------------------------------------------------------------------

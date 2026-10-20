@@ -154,7 +154,7 @@ package sentinel_soc_vip_uvm_pkg;
       UartScoreboard uart_scoreboard;
 
       if (!uvm_config_db#(UartScoreboard)::get(null, "", "uart_scoreboard", uart_scoreboard)) begin
-        `uvm_error("SEQ", "Could not get uart_scoreboard handle — TX side of scoreboard will not be fed, comparison will hang")
+        `uvm_error("SEQ", "Could not get uart_scoreboard handle - TX side of scoreboard will not be fed, comparison will hang")
       end
 
       // -----------------------------------------------------------------
@@ -427,6 +427,8 @@ package sentinel_soc_vip_uvm_pkg;
       item.data = 32'd100; 
       item.we   = 1; item.be = 4'hF;
       finish_item(item);
+
+      #40; // Allow APB bus to complete cycle and return to idle
 
       // 2. Enable Timer via CTRL register (offset 0x04, bit 0 = 1, prescaler = 0)
       `uvm_info("TIMER_SEQ", "Step 2: Enabling Timer via CTRL register (0x10501004)", UVM_LOW)

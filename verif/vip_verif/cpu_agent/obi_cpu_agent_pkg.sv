@@ -97,7 +97,7 @@ package obi_cpu_agent_pkg;
                        $time, t, req.addr);
             if (t >= 5000) begin
               $display("[OBI_DRV] FATAL: rvalid never came for addr=0x%08h after %0d cycles", req.addr, t);
-              `uvm_fatal("OBI_DRV", "rvalid TIMEOUT — check APB bridge / address decode")
+              `uvm_fatal("OBI_DRV", "rvalid TIMEOUT - check APB bridge / address decode")
             end
           end while (vif.rvalid !== 1'b1);
         end

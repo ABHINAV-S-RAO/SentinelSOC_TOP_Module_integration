@@ -161,6 +161,7 @@ module sentinel_soc_vip_uvm_top;
   assign u_obi_if.err    = u_dut.core_data_err;
 
   // DEBUG MONITOR
+`ifdef DEBUG_BUS_TRACE
   always @(posedge clk_i) begin
     if (($time >= 140 && $time <= 350) || ($time >= 140000 && $time <= 350000) || u_obi_if.req || u_dut.core_data_rvalid || u_dut.apb_bridge_rvalid) begin
       $display("[HW_TRACE_POS] %0t: req=%b gnt=%b rv=%b | demux_gnt=%b inflight=%0d sel_q=%0d sel_d=%0d | tsxn=%b penable=%b psel_tim=%b pen_gated=%b | pr_comb=%b pr_q=%b apb_pr=%b | port7_rv=%b sbr_rv=%b | irq=%b", 
@@ -188,6 +189,7 @@ module sentinel_soc_vip_uvm_top;
     end
   end
 `endif
+`endif
 
   // ---------------------------------------------------------------------------
   // UART RX Monitor Workaround
@@ -200,7 +202,8 @@ module sentinel_soc_vip_uvm_top;
   // ---------------------------------------------------------------------------
   // Timer IRQ Interface Connection
   // ---------------------------------------------------------------------------
-  assign u_timer_if.irq_timer = u_dut.irq_timer_periph;
+  assign u_timer_if.irq_timer     = u_dut.irq_timer_periph;
+  assign u_timer_if.irq_timer_raw = u_dut.irq_timer_raw;
   // ---------------------------------------------------------------------------
   // UVM Initialization
   // ---------------------------------------------------------------------------

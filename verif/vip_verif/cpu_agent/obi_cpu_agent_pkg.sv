@@ -86,9 +86,12 @@ package obi_cpu_agent_pkg;
           int unsigned t = 0;
           do begin
             @(negedge vif.clk_i);
-            if (++t <= 5)
+            t++;
+`ifdef DEBUG_BUS_TRACE
+            if (t <= 5)
               $display("[OBI_DRV_SAMPLE] %0t: cycle %0d: addr=0x%08h rvalid=%b gnt=%b",
                        $time, t, req.addr, vif.rvalid, vif.gnt);
+`endif
             if (t == 100)
               $display("[OBI_DRV] %0t: still waiting rvalid, addr=0x%08h rvalid=%b gnt=%b",
                        $time, req.addr, vif.rvalid, vif.gnt);

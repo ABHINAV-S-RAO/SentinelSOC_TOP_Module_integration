@@ -67,12 +67,7 @@ module sentinel_soc_vip_uvm_top;
     .Trst  (u_jtag_if.Trst)
   );
 
-  initial begin
-    u_jtag_if.Trst = 1'b1;
-    u_jtag_if.Tms  = 1'b1;
-    u_jtag_if.Tdi  = 1'b0;
-  end
-  
+
   // CPU Agent Interface
   obi_if u_obi_if(clk_i, rst_ni);
   

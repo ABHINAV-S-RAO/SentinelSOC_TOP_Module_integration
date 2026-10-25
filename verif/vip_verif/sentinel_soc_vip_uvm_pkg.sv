@@ -492,7 +492,7 @@ package sentinel_soc_vip_uvm_pkg;
       pat_seq.start(jtag_env.jtagControllerDeviceAgent.jtagControllerDeviceSequencer);
 
       target_fifo.get(rsp_item);
-      expected_bypass = {32'hA5A5_5A5A[30:0], 1'b0};
+      expected_bypass = 32'hA5A5_5A5A << 1; // {pattern[30:0], 1'b0} — BYPASS 1-cycle latency
       `uvm_info("JTAG_TEST", $sformatf("[Phase 3] Monitor received vector: 32'h%08h (Expected: 32'h%08h)", 
                 rsp_item.jtagTestVector, expected_bypass), UVM_LOW)
 
@@ -515,7 +515,7 @@ package sentinel_soc_vip_uvm_pkg;
       pat_seq.start(jtag_env.jtagControllerDeviceAgent.jtagControllerDeviceSequencer);
 
       target_fifo.get(rsp_item);
-      expected_bypass = {32'h1234_5678[30:0], 1'b0};
+      expected_bypass = 32'h1234_5678 << 1; // {pattern[30:0], 1'b0} — BYPASS 1-cycle latency
       `uvm_info("JTAG_TEST", $sformatf("[Phase 4] Monitor received vector: 32'h%08h (Expected: 32'h%08h)", 
                 rsp_item.jtagTestVector, expected_bypass), UVM_LOW)
 
@@ -547,14 +547,20 @@ package sentinel_soc_vip_uvm_pkg;
       `uvm_info("JTAG_TEST", $sformatf("[Phase 5] Monitor received vector: 32'h%08h", rsp_item.jtagTestVector), UVM_LOW)
 
       // Check version (bits 3:0) and abits (bits 9:4)
-      if (rsp_item.jtagTestVector[3:0] === 4'd1 && rsp_item.jtagTestVector[9:4] === 6'd7) begin
-        `uvm_info("JTAG_TEST", $sformatf("[PASS] Phase 5: DTMCS verified! version=1, abits=7, dtmcs=0x%08h", 
-                  rsp_item.jtagTestVector), UVM_LOW)
-        pass_count++;
-      end else begin
-        `uvm_error("JTAG_TEST", $sformatf("[FAIL] Phase 5: DTMCS mismatch! Expected version=1, abits=7; Got: 0x%08h", 
-                  rsp_item.jtagTestVector))
-        error_count++;
+      begin
+        logic [3:0]  dtmcs_version;
+        logic [5:0]  dtmcs_abits;
+        dtmcs_version = rsp_item.jtagTestVector[3:0];
+        dtmcs_abits   = rsp_item.jtagTestVector[9:4];
+        if (dtmcs_version === 4'd1 && dtmcs_abits === 6'd7) begin
+          `uvm_info("JTAG_TEST", $sformatf("[PASS] Phase 5: DTMCS verified! version=1, abits=7, dtmcs=0x%08h", 
+                    rsp_item.jtagTestVector), UVM_LOW)
+          pass_count++;
+        end else begin
+          `uvm_error("JTAG_TEST", $sformatf("[FAIL] Phase 5: DTMCS mismatch! Expected version=1, abits=7; Got: 0x%08h", 
+                    rsp_item.jtagTestVector))
+          error_count++;
+        end
       end
 
       // -----------------------------------------------------------------------

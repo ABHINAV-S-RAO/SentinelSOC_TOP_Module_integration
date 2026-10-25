@@ -15,6 +15,7 @@ package sentinel_soc_vip_uvm_pkg;
 
   import JtagGlobalPkg::*;
   import JtagControllerDevicePkg::*;
+  import JtagControllerDeviceSequencePkg::*;
   import JtagTargetDevicePkg::*;
   import JtagEnvPkg::*;
 
@@ -378,6 +379,7 @@ package sentinel_soc_vip_uvm_pkg;
     JtagEnvConfig  jtag_cfg;
     JtagEnv        jtag_env;
     virtual JtagIf vif_jtag;
+    uvm_tlm_analysis_fifo #(JtagTargetDeviceTransaction) target_fifo;
 
     function new(string name, uvm_component parent); super.new(name, parent); endfunction
 
@@ -387,26 +389,188 @@ package sentinel_soc_vip_uvm_pkg;
         `uvm_fatal("JTAG_TEST", "Could not get vif_jtag from config DB")
     
       jtag_cfg = JtagEnvConfig::type_id::create("jtag_cfg");
+      jtag_cfg.hasScoreboard = 0; // Self-checking verification in test
+      jtag_cfg.hasVirtualSequencer = 0;
+
+      // Controller Agent Configuration
       jtag_cfg.jtagControllerDeviceAgentConfig = JtagControllerDeviceAgentConfig::type_id::create("jtagControllerDeviceAgentConfig");
       jtag_cfg.jtagControllerDeviceAgentConfig.is_active = UVM_ACTIVE;
-    
+      jtag_cfg.jtagControllerDeviceAgentConfig.hasCoverage = 0;
+      jtag_cfg.jtagControllerDeviceAgentConfig.jtagInstructionWidth  = instructionWidth5Bit;
+      jtag_cfg.jtagControllerDeviceAgentConfig.jtagTestVectorWidth   = testVectorWidth32Bit;
+      jtag_cfg.jtagControllerDeviceAgentConfig.jtagInstructionOpcode = userDefinedRegister; // 5'b00001 = IDCODE
+      jtag_cfg.jtagControllerDeviceAgentConfig.trstEnable            = 1'b1;
+
+      // Target Agent Configuration (Passive monitor on DUT TDO)
       jtag_cfg.jtagTargetDeviceAgentConfig = JtagTargetDeviceAgentConfig::type_id::create("jtagTargetDeviceAgentConfig");
       jtag_cfg.jtagTargetDeviceAgentConfig.is_active = UVM_PASSIVE;
-    
+      jtag_cfg.jtagTargetDeviceAgentConfig.hasCoverage = 0;
+      jtag_cfg.jtagTargetDeviceAgentConfig.jtagInstructionWidth  = instructionWidth5Bit;
+      jtag_cfg.jtagTargetDeviceAgentConfig.jtagTestVectorWidth   = testVectorWidth32Bit;
+      jtag_cfg.jtagTargetDeviceAgentConfig.jtagInstructionOpcode = userDefinedRegister;
+
       uvm_config_db#(JtagEnvConfig)::set(this, "*", "jtagEnvConfig", jtag_cfg);
+      uvm_config_db#(JtagControllerDeviceAgentConfig)::set(null, "*", "jtagControllerDeviceAgentConfig", jtag_cfg.jtagControllerDeviceAgentConfig);
+      uvm_config_db#(JtagTargetDeviceAgentConfig)::set(null, "*", "jtagTargetDeviceAgentConfig", jtag_cfg.jtagTargetDeviceAgentConfig);
     
       jtag_env = JtagEnv::type_id::create("jtag_env", this);
-      uvm_config_db#(virtual JtagIf)::set(this, "jtag_env.*", "vif", vif_jtag);
+      target_fifo = new("target_fifo", this);
+    endfunction
+
+    function void connect_phase(uvm_phase phase);
+      super.connect_phase(phase);
+      jtag_env.jtagTargetDeviceAgent.jtagTargetDeviceAnalysisPort.connect(target_fifo.analysis_export);
     endfunction
 
     task run_phase(uvm_phase phase);
-      // TODO: replace with an actual JtagControllerDevice sequence
-      // (e.g. JtagControllerDevicePatternBasedSequence) started on
-      // jtag_env's controller sequencer, once a concrete debug
-      // operation (DMI read/write, halt/resume) is decided
+      JtagControllerDevicePatternBasedSequence pat_seq;
+      JtagTargetDeviceTransaction rsp_item;
+      int error_count = 0;
+      int pass_count  = 0;
+      logic [31:0] expected_bypass;
+
       phase.raise_objection(this);
-      `uvm_info("JTAG_TEST", "Running SoC JTAG Traffic Test...", UVM_LOW)
-      #50000;
+      `uvm_info("JTAG_TEST", "==================================================", UVM_LOW)
+      `uvm_info("JTAG_TEST", " Starting SentinelSoC JTAG AVIP Verification Suite ", UVM_LOW)
+      `uvm_info("JTAG_TEST", "==================================================", UVM_LOW)
+
+      #200; // Allow SoC power-on reset deassertion
+
+      // -----------------------------------------------------------------------
+      // Phase 1: TAP Hardware Reset (TRST_n assertion)
+      // -----------------------------------------------------------------------
+      `uvm_info("JTAG_TEST", "[Phase 1] Asserting JTAG Hardware Reset (TRST_n)...", UVM_LOW)
+      pat_seq = JtagControllerDevicePatternBasedSequence::type_id::create("pat_seq");
+      pat_seq.tresetEnable = 1'b0; // Assert TRST_n (Trst = 0)
+      pat_seq.patternNeeded = 32'h0;
+      pat_seq.start(jtag_env.jtagControllerDeviceAgent.jtagControllerDeviceSequencer);
+      
+      target_fifo.get(rsp_item);
+      `uvm_info("JTAG_TEST", "[Phase 1] TAP Reset complete.", UVM_LOW)
+      pass_count++;
+
+      // -----------------------------------------------------------------------
+      // Phase 2: IDCODE Readback Verification
+      // IEEE 1149.1 / RISC-V Debug TAP: Default IR on reset is IDCODE (5'h01)
+      // IDCODE Value in SentinelSoC: 32'h0000_0DB3
+      // -----------------------------------------------------------------------
+      `uvm_info("JTAG_TEST", "[Phase 2] Verifying JTAG IDCODE (Expected: 32'h00000DB3)...", UVM_LOW)
+      jtag_cfg.jtagControllerDeviceAgentConfig.jtagInstructionOpcode = userDefinedRegister; // 5'b00001 = IDCODE
+      jtag_cfg.jtagTargetDeviceAgentConfig.jtagInstructionOpcode     = userDefinedRegister;
+      jtag_env.jtagControllerDeviceAgent.jtagControllerDeviceDriver.jtagConfigStruct.jtagInstructionOpcode = 5'b00001;
+
+      pat_seq = JtagControllerDevicePatternBasedSequence::type_id::create("pat_seq");
+      pat_seq.tresetEnable = 1'b1;
+      pat_seq.patternNeeded = 32'hFFFF_FFFF;
+      pat_seq.start(jtag_env.jtagControllerDeviceAgent.jtagControllerDeviceSequencer);
+
+      target_fifo.get(rsp_item);
+      `uvm_info("JTAG_TEST", $sformatf("[Phase 2] Monitor received vector: 32'h%08h, instruction: 5'b%05b", 
+                rsp_item.jtagTestVector, rsp_item.jtagInstruction), UVM_LOW)
+
+      if (rsp_item.jtagTestVector === 32'h0000_0DB3) begin
+        `uvm_info("JTAG_TEST", $sformatf("[PASS] Phase 2: IDCODE matched perfectly: 0x%08h", rsp_item.jtagTestVector), UVM_LOW)
+        pass_count++;
+      end else begin
+        `uvm_error("JTAG_TEST", $sformatf("[FAIL] Phase 2: IDCODE mismatch! Expected: 0x00000DB3, Got: 0x%08h", rsp_item.jtagTestVector))
+        error_count++;
+      end
+
+      // -----------------------------------------------------------------------
+      // Phase 3: BYPASS Register Verification (Pattern: 0xA5A5_5A5A)
+      // BYPASS opcode = 5'h00. 1-bit shift register with 1-cycle latency.
+      // Expected shifted output = {pattern[30:0], 1'b0}
+      // -----------------------------------------------------------------------
+      `uvm_info("JTAG_TEST", "[Phase 3] Verifying BYPASS Register (Pattern: 0xA5A55A5A)...", UVM_LOW)
+      jtag_cfg.jtagControllerDeviceAgentConfig.jtagInstructionOpcode = bypassRegister; // 5'b00000 = BYPASS0
+      jtag_cfg.jtagTargetDeviceAgentConfig.jtagInstructionOpcode     = bypassRegister;
+      jtag_env.jtagControllerDeviceAgent.jtagControllerDeviceDriver.jtagConfigStruct.jtagInstructionOpcode = 5'b00000;
+
+      pat_seq = JtagControllerDevicePatternBasedSequence::type_id::create("pat_seq");
+      pat_seq.tresetEnable = 1'b1;
+      pat_seq.patternNeeded = 32'hA5A5_5A5A;
+      pat_seq.start(jtag_env.jtagControllerDeviceAgent.jtagControllerDeviceSequencer);
+
+      target_fifo.get(rsp_item);
+      expected_bypass = {32'hA5A5_5A5A[30:0], 1'b0};
+      `uvm_info("JTAG_TEST", $sformatf("[Phase 3] Monitor received vector: 32'h%08h (Expected: 32'h%08h)", 
+                rsp_item.jtagTestVector, expected_bypass), UVM_LOW)
+
+      if (rsp_item.jtagTestVector === expected_bypass) begin
+        `uvm_info("JTAG_TEST", $sformatf("[PASS] Phase 3: BYPASS 1-cycle shift matched: 0x%08h", rsp_item.jtagTestVector), UVM_LOW)
+        pass_count++;
+      end else begin
+        `uvm_error("JTAG_TEST", $sformatf("[FAIL] Phase 3: BYPASS mismatch! Expected: 0x%08h, Got: 0x%08h", 
+                  expected_bypass, rsp_item.jtagTestVector))
+        error_count++;
+      end
+
+      // -----------------------------------------------------------------------
+      // Phase 4: BYPASS Register Stress Test (Pattern: 0x1234_5678)
+      // -----------------------------------------------------------------------
+      `uvm_info("JTAG_TEST", "[Phase 4] Verifying BYPASS Register (Pattern: 0x12345678)...", UVM_LOW)
+      pat_seq = JtagControllerDevicePatternBasedSequence::type_id::create("pat_seq");
+      pat_seq.tresetEnable = 1'b1;
+      pat_seq.patternNeeded = 32'h1234_5678;
+      pat_seq.start(jtag_env.jtagControllerDeviceAgent.jtagControllerDeviceSequencer);
+
+      target_fifo.get(rsp_item);
+      expected_bypass = {32'h1234_5678[30:0], 1'b0};
+      `uvm_info("JTAG_TEST", $sformatf("[Phase 4] Monitor received vector: 32'h%08h (Expected: 32'h%08h)", 
+                rsp_item.jtagTestVector, expected_bypass), UVM_LOW)
+
+      if (rsp_item.jtagTestVector === expected_bypass) begin
+        `uvm_info("JTAG_TEST", $sformatf("[PASS] Phase 4: BYPASS pattern 2 matched: 0x%08h", rsp_item.jtagTestVector), UVM_LOW)
+        pass_count++;
+      end else begin
+        `uvm_error("JTAG_TEST", $sformatf("[FAIL] Phase 4: BYPASS mismatch! Expected: 0x%08h, Got: 0x%08h", 
+                  expected_bypass, rsp_item.jtagTestVector))
+        error_count++;
+      end
+
+      // -----------------------------------------------------------------------
+      // Phase 5: DTMCS Register Verification
+      // DTMCSR opcode = 5'h10.
+      // Expected DTMCS: version=1 (bits 3:0), abits=7 (bits 9:4), idle=1 (bits 14:12) -> 32'h0000_1071
+      // -----------------------------------------------------------------------
+      `uvm_info("JTAG_TEST", "[Phase 5] Verifying DTMCS Register (Opcode 5'h10)...", UVM_LOW)
+      jtag_cfg.jtagControllerDeviceAgentConfig.jtagInstructionOpcode = JtagInstructionOpcodeEnum'(5'h10);
+      jtag_cfg.jtagTargetDeviceAgentConfig.jtagInstructionOpcode     = JtagInstructionOpcodeEnum'(5'h10);
+      jtag_env.jtagControllerDeviceAgent.jtagControllerDeviceDriver.jtagConfigStruct.jtagInstructionOpcode = 5'h10;
+
+      pat_seq = JtagControllerDevicePatternBasedSequence::type_id::create("pat_seq");
+      pat_seq.tresetEnable = 1'b1;
+      pat_seq.patternNeeded = 32'h0000_0000;
+      pat_seq.start(jtag_env.jtagControllerDeviceAgent.jtagControllerDeviceSequencer);
+
+      target_fifo.get(rsp_item);
+      `uvm_info("JTAG_TEST", $sformatf("[Phase 5] Monitor received vector: 32'h%08h", rsp_item.jtagTestVector), UVM_LOW)
+
+      // Check version (bits 3:0) and abits (bits 9:4)
+      if (rsp_item.jtagTestVector[3:0] === 4'd1 && rsp_item.jtagTestVector[9:4] === 6'd7) begin
+        `uvm_info("JTAG_TEST", $sformatf("[PASS] Phase 5: DTMCS verified! version=1, abits=7, dtmcs=0x%08h", 
+                  rsp_item.jtagTestVector), UVM_LOW)
+        pass_count++;
+      end else begin
+        `uvm_error("JTAG_TEST", $sformatf("[FAIL] Phase 5: DTMCS mismatch! Expected version=1, abits=7; Got: 0x%08h", 
+                  rsp_item.jtagTestVector))
+        error_count++;
+      end
+
+      // -----------------------------------------------------------------------
+      // Final Test Summary
+      // -----------------------------------------------------------------------
+      `uvm_info("JTAG_TEST", "==================================================", UVM_LOW)
+      `uvm_info("JTAG_TEST", $sformatf(" JTAG VERIFICATION SUMMARY: %0d PASSED, %0d FAILED", pass_count, error_count), UVM_LOW)
+      `uvm_info("JTAG_TEST", "==================================================", UVM_LOW)
+
+      if (error_count == 0) begin
+        `uvm_info("JTAG_TEST", " *** ALL JTAG VERIFICATION TESTS PASSED SUCCESSFULLY! ***", UVM_LOW)
+      end else begin
+        `uvm_fatal("JTAG_TEST", " *** JTAG VERIFICATION ENCOUNTERED FAILURES! ***")
+      end
+
+      #1000;
       phase.drop_objection(this);
     endtask
   endclass

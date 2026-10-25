@@ -41,7 +41,37 @@ module sentinel_soc_vip_uvm_top;
   UartRxAgentBfm u_uart_rx_bfm(u_uart_if);
 
   SpiInterface  u_spi_if(clk_i, rst_ni);
-  JtagIf u_jtag_if(clk_i, rst_ni);
+
+  // ---------------------------------------------------------------------------
+  // JTAG Clock Generation (25 MHz, Period = 40ns)
+  // Shifted by 10ns to provide robust setup/hold timing margin to DUT TAP
+  // ---------------------------------------------------------------------------
+  logic jtag_tck;
+  initial begin
+    jtag_tck = 0;
+    forever #20 jtag_tck = ~jtag_tck;
+  end
+
+  wire jtag_tck_dut;
+  assign #10 jtag_tck_dut = jtag_tck;
+
+  // JTAG Interface & AVIP BFMs
+  JtagIf u_jtag_if(jtag_tck, rst_ni);
+  JtagControllerDeviceAgentBfm u_jtag_ctrl_bfm(u_jtag_if);
+  JtagTargetDeviceMonitorBfm   u_jtag_target_mon_bfm (
+    .clk   (u_jtag_if.clk),
+    .reset (u_jtag_if.reset),
+    .Tdo   (u_jtag_if.Tdo),
+    .Tms   (u_jtag_if.Tms),
+    .Tdi   (u_jtag_if.Tdi),
+    .Trst  (u_jtag_if.Trst)
+  );
+
+  initial begin
+    u_jtag_if.Trst = 1'b1;
+    u_jtag_if.Tms  = 1'b1;
+    u_jtag_if.Tdi  = 1'b0;
+  end
   
   // CPU Agent Interface
   obi_if u_obi_if(clk_i, rst_ni);
@@ -97,11 +127,11 @@ module sentinel_soc_vip_uvm_top;
     .spi_miso_i         ( u_spi_if.miso0),
     
     // JTAG
-    .jtag_tck_i         ( clk_i ),
+    .jtag_tck_i         ( jtag_tck_dut ),
     .jtag_tms_i         ( u_jtag_if.Tms ),
     .jtag_tdi_i         ( u_jtag_if.Tdi ),
     .jtag_tdo_o         ( u_jtag_if.Tdo ),
-    .jtag_trst_ni       ( u_jtag_if.Trst)
+    .jtag_trst_ni       ( u_jtag_if.Trst )
 
 `ifdef DIFT
     ,
@@ -215,6 +245,7 @@ module sentinel_soc_vip_uvm_top;
     uvm_config_db#(virtual timer_irq_if)::set(null, "*", "vif_timer", u_timer_if);
     uvm_config_db#(virtual SpiInterface)::set(null, "*", "vif_spi", u_spi_if);
     uvm_config_db#(virtual JtagIf)::set(null, "*", "vif_jtag", u_jtag_if);
+    uvm_config_db#(virtual JtagTargetDeviceMonitorBfm)::set(null, "*", "jtagTargetDeviceMonitorBfm", u_jtag_target_mon_bfm);
     
     run_test();
   end

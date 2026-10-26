@@ -509,6 +509,10 @@ package sentinel_soc_vip_uvm_pkg;
       // Phase 4: BYPASS Register Stress Test (Pattern: 0x1234_5678)
       // -----------------------------------------------------------------------
       `uvm_info("JTAG_TEST", "[Phase 4] Verifying BYPASS Register (Pattern: 0x12345678)...", UVM_LOW)
+      jtag_cfg.jtagControllerDeviceAgentConfig.jtagInstructionOpcode = bypassRegister;
+      jtag_cfg.jtagTargetDeviceAgentConfig.jtagInstructionOpcode     = bypassRegister;
+      jtag_env.jtagControllerDeviceAgent.jtagControllerDeviceDriver.jtagConfigStruct.jtagInstructionOpcode = 5'b00000;
+
       pat_seq = JtagControllerDevicePatternBasedSequence::type_id::create("pat_seq");
       pat_seq.tresetEnable = 1'b1;
       pat_seq.patternNeeded = 32'h1234_5678;

@@ -53,7 +53,7 @@ module sentinel_soc_vip_uvm_top;
   end
 
   wire jtag_tck_dut;
-  assign #10 jtag_tck_dut = jtag_tck;
+  assign jtag_tck_dut = jtag_tck;
 
   // JTAG Interface & AVIP BFMs
   JtagIf u_jtag_if(jtag_tck, rst_ni);
@@ -99,6 +99,12 @@ module sentinel_soc_vip_uvm_top;
   // ---------------------------------------------------------------------------
   logic dut_uart_tx;
 
+  // JTAG pin conditioning (IEEE 1149.1 pullups)
+  // Prevents 'X' propagation from VIP padding bits into the DUT TAP FSM
+  wire dut_jtag_tms    = ($isunknown(u_jtag_if.Tms))  ? 1'b1 : u_jtag_if.Tms;
+  wire dut_jtag_tdi    = ($isunknown(u_jtag_if.Tdi))  ? 1'b0 : u_jtag_if.Tdi;
+  wire dut_jtag_trst_n = ($isunknown(u_jtag_if.Trst)) ? 1'b1 : u_jtag_if.Trst;
+
   sentinel_soc_top u_dut (
     .clk_i              ( vif.clk ),
     .rst_ni             ( vif.rst_n ),
@@ -123,10 +129,10 @@ module sentinel_soc_vip_uvm_top;
     
     // JTAG
     .jtag_tck_i         ( jtag_tck_dut ),
-    .jtag_tms_i         ( u_jtag_if.Tms ),
-    .jtag_tdi_i         ( u_jtag_if.Tdi ),
+    .jtag_tms_i         ( dut_jtag_tms ),
+    .jtag_tdi_i         ( dut_jtag_tdi ),
     .jtag_tdo_o         ( u_jtag_if.Tdo ),
-    .jtag_trst_ni       ( u_jtag_if.Trst )
+    .jtag_trst_ni       ( dut_jtag_trst_n )
 
 `ifdef DIFT
     ,

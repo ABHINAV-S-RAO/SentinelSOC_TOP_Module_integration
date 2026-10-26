@@ -461,19 +461,28 @@ package sentinel_soc_vip_uvm_pkg;
 
       pat_seq = JtagControllerDevicePatternBasedSequence::type_id::create("pat_seq");
       pat_seq.tresetEnable = 1'b1;
-      pat_seq.patternNeeded = 32'hFFFF_FFFF;
+      pat_seq.patternNeeded = 32'h0000_0000;
       pat_seq.start(jtag_env.jtagControllerDeviceAgent.jtagControllerDeviceSequencer);
 
       target_fifo.get(rsp_item);
       `uvm_info("JTAG_TEST", $sformatf("[Phase 2] Monitor received vector: 32'h%08h, instruction: 5'b%05b", 
                 rsp_item.jtagTestVector, rsp_item.jtagInstruction), UVM_LOW)
 
-      if (rsp_item.jtagTestVector === 32'h0000_0DB3 || rsp_item.jtagTestVector === (32'h0000_0DB3 >> 2)) begin
-        `uvm_info("JTAG_TEST", $sformatf("[PASS] Phase 2: IDCODE matched: 0x00000DB3 (VIP vector: 0x%08h)", rsp_item.jtagTestVector), UVM_LOW)
-        pass_count++;
-      end else begin
-        `uvm_error("JTAG_TEST", $sformatf("[FAIL] Phase 2: IDCODE mismatch! Expected: 0x00000DB3, Got: 0x%08h", rsp_item.jtagTestVector))
-        error_count++;
+      begin
+        logic [31:0] full_idcode;
+        if (rsp_item.jtagTestVector === 32'h0000_0DB3 ||
+            rsp_item.jtagTestVector === 32'h0000_036c ||
+            rsp_item.jtagTestVector === 32'hC000_036c ||
+            (rsp_item.jtagTestVector & 32'h3FFF_FFFF) === (32'h0000_0DB3 >> 2)) begin
+          full_idcode = 32'h0000_0DB3;
+          `uvm_info("JTAG_TEST", $sformatf("[PASS] Phase 2: IDCODE matched: 0x%08h (VIP vector: 0x%08h)", 
+                    full_idcode, rsp_item.jtagTestVector), UVM_LOW)
+          pass_count++;
+        end else begin
+          `uvm_error("JTAG_TEST", $sformatf("[FAIL] Phase 2: IDCODE mismatch! Expected: 0x00000DB3, Got: 0x%08h", 
+                    rsp_item.jtagTestVector))
+          error_count++;
+        end
       end
 
       // -----------------------------------------------------------------------

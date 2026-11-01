@@ -16,17 +16,20 @@ class GpioMonitor extends uvm_monitor;
   endfunction
 
   virtual task run_phase(uvm_phase phase);
-    gpio_pin_txn sampled;
-    @(posedge vif.rst_ni);
-    forever begin
-      @(posedge vif.clk_i);
+  gpio_pin_txn sampled;
+  logic [31:0] prev_pins = 32'hx; // Initialize to x to force first broadcast
+  
+  @(posedge vif.rst_ni);
+  forever begin
+    @(posedge vif.clk_i);
+    
+    // Only broadcast to the scoreboard if the physical pins have actually toggled
+    if (vif.gpio_pins !== prev_pins) begin
       sampled = gpio_pin_txn::type_id::create("sampled");
-      // Bits neither the DUT (PADDIR=0) nor the driver (drv_en=0) are
-      // driving read back as X here — that's real floating-bus behavior,
-      // not a bug, since apb_gpio's gpio_in_sync port is left unconnected
-      // (no synchronizer in the actual datapath).
       sampled.drv_val = vif.gpio_pins;
       ap.write(sampled);
+      prev_pins = vif.gpio_pins;
     end
-  endtask
+  end
+endtask
 endclass

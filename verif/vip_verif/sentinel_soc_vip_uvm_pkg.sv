@@ -439,14 +439,26 @@ endclass
     task body();
       obi_seq_item item;
       `uvm_info("GPIO_SEQ", $sformatf("body() entered, pattern=%h", pattern), UVM_LOW)
-      // All 32 pads as output
+      // All 32 pads as output (PADDIR)
       item = obi_seq_item::type_id::create("item");
       start_item(item);
       item.addr = 32'h1060_0000; // PADDIR
       item.data = 32'hFFFF_FFFF;
       item.we = 1; item.be = 4'hF;
       finish_item(item);
-  
+
+      // Enable GPIO clock-gate for all 32 pads (GPIOEN — MANDATORY).
+      // apb_gpio's r_gpio_en feeds s_clk_en which gates the input
+      // synchroniser FFs and the CG on the output pad path.
+      // Without this write gpio_in is never captured and gpio_out
+      // is never driven — all pins stay 0 regardless of PADOUT writes.
+      item = obi_seq_item::type_id::create("item");
+      start_item(item);
+      item.addr = 32'h1060_0004; // GPIOEN
+      item.data = 32'hFFFF_FFFF;
+      item.we = 1; item.be = 4'hF;
+      finish_item(item);
+
       // Drive known pattern onto PADOUT
       item = obi_seq_item::type_id::create("item");
       start_item(item);

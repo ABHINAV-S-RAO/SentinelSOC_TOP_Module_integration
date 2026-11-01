@@ -1,17 +1,15 @@
 `ifndef GPIO_PIN_TXN_SV
 `define GPIO_PIN_TXN_SV
 
-// Dual-purpose: as a driver stimulus item, drv_en/drv_val/hold_cycles are
-// meaningful. As a monitor sample, only drv_val is populated (holds the
-// sampled gpio_pins value) and hold_cycles/drv_en are unused — kept as one
-// class rather than two so the monitor's analysis_port and the driver's
-// sequencer share a type. Split into separate classes if that gets confusing.
+// Driver stimulus item. The driver applies drv_en/drv_val, waits hold_cycles,
+// and then LEAVES the value applied (it no longer auto-releases).
+// To release the pins send an item with drv_en = 0.
 class gpio_pin_txn extends uvm_sequence_item;
-  rand bit [31:0] drv_en;
+  rand bit [31:0]   drv_en;
   rand logic [31:0] drv_val;
   rand int unsigned hold_cycles;
 
-  constraint c_hold { hold_cycles inside {[2:20]}; }
+  constraint c_hold { hold_cycles inside {[1:1000]}; }
 
   `uvm_object_utils_begin(gpio_pin_txn)
     `uvm_field_int(drv_en, UVM_ALL_ON)

@@ -3,6 +3,7 @@ class GpioEnv extends uvm_env;
 
   GpioEnvConfig  cfg;
   GpioAgent      agent;
+  GpioObiMonitor obi_mon;
   GpioScoreboard scoreboard;
 
   function new(string name = "GpioEnv", uvm_component parent = null);
@@ -14,23 +15,21 @@ class GpioEnv extends uvm_env;
     if (!uvm_config_db#(GpioEnvConfig)::get(this, "", "gpioEnvConfig", cfg))
       `uvm_fatal("GPIOENV", "cannot get gpioEnvConfig from uvm_config_db")
 
-    uvm_config_db#(GpioAgentConfig)::set(this, "agent", "gpioAgentConfig",
-                                          cfg.gpioAgentConfig);
+    uvm_config_db#(GpioAgentConfig)::set(this, "agent", "gpioAgentConfig", cfg.gpioAgentConfig);
     agent = GpioAgent::type_id::create("agent", this);
 
-    if (cfg.hasScoreboard)
+    if (cfg.hasScoreboard) begin
+      uvm_config_db#(GpioEnvConfig)::set(this, "scoreboard", "gpioEnvConfig", cfg);
+      obi_mon    = GpioObiMonitor::type_id::create("obi_mon", this);
       scoreboard = GpioScoreboard::type_id::create("scoreboard", this);
+    end
   endfunction
 
   virtual function void connect_phase(uvm_phase phase);
     super.connect_phase(phase);
-    if (cfg.hasScoreboard)
-      agent.monitor.ap.connect(scoreboard.gpio_export);
-      // NOTE: scoreboard.obi_export still needs connecting to whatever
-      // analysis port cpu_agent's OBI monitor exposes — name/hierarchy not
-      // yet confirmed (see obi_cpu_agent_pkg.sv). Without this connection
-      // dir_valid/out_valid never go high and write_gpio() is a no-op.
+    if (cfg.hasScoreboard) begin
+      agent.monitor.ap.connect(scoreboard.gmon_export);
+      obi_mon.ap.connect(scoreboard.gobi_export);
+    end
   endfunction
 endclass
-
-

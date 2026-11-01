@@ -427,47 +427,6 @@ endclass
   // -------------------------------------------------------------------------
   // GPIO VIP Integration Test
   // -------------------------------------------------------------------------
-  class soc_gpio_padout_seq extends uvm_sequence #(obi_seq_item);
-    `uvm_object_utils(soc_gpio_padout_seq)
-  
-    rand bit [31:0] pattern;
-  
-    function new(string name = "soc_gpio_padout_seq");
-      super.new(name);
-    endfunction
-  
-    task body();
-      obi_seq_item item;
-      `uvm_info("GPIO_SEQ", $sformatf("body() entered, pattern=%h", pattern), UVM_LOW)
-      // All 32 pads as output (PADDIR)
-      item = obi_seq_item::type_id::create("item");
-      start_item(item);
-      item.addr = 32'h1060_0000; // PADDIR
-      item.data = 32'hFFFF_FFFF;
-      item.we = 1; item.be = 4'hF;
-      finish_item(item);
-
-      // Enable GPIO clock-gate for all 32 pads (GPIOEN — MANDATORY).
-      // apb_gpio's r_gpio_en feeds s_clk_en which gates the input
-      // synchroniser FFs and the CG on the output pad path.
-      // Without this write gpio_in is never captured and gpio_out
-      // is never driven — all pins stay 0 regardless of PADOUT writes.
-      item = obi_seq_item::type_id::create("item");
-      start_item(item);
-      item.addr = 32'h1060_0004; // GPIOEN
-      item.data = 32'hFFFF_FFFF;
-      item.we = 1; item.be = 4'hF;
-      finish_item(item);
-
-      // Drive known pattern onto PADOUT
-      item = obi_seq_item::type_id::create("item");
-      start_item(item);
-      item.addr = 32'h1060_000C; // PADOUT
-      item.data = pattern;
-      item.we = 1; item.be = 4'hF;
-      finish_item(item);
-    endtask
-  endclass
 
 class sentinel_soc_vip_gpio_test extends sentinel_soc_vip_base_test;
   `uvm_component_utils(sentinel_soc_vip_gpio_test)
@@ -481,30 +440,36 @@ class sentinel_soc_vip_gpio_test extends sentinel_soc_vip_base_test;
 
   function void build_phase(uvm_phase phase);
     super.build_phase(phase);
-
     gpio_cfg = GpioEnvConfig::type_id::create("gpio_cfg");
     gpio_cfg.gpioAgentConfig = GpioAgentConfig::type_id::create("gpio_agent_cfg");
-    gpio_cfg.gpioAgentConfig.isActive = UVM_PASSIVE;
+    gpio_cfg.gpioAgentConfig.isActive = UVM_ACTIVE;   // VIP drives input pads
     gpio_cfg.hasScoreboard = 1;
-
+    // vacuity guards (fail the test if a check category never ran)
+    gpio_cfg.min_pin_checks   = 1;
+    gpio_cfg.min_rd_checks    = 1;
+    gpio_cfg.min_padin_checks = 1;
+    gpio_cfg.min_int_checks   = 1;
     uvm_config_db#(GpioEnvConfig)::set(this, "gpio_env", "gpioEnvConfig", gpio_cfg);
-
     gpio_env = GpioEnv::type_id::create("gpio_env", this);
   endfunction
 
-  function void connect_phase(uvm_phase phase);
-    super.connect_phase(phase);
-    cpu_agent.monitor.ap.connect(gpio_env.scoreboard.obi_export);
-  endfunction
-
   task run_phase(uvm_phase phase);
-    soc_gpio_padout_seq seq;
+    gpio_regress_vseq vs;
+    string            which = "all";
     phase.raise_objection(this);
-    #150;
-    seq = soc_gpio_padout_seq::type_id::create("seq");
-    seq.pattern = 32'hA5A5_A5A5;
-    seq.start(cpu_agent.sequencer);
-    #500;
+
+    wait (vif_obi.rst_ni === 1'b1);
+    repeat (4) @(posedge vif_obi.clk_i);
+
+    void'($value$plusargs("GPIO_SEQ=%s", which));
+    vs = gpio_regress_vseq::type_id::create("vs");
+    vs.obi_sqr    = cpu_agent.sequencer;
+    vs.gpio_sqr   = gpio_env.agent.sequencer;
+    vs.settle_cyc = gpio_cfg.settle_cycles + 4;
+    vs.which      = which;
+    vs.start(null);
+
+    repeat (20) @(posedge vif_obi.clk_i);
     phase.drop_objection(this);
   endtask
 endclass

@@ -1,8 +1,10 @@
+// Samples pins + VIP drive state EVERY clock (so the scoreboard is cycle-driven
+// and cannot go silent just because a pin never toggled).
 class GpioMonitor extends uvm_monitor;
   `uvm_component_utils(GpioMonitor)
 
   virtual gpio_if vif;
-  uvm_analysis_port #(gpio_pin_txn) ap;
+  uvm_analysis_port #(gpio_mon_txn) ap;
 
   function new(string name = "GpioMonitor", uvm_component parent = null);
     super.new(name, parent);
@@ -16,20 +18,18 @@ class GpioMonitor extends uvm_monitor;
   endfunction
 
   virtual task run_phase(uvm_phase phase);
-  gpio_pin_txn sampled;
-  logic [31:0] prev_pins = 32'hx; // Initialize to x to force first broadcast
-  
-  @(posedge vif.rst_ni);
-  forever begin
-    @(posedge vif.clk_i);
-    
-    // Only broadcast to the scoreboard if the physical pins have actually toggled
-    if (vif.gpio_pins !== prev_pins) begin
-      sampled = gpio_pin_txn::type_id::create("sampled");
-      sampled.drv_val = vif.gpio_pins;
-      ap.write(sampled);
-      prev_pins = vif.gpio_pins;
+    gpio_mon_txn     t;
+    longint unsigned cyc = 0;   // counts from time 0, same as GpioObiMonitor
+    forever begin
+      @(posedge vif.clk_i);
+      cyc++;
+      if (vif.rst_ni !== 1'b1) continue;
+      t = gpio_mon_txn::type_id::create("t");
+      t.pins    = vif.gpio_pins;
+      t.vip_en  = vif.drv_en;
+      t.vip_val = vif.drv_val;
+      t.cyc     = cyc;
+      ap.write(t);
     end
-  end
-endtask
+  endtask
 endclass

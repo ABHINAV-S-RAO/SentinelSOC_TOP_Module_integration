@@ -198,7 +198,7 @@ rtl/peripheral/apb_uart/io_generic_fifo.sv
 rtl/peripheral/apb_uart/uart_rx.sv
 rtl/peripheral/apb_uart/uart_tx.sv
 rtl/peripheral/apb_uart/uart_interrupt.sv
-rtl/peripheral/apb_uart/apb_uart_sv.sv
+rtl/peripheral/apb_uart/apb_uart.sv
 
 // 7. Basic SoC Top and Testbench
 rtl/soc/basic_soc_top.sv

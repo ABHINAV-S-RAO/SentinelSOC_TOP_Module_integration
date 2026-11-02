@@ -127,6 +127,10 @@ rtl/soc/soc_buffer.sv
 # Sentinel SoC Top
 rtl/soc/sentinel_soc_top.sv
 
++incdir+verif/soc_verif
+verif/vip_verif/qspi_vip/qspi_flash_bfm.sv
+verif/soc_verif/soc_deadlock_monitor.sv
+
 # Sentinel SoC UVM Testbench
 verif/soc_verif/sentinel_soc_if.sv
 verif/soc_verif/sentinel_soc_uvm_pkg.sv

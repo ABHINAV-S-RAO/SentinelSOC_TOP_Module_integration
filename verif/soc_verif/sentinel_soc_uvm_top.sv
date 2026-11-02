@@ -12,7 +12,7 @@ module sentinel_soc_uvm_top;
 
   initial begin
     clk_i = 0;
-    forever #10 clk_i = ~clk_i; // 50 MHz
+    forever #10 clk_i = ~clk_i; // 50 MHz (20ns period)
   end
 
   initial begin
@@ -26,8 +26,36 @@ module sentinel_soc_uvm_top;
   // ---------------------------------------------------------------------------
   sentinel_soc_if vif(clk_i, rst_ni);
 
-  // Enable DIFT
+  // Enable DIFT by default
   initial vif.dift_en = 1'b1;
+
+  // ---------------------------------------------------------------------------
+  // QSPI BFM Model Instantiation
+  // ---------------------------------------------------------------------------
+  logic qspi_sdi0, qspi_sdi1, qspi_sdi2, qspi_sdi3;
+  assign vif.qspi_io[0] = (!vif.qspi_csn && (u_qspi_bfm.phase == u_qspi_bfm.PH_DATA)) ? qspi_sdi0 : 1'bz;
+
+  qspi_flash_bfm u_qspi_bfm (
+    .spi_clk  ( vif.qspi_clk ),
+    .spi_csn0 ( vif.qspi_csn ),
+    .spi_mode ( 2'b00 ),
+    .spi_sdo0 ( vif.qspi_io[0] ),
+    .spi_sdo1 ( vif.qspi_io[1] ),
+    .spi_sdo2 ( vif.qspi_io[2] ),
+    .spi_sdo3 ( vif.qspi_io[3] ),
+    .spi_sdi0 ( qspi_sdi0 ),
+    .spi_sdi1 ( qspi_sdi1 ),
+    .spi_sdi2 ( qspi_sdi2 ),
+    .spi_sdi3 ( qspi_sdi3 )
+  );
+
+  // ---------------------------------------------------------------------------
+  // Deadlock & Protocol Monitor
+  // ---------------------------------------------------------------------------
+  soc_deadlock_monitor u_deadlock_mon (
+    .clk   ( vif.clk ),
+    .rst_n ( vif.rst_n )
+  );
 
   // ---------------------------------------------------------------------------
   // DUT Instantiation
@@ -66,7 +94,9 @@ module sentinel_soc_uvm_top;
 `endif
   );
 
+  // ---------------------------------------------------------------------------
   // Load Firmware
+  // ---------------------------------------------------------------------------
   string firmware_file;
   initial begin
     if ($value$plusargs("FIRMWARE=%s", firmware_file)) begin
@@ -77,9 +107,9 @@ module sentinel_soc_uvm_top;
       $readmemh("software/bootrom.hex", u_dut.u_bootrom.mem);
     end
 
-    // Backdoor OTP Programming for test_crypto_accelerator sig_valid check
-    // 256-bit dummy key
-    u_dut.u_top_most.u_otp.otp_mem = 256'hDEADBEEF_CAFEBABE_B007B007_12345678_87654321_09876543_AAAABBBB_CCCCDDDD;
+    // Backdoor OTP Programming for crypto_accelerator verification
+    // 256-bit dummy key loaded into OTP array
+    u_dut.u_otp.otp_mem = 256'hDEADBEEF_CAFEBABE_B007B007_12345678_87654321_09876543_AAAABBBB_CCCCDDDD;
   end
 
   // ---------------------------------------------------------------------------
@@ -97,8 +127,7 @@ module sentinel_soc_uvm_top;
   // UVM Initialization
   // ---------------------------------------------------------------------------
   initial begin
-    uvm_config_db#(virtual sentinel_soc_if)::set(null, "uvm_test_top.*", "vif", vif);
-    uvm_config_db#(virtual sentinel_soc_if)::set(null, "uvm_test_top.env", "vif", vif); 
+    uvm_config_db#(virtual sentinel_soc_if)::set(null, "*", "vif", vif);
     run_test("sentinel_soc_base_test");
   end
 

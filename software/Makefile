@@ -12,7 +12,20 @@ ARCH_FLAGS = -march=rv32imc -mabi=ilp32
 CFLAGS  = $(ARCH_FLAGS) -nostdlib -nostartfiles -static -I. -O2
 LDFLAGS = -T crt0.ld
 
-TESTS = tests/test_uart_boot tests/test_crypto_accelerator tests/test_plic_interrupts tests/test_access_control tests/test_dift_integration tests/test_soc_buffer_stream
+TESTS = tests/test_integrated_soc \
+        tests/test_spiflash_boot \
+        tests/test_trap_robustness \
+        tests/test_soc_stress \
+        tests/test_rv32imc_isa \
+        tests/test_memory_exhaustive \
+        tests/test_plic_priority_arbitration \
+        tests/test_benchmark_dhrystone \
+        tests/test_uart_boot \
+        tests/test_crypto_accelerator \
+        tests/test_plic_interrupts \
+        tests/test_access_control \
+        tests/test_dift_integration \
+        tests/test_soc_buffer_stream
 
 all: $(addsuffix .hex, $(TESTS)) $(addsuffix .dump, $(TESTS)) bootrom.hex
 

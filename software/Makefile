@@ -2,7 +2,9 @@
 # Usage: make        (builds all hex files)
 #        make clean  (remove build artifacts)
 
-CROSS   ?= riscv32-unknown-elf
+CROSS ?= $(shell which riscv64-unknown-elf-gcc >/dev/null 2>&1 && echo riscv64-unknown-elf || \
+                 (which riscv32-unknown-elf-gcc >/dev/null 2>&1 && echo riscv32-unknown-elf) || \
+                 echo riscv64-unknown-elf)
 CC       = $(CROSS)-gcc
 OBJCOPY  = $(CROSS)-objcopy
 OBJDUMP  = $(CROSS)-objdump

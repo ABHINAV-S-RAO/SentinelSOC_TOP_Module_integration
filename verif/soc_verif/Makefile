@@ -30,9 +30,16 @@ COV_OPTS  = -coverage all -covoverwrite -covworkdir cov_work
 
 all: test_integrated
 
-# Build all firmware hex images before running sim
+# Check if a RISC-V compiler is present on the system
+HAS_COMPILER := $(shell which riscv64-unknown-elf-gcc 2>/dev/null || which riscv32-unknown-elf-gcc 2>/dev/null)
+
+# Build firmware images only if a compiler is available
 fw_build:
+ifdef HAS_COMPILER
 	$(MAKE) -C ../../software all
+else
+	@echo "[NOTE] No RISC-V compiler found on host; executing simulation directly with existing hex images."
+endif
 
 # -----------------------------------------------------------------------------
 # Criteria 6.9: Boot from internal ROM

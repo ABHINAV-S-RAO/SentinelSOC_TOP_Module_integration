@@ -77,14 +77,14 @@ class sentinel_soc_coverage_collector extends uvm_component;
     option.name = "cg_soc_plic_cov";
 
     cp_source: coverpoint sample_irq_source {
-      bins uart  = {4'd1};
-      bins spi   = {4'd2};
-      bins qspi  = {4'd3};
-      bins gpio  = {4'd4};
-      bins timer = {4'd5};
-      bins buf   = {4'd6};
-      bins sha   = {4'd7};
-      bins dift  = {4'd8};
+      bins src_uart  = {4'd1};
+      bins src_spi   = {4'd2};
+      bins src_qspi  = {4'd3};
+      bins src_gpio  = {4'd4};
+      bins src_timer = {4'd5};
+      bins src_buf   = {4'd6};
+      bins src_sha   = {4'd7};
+      bins src_dift  = {4'd8};
     }
 
     cp_prio: coverpoint sample_irq_prio {

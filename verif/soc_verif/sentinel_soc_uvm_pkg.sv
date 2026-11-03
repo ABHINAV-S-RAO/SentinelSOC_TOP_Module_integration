@@ -45,7 +45,7 @@ package sentinel_soc_uvm_pkg;
 
       `uvm_info("BASE_TEST", "Waiting for reset deassertion...", UVM_LOW)
       @(posedge vif.rst_n);
-      `uvm_info("BASE_TEST", "Reset deasserted — real Ibex core executing firmware.", UVM_LOW)
+      `uvm_info("BASE_TEST", "Reset deasserted - real Ibex core executing firmware.", UVM_LOW)
 
       elapsed_ns = 0;
       forever begin

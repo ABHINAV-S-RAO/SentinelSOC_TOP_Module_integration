@@ -5,7 +5,7 @@
 
 interface sentinel_soc_if (input logic clk, input logic rst_n);
   
-  // QSPI — external flash
+  // QSPI - external flash
   logic       qspi_csn;
   logic       qspi_clk;
   wire  [3:0] qspi_io;

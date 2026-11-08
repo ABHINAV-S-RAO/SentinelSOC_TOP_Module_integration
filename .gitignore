@@ -31,3 +31,15 @@ sw/**/*.map
 
 # Local simulation build output
 build/
+
+# Simulator scratch (Xcelium / SimVision / Questa)
+work/
+cov_work/
+INCA_libs/
+*.dsn
+*.trn
+*.err
+*.diag
+
+# Archives
+*.tar.gz

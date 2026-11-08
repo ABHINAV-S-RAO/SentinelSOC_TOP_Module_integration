@@ -32,7 +32,7 @@ module basic_soc_uvm_top;
   // ---------------------------------------------------------------------------
   // DUT Instantiation
   // ---------------------------------------------------------------------------
-  basic_soc_top u_dut (
+  final_soc_top u_dut (
     .clk_i              ( vif.clk_i ),
     .rst_ni             ( vif.rst_ni ),
     .uart_tx_o          ( vif.uart_tx_o ),

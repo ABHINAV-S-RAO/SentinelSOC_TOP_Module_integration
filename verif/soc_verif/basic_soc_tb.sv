@@ -37,7 +37,7 @@ module basic_soc_tb;
   // ---------------------------------------------------------------------------
   // DUT Instantiation
   // ---------------------------------------------------------------------------
-  basic_soc_top u_dut (
+  final_soc_top u_dut (
     .clk_i              ( clk_i ),
     .rst_ni             ( rst_ni ),
     .uart_tx_o          ( uart_tx_o ),

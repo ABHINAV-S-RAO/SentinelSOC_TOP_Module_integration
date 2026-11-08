@@ -112,7 +112,7 @@ rtl/soc/soc_ctrl_regs.sv
 rtl/soc/soc_buffer.sv
 rtl/soc/soc_secure_boot.sv
 rtl/soc/soc_recovery.sv
-rtl/soc/basic_soc_top.sv
+rtl/soc/final_soc_top.sv
 
 // Testbench
 verif/debugger/interface/jtag_if.sv

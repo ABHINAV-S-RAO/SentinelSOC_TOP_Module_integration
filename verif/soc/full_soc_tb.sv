@@ -82,7 +82,7 @@ module full_soc_tb;
 
   assign qspi_sdi = {2'b00, flash_miso, 1'b0};   // standard SPI: MISO on IO1
 
-  basic_soc_top #(                                // BOOT_WDT_CYCLES: SoC default
+  final_soc_top #(                                // BOOT_WDT_CYCLES: SoC default
     .SECURE_BOOT       ( 1'b1      ),
     .CRYPTO_CLK_DIV    ( 2         )
   ) u_dut (

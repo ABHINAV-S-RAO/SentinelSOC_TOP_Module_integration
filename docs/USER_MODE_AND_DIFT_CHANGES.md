@@ -14,10 +14,10 @@
 | # | Change | Kind | Files |
 |---|---|---|---|
 | U1 | Firmware runs in **User mode** after a Machine-mode startup that writes the DIFT policy once | Firmware (no RTL change needed) | `software/app/app_demo.S`, `verif/debugger/images/gen_signed_image.py` |
-| F1 | **D06a closed:** values the debugger writes into registers are tagged untrusted | RTL | `rtl/soc/basic_soc_top.sv` |
+| F1 | **D06a closed:** values the debugger writes into registers are tagged untrusted | RTL | `rtl/soc/final_soc_top.sv` |
 | F2 | **D08 closed:** `s0`/`a0` keep their taint across halt/resume | RTL | `rtl/core/ibex_core/rtl/ibex_core.sv` |
 | F3 | **D03 reclassified:** "by design", no RTL change | Testbenches only | both debugger TBs |
-| F4 | **Peripheral input is tainted again:** loads from the APB peripheral window return tag 1 (restores the original DIFT top's rule) | RTL | `rtl/soc/basic_soc_top.sv` |
+| F4 | **Peripheral input is tainted again:** loads from the APB peripheral window return tag 1 (restores the original DIFT top's rule) | RTL | `rtl/soc/final_soc_top.sv` |
 | T | Testbenches updated to check all of the above | Verification | `full_soc_tb.sv`, `secure_boot_dbg_tb.sv`, `dift_dbg_tb.sv` |
 | D | Documentation updated | Docs | this file, `SOC_MODES_AND_SECURITY.md`, `debug_secure_boot_integration.md` |
 
@@ -100,7 +100,7 @@ The signed test firmware used by `secure_boot_dbg_tb` follows the same model:
 ### 3.1 The problem
 Every value the debugger writes into a register reaches the core the same way: the abstract command (or program buffer) loads it from the debug module's data registers `data0`/`data1` at `0x1A11_0380`–`0x1A11_0387`. The debug module isn't DSRAM, so that load returned tag 0, and the debugger could launder any value into the firmware as trusted.
 
-### 3.2 The fix (`rtl/soc/basic_soc_top.sv`, tag RAM read path)
+### 3.2 The fix (`rtl/soc/final_soc_top.sv`, tag RAM read path)
 
 ```systemverilog
 // Debugger data is untrusted (finding D06a)
@@ -173,13 +173,13 @@ assign regfile_wdata_tag_dbg = csr_is_dscratch0 ? dscratch0_tag_q :
 The original DIFT top ([`soc_top.sv:561`](../rtl/soc/soc_top.sv)) labels every load from outside DSRAM as tainted:
 `tag_rdata = is_data_sram_q ? tag_mem[...] : 1'b1;`
 
-That rule was never carried into `basic_soc_top`, the SoC we build and tape out:
+That rule was never carried into `final_soc_top`, the SoC we build and tape out:
 - **At first**, non-DSRAM loads read a random DSRAM word's tag (aliasing).
 - **After the DSRAM-only fix** (`441ba4e`), they read 0.
 
 So UART/SPI/GPIO input was being treated as **trusted**. No test covered it.
 
-### The fix (`rtl/soc/basic_soc_top.sv`, tag read path)
+### The fix (`rtl/soc/final_soc_top.sv`, tag read path)
 ```systemverilog
 // every load from the APB peripheral window (UART, QSPI, SPI2, timer, GPIO;
 // 0x1000_0000-0x1FFF_FFFF minus the debug module 0x1A11_xxxx) returns tag 1
@@ -272,7 +272,7 @@ xrun -f verif/debugger/files_dift_dbg.f
 
 | File | Change |
 |---|---|
-| `rtl/soc/basic_soc_top.sv` | F1: DM data-window loads in debug mode return tag 1. F4: APB peripheral loads return tag 1 |
+| `rtl/soc/final_soc_top.sv` | F1: DM data-window loads in debug mode return tag 1. F4: APB peripheral loads return tag 1 |
 | `rtl/core/ibex_core/rtl/ibex_core.sv` | F2: tag bits for `dscratch0/1`; writeback takes the dscratch tag on a dscratch read |
 | `software/app/app_demo.S` | U1: Machine-mode startup (policy once, `mie`, `mret`), User-mode app, User-mode check, handler skips the one expected illegal instruction. F4: peripheral-taint check (UART word vs constant in DSRAM). TCR = `0x03` |
 | `verif/soc/images/*`, `verif/debugger/images/dift_fw_signed.mem` | Regenerated signed images (the bootrom, recovery image and public key are unchanged) |

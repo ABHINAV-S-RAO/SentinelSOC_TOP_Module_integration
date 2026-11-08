@@ -1,7 +1,7 @@
 // =============================================================================
 // secure_boot_dbg_tb.sv -- riscv-dbg + Ibex(DIFT) + JTAG recovery + hardware secure boot
 //
-// Drives basic_soc_top's external JTAG pins (jtag_if BFM) and self-checks:
+// Drives final_soc_top's external JTAG pins (jtag_if BFM) and self-checks:
 //   Part A  generic debug-spec behaviour (DTM, DM, halt/resume, abstract
 //           register/CSR access, program buffer, single-step, errors, ndmreset,
 //           dmactive, hartsel, autoexec, SBA)
@@ -125,7 +125,7 @@ module secure_boot_dbg_tb;
   logic [3:0]  spi_csn, spi_sdo;
   logic [1:0]  spi_mode;
 
-  basic_soc_top #(
+  final_soc_top #(
     .BOOT_WDT_CYCLES   ( WDT_CYCLES     )
   ) u_dut (
     .clk_i             ( clk_i          ),
@@ -1040,7 +1040,7 @@ module secure_boot_dbg_tb;
     // -------------------------------------------------------------------------
     // S5: DIFT has no off switch -- the dift_en_i pin was removed from the
     // SoC (anyone with the board could have tied it low); the core input is
-    // tied on inside basic_soc_top.
+    // tied on inside final_soc_top.
     // -------------------------------------------------------------------------
     scen = "S5-NO-OFF-SWITCH";
     check(`CORE.dift_en_i === 1'b1, "core DIFT enable tied on inside the SoC (no external dift_en_i pin)");

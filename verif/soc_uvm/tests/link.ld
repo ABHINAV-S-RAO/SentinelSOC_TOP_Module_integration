@@ -1,6 +1,6 @@
 /*
  * Ibex resets to BOOT_ADDR + 0x80 unconditionally (fixed in ibex_if_stage.sv,
- * not configurable). BOOT_ADDR = 0x0000_0000 here (basic_soc_top.sv
+ * not configurable). BOOT_ADDR = 0x0000_0000 here (final_soc_top.sv
  * localparam), so .text must start at 0x80 or the core's first fetch lands
  * on whatever happens to precede it.
  *

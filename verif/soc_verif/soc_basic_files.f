@@ -221,7 +221,7 @@ rtl/crypto/otp.sv
 rtl/crypto/top_most.sv
 rtl/soc/soc_secure_boot.sv
 rtl/soc/soc_recovery.sv
-rtl/soc/basic_soc_top.sv
+rtl/soc/final_soc_top.sv
 verif/soc_verif/basic_soc_if.sv
 verif/soc_verif/basic_soc_uvm_pkg.sv
 verif/soc_verif/basic_soc_uvm_top.sv

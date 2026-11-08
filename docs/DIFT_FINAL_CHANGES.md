@@ -4,7 +4,7 @@
 |---|---|
 | Date | 2026-11-08 |
 | Branch | `boot_handoff` |
-| Scope | DIFT in the core (`ibex_core` + `rtl/core/dift/`) and in the SoC (`basic_soc_top`) |
+| Scope | DIFT in the core (`ibex_core` + `rtl/core/dift/`) and in the SoC (`final_soc_top`) |
 | Related docs | `USER_MODE_AND_DIFT_CHANGES.md` (User mode, F1–F4), `SOC_MODES_AND_SECURITY.md` (boot handoff, modes), `debug_secure_boot_integration.md` (debugger findings D01–D13) |
 
 This document is the single reference for how DIFT behaves now, and for every DIFT change made on this branch. Section 2 is the final behaviour. Section 3 lists the changes made earlier (already committed). Section 4 covers the check-wiring fix made in this round.
@@ -36,7 +36,7 @@ Writing 0 to both TCR and TPR (their reset value) turns every check and every pr
 
 ## 2. Final behaviour
 
-### 2.1 Labels (where tags come from), in `rtl/soc/basic_soc_top.sv`
+### 2.1 Labels (where tags come from), in `rtl/soc/final_soc_top.sv`
 
 | Load from | Tag | Notes |
 |---|---|---|
@@ -125,14 +125,14 @@ Now that bit 6 no longer fires on every peripheral read, `app_demo.S` can safely
 
 | # | Change | Where | Why |
 |---|---|---|---|
-| E1 | **DSRAM-only tags** (`441ba4e`): only DSRAM addresses index the tag RAM | `basic_soc_top.sv` | Before, any address aliased into the tag RAM, so a peripheral or debug-module load read a random DSRAM word's tag |
+| E1 | **DSRAM-only tags** (`441ba4e`): only DSRAM addresses index the tag RAM | `final_soc_top.sv` | Before, any address aliased into the tag RAM, so a peripheral or debug-module load read a random DSRAM word's tag |
 | E2 | **TCR/TPR locked in debug mode**: reads return 0, writes dropped, access reports an exception | `ibex_cs_registers.sv` | A debugger can't read or disable the policy (D-findings, S2) |
 | E3 | **TCR/TPR are Machine-only**, and the firmware runs in **User mode** after writing them once (U1) | `app_demo.S`, `gen_signed_image.py` | Exploited application code can't switch DIFT off |
-| E4 | **`dift_en_i` pin removed** (D12): DIFT enable tied on inside the SoC | `basic_soc_top.sv` | Anyone holding the board could have tied the pin low |
-| E5 | **D06a**: debugger `data0/1` loads in debug mode return tag 1 (F1) | `basic_soc_top.sv` | The debugger could launder values into firmware as trusted |
+| E4 | **`dift_en_i` pin removed** (D12): DIFT enable tied on inside the SoC | `final_soc_top.sv` | Anyone holding the board could have tied the pin low |
+| E5 | **D06a**: debugger `data0/1` loads in debug mode return tag 1 (F1) | `final_soc_top.sv` | The debugger could launder values into firmware as trusted |
 | E6 | **D08**: tag bits for `dscratch0/1`; reading them returns the stored tag (F2) | `ibex_core.sv` | One halt/resume cleared the taint of `s0`/`a0` |
-| E7 | **Peripheral input tainted again**: APB window loads return tag 1 (F4) | `basic_soc_top.sv` | UART/SPI/GPIO input was being treated as trusted |
-| E8 | **Labels on loads only** (`0fcf026`) | `basic_soc_top.sv` | The D06a label also hit store responses and tripped the old bit-6 response check (S2 failures) |
+| E7 | **Peripheral input tainted again**: APB window loads return tag 1 (F4) | `final_soc_top.sv` | UART/SPI/GPIO input was being treated as trusted |
+| E8 | **Labels on loads only** (`0fcf026`) | `final_soc_top.sv` | The D06a label also hit store responses and tripped the old bit-6 response check (S2 failures) |
 | E9 | **D03 reclassified as by design**, later resolved by C3 (section 4) | TBs | |
 
 Details and code for E3, E5–E7 are in `USER_MODE_AND_DIFT_CHANGES.md`.
@@ -150,7 +150,7 @@ Two decisions taken: **bit 7 is made to work on stores**, and **the store tag fo
 - `rtl/core/ibex_core/rtl/ibex_core.sv`
 
 ### C2. The load address check (bit 21) runs before the bus access
-**Problem:** bit 21 was checked in `riscv_load_check` at writeback, using the same wrong register as C1. Its result also only drove the core's `dift_exception_o` output, **which isn't connected in `basic_soc_top`**, so in the SoC it never trapped.
+**Problem:** bit 21 was checked in `riscv_load_check` at writeback, using the same wrong register as C1. Its result also only drove the core's `dift_exception_o` output, **which isn't connected in `final_soc_top`**, so in the SoC it never trapped.
 
 **Fix:** the check decoder (`ibex_dift_tmu`) now has a load case: source 1 = bit 21. `ibex_dift_logic` evaluates it for loads in EX. The violation is a normal DIFT exception (`mcause` 2), and the load is never sent to the bus.
 - `rtl/core/dift/ibex_dift_tmu.sv`, `rtl/core/dift/ibex_dift_logic.sv`
@@ -226,7 +226,7 @@ Use the same `xrun` options you used before for each TB. The lines above only sh
 |---|---|
 | `app_demo.S` policy | It can add bits 6 and 21 (`TCR = 0x0020_0043`) now that bit 6 no longer fires on peripheral reads. Needs an image rebuild and re-sign |
 | DIFT trap cause | EX-stage violations report **illegal instruction** (`mcause` 2, `mtval` = PC), and loaded-data violations report **load access fault** (`mcause` 5). A trap handler can't tell a DIFT trap from a real illegal instruction or bus error. A custom cause code (e.g. 24) would fix that; it's a small controller change |
-| `dift_exception_o` | The core output isn't connected in `basic_soc_top` (it is in the older `soc_top`, through the PLIC). Every violation already traps, so it's only needed for an interrupt or a status bit |
+| `dift_exception_o` | The core output isn't connected in `final_soc_top` (it is in the older `soc_top`, through the PLIC). Every violation already traps, so it's only needed for an interrupt or a status bit |
 | Bit 7 on loads vs stores | One bit controls both "load of a tainted word" and "store of tainted data". With peripheral input tainted, enabling it traps the first UART read. Splitting it would need a new TCR bit; we kept the existing bit map |
 | APB timer | Timer reads are labelled tainted like the other peripherals. It could be excluded if firmware needs clean timer values |
 | Trap handler in Machine mode | Can still rewrite TCR/TPR. Keep it small (see `USER_MODE_AND_DIFT_CHANGES.md` 2.5) |

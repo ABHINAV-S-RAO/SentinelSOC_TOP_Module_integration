@@ -72,7 +72,7 @@ module dbg_tb_top;
   // -------------------------------------------------------------------------
   // DUT
   // -------------------------------------------------------------------------
-  basic_soc_top u_dut (
+  final_soc_top u_dut (
     .clk_i             ( clk_i          ),
     .rst_ni            ( rst_ni         ),
     .crypto_verified_i ( 1'b1           ),
@@ -195,7 +195,7 @@ module dbg_tb_top;
   end
 
      // -------------------------------------------------------------------------
-  // DM signal probes (hierarchical into basic_soc_top internal signals)
+  // DM signal probes (hierarchical into final_soc_top internal signals)
   // -------------------------------------------------------------------------
   // Window counter for the noisy per-cycle probes below: -1 = not yet
   // armed, >0 = inside the 400-cycle window after debug_req_core rises.

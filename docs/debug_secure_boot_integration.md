@@ -165,7 +165,7 @@ That is the key to the whole integration:
 ## 2. Architecture changes and why
 
 ### A1. Debug module integrated as an execution-based slave (0x1A11_0000)
-- **What**: `dm_obi_top` + `dmi_jtag` in `basic_soc_top`. The DM is reachable
+- **What**: `dm_obi_top` + `dmi_jtag` in `final_soc_top`. The DM is reachable
   from both the fetch path and the data path, JTAG pins are top-level ports, and
   the DM runs on power-on reset while the rest of the SoC runs on
   `sys_rst_n = rst_ni & ~ndmreset`.
@@ -274,11 +274,11 @@ POR → BootROM @0x80: UART banner
 | B3 | `soc_addr_decode.sv` ISRAM arbiter | A fetch blocked by the verify gate got its `rvalid` overwritten with 0 | A blocked fetch **wedged** the core and fetch demux instead of faulting | Drive the blocked-fetch response after the routing block |
 | B4 | `soc_addr_decode.sv` | `priv_write_ok` ignored `dbg_mode_i` | The debugger could write SoC CSRs during boot | `priv_write_ok = ~boot_done & (~dbg_mode \| (sha_hit & recovery))` |
 | B5 | `ibex_wb_stage.sv` | With `WritebackStage=1`, load tags were never written to the tag register file | **DIFT couldn't propagate taint from memory at all** | Mux `rf_wdata_tag_lsu_i` / `rf_we_tag_lsu_i` into the WB tag outputs |
-| B6 | `basic_soc_top.sv` tag RAM | `tag_addr` (already a word address) was indexed with `[TAG_AW+1:2]`: shifted twice | One tag per 4 words; neighbouring stores wiped a secret's taint | Index with `tag_addr[TAG_AW-1:0]` |
-| B7 | `basic_soc_top.sv` APB mux | PULP slaves tie `PREADY=1`; `obi_to_apb` treats a ready in SETUP as the end of the transfer | **Every APB access hung** (first seen in full-SoC bring-up) | `pready &= penable` |
-| B8 | `basic_soc_top.sv` UART | `apb_uart_sv` decodes `PADDR[2:0]`, but Ibex issues word addresses | Only THR/IER were reachable; writing LCR hit MCR | Feed `paddr[11:2]`: register n at +4·n (matches `soc.h`) |
-| B9 | `basic_soc_top.sv` SPI #2 | Standard-mode RX samples `sdi1`, not `sdi0` | SPI #2 could never receive (same bug in `sentinel_soc_top`) | MISO → `sdi1` |
-| B10 | `basic_soc_top.sv` tag RAM, `dsram_model.sv` | `always_ff` forbids a second writer | Testbench taint injection wouldn't elaborate (`MULAXX`) | Plain `always` (synthesizes identically) |
+| B6 | `final_soc_top.sv` tag RAM | `tag_addr` (already a word address) was indexed with `[TAG_AW+1:2]`: shifted twice | One tag per 4 words; neighbouring stores wiped a secret's taint | Index with `tag_addr[TAG_AW-1:0]` |
+| B7 | `final_soc_top.sv` APB mux | PULP slaves tie `PREADY=1`; `obi_to_apb` treats a ready in SETUP as the end of the transfer | **Every APB access hung** (first seen in full-SoC bring-up) | `pready &= penable` |
+| B8 | `final_soc_top.sv` UART | `apb_uart_sv` decodes `PADDR[2:0]`, but Ibex issues word addresses | Only THR/IER were reachable; writing LCR hit MCR | Feed `paddr[11:2]`: register n at +4·n (matches `soc.h`) |
+| B9 | `final_soc_top.sv` SPI #2 | Standard-mode RX samples `sdi1`, not `sdi0` | SPI #2 could never receive (same bug in `sentinel_soc_top`) | MISO → `sdi1` |
+| B10 | `final_soc_top.sv` tag RAM, `dsram_model.sv` | `always_ff` forbids a second writer | Testbench taint injection wouldn't elaborate (`MULAXX`) | Plain `always` (synthesizes identically) |
 
 ### 3.2 Features, file by file
 
@@ -290,7 +290,7 @@ POR → BootROM @0x80: UART banner
 | `soc_recovery.sv` (new) | Strap + watchdog + halt-before-first-instruction | A5 |
 | `soc_secure_boot.sv` (new) | Feeder, VERIFY registers, verified latch, fetch gate, clock gate + CSR bridge, OTP | A6 |
 | `soc_ctrl_regs.sv` | `STATUS0[2]` recovery, `STATUS0[3]` recovery-by-watchdog; policy comment | A5 |
-| `basic_soc_top.sv` | Parameters `SECURE_BOOT`, `CRYPTO_CLK_DIV`, `HAS_GPIO`, `BOOT_WDT_CYCLES`; ports `boot_mode_i`, `spi2_*`, `gpio_*`; DSRAM-only tags; SPI #2, timer, PLIC (tested adapter with latched read data), CLINT; ISRAM 8 KB | A1–A8 |
+| `final_soc_top.sv` | Parameters `SECURE_BOOT`, `CRYPTO_CLK_DIV`, `HAS_GPIO`, `BOOT_WDT_CYCLES`; ports `boot_mode_i`, `spi2_*`, `gpio_*`; DSRAM-only tags; SPI #2, timer, PLIC (tested adapter with latched read data), CLINT; ISRAM 8 KB | A1–A8 |
 | `soc_top.sv`, `sentinel_soc_top.sv`, `ibex_plic_soc_tb.sv` | New decoder/ctrl ports tied off: **no behaviour change** | — |
 | Filelists (5) | Compile current `rtl/crypto` (not the stale `ed25519/ED25519` copy), plus `soc_secure_boot`, `soc_recovery`, timer, CLINT | — |
 
@@ -433,7 +433,7 @@ It takes seconds.
 >
 > | Finding | Status | How |
 > |---|---|---|
-> | D06a | **Closed** | Option (b): DM data-window loads in debug mode return tag 1 (`basic_soc_top.sv`) |
+> | D06a | **Closed** | Option (b): DM data-window loads in debug mode return tag 1 (`final_soc_top.sv`) |
 > | D08a/b | **Closed** | Option (b): `dscratch0/1` carry a tag bit (`ibex_core.sv`) |
 > | D03 | **Closed by policy (bit 7)** | TCR bit 7 now checks store data in EX, before the bus. Under a policy with bit 7, the abstract read of a tainted register is refused (`cmderr`=3); both TBs check it. See `DIFT_FINAL_CHANGES.md` C3. |
 > | D12 | **Closed** | The `dift_en_i` pin was removed; DIFT is always on |

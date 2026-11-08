@@ -164,7 +164,7 @@ module soc_addr_decode #(
 
   // Core is executing in debug mode, i.e. every access on this cycle comes
   // from the debugger (debug ROM, abstract command or program buffer).
-  // basic_soc_top wires ibex_top.debug_mode_o here. Tie 1'b0 in a SoC
+  // final_soc_top wires ibex_top.debug_mode_o here. Tie 1'b0 in a SoC
   // without debug (fail-closed: no post-boot CSR reads at all).
   input  logic        dbg_mode_i,
 
@@ -286,7 +286,7 @@ module soc_addr_decode #(
   // ISRAM arbiters. Both traffic types originate from the same halted
   // Ibex core executing the execution-based debug protocol, never from
   // a second independent master (no System Bus Access: the DM is built with
-  // SbaEnable=0 in basic_soc_top).
+  // SbaEnable=0 in final_soc_top).
   //
   // dbg_gnt_i / dbg_rvalid_i: CONFIRMED against dm_obi_top.sv — slave_gnt_o
   // is hardwired 1'b1 (always-ready) and slave_rvalid_o pulses one cycle

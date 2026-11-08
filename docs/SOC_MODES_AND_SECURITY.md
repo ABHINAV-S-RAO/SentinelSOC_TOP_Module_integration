@@ -5,7 +5,7 @@
 | Status | **Locked.** This is the reference for the RTL and testbench changes. |
 | Branch | Implement on a new branch off `full_soc` |
 | Date | 2026-10-02 |
-| Scope | `SECURE_BOOT=1` builds (`basic_soc_top` with `soc_secure_boot`). `SECURE_BOOT=0` builds and the older `soc_top.sv` keep today's behaviour. |
+| Scope | `SECURE_BOOT=1` builds (`final_soc_top` with `soc_secure_boot`). `SECURE_BOOT=0` builds and the older `soc_top.sv` keep today's behaviour. |
 
 ---
 
@@ -210,7 +210,7 @@ All new behaviour is enabled only when `SECURE_BOOT=1`. Legacy builds are unchan
 
 ### R1 — Hardware `boot_done` + single entry (D1, D2)
 
-> **Implementation note:** debug mode is *not* part of the trigger, and the BootROM gate (R5) is closed in recovery even in debug mode. Ibex issues the fetch at `dpc` in the same cycle it executes `dret`, while `debug_mode` still reads 1. A debug-mode exception would therefore miss the recovery resume at ENTRY (R1), and would let exactly one BootROM instruction run at a debugger-chosen address (R5). In debug mode the core only executes the Debug Module's own ROM, so neither rule takes anything away from the debugger. · `soc_secure_boot.sv`, `basic_soc_top.sv`
+> **Implementation note:** debug mode is *not* part of the trigger, and the BootROM gate (R5) is closed in recovery even in debug mode. Ibex issues the fetch at `dpc` in the same cycle it executes `dret`, while `debug_mode` still reads 1. A debug-mode exception would therefore miss the recovery resume at ENTRY (R1), and would let exactly one BootROM instruction run at a debugger-chosen address (R5). In debug mode the core only executes the Debug Module's own ROM, so neither rule takes anything away from the debugger. · `soc_secure_boot.sv`, `final_soc_top.sv`
 
 **Current:** `boot_done` comes from a software write to CTRL1. The fetch gate accepts any address in the signed range.
 
@@ -242,7 +242,7 @@ assign fetch_ok_o = verified_q &&
 ```
 
 ```systemverilog
-// basic_soc_top.sv
+// final_soc_top.sv
 .fetch_accept_i ( instr_req_int & instr_gnt_int ),
 .fw_entered_o   ( boot_done_hw ),
 ```
@@ -259,7 +259,7 @@ assign boot_done_o = boot_done_q;
 **New:**
 
 ```systemverilog
-parameter bit HW_BOOT_DONE = 1'b0,     // basic_soc_top passes SECURE_BOOT
+parameter bit HW_BOOT_DONE = 1'b0,     // final_soc_top passes SECURE_BOOT
 input  logic  boot_done_hw_i,
 
 CTRL1_OFFSET: if (!HW_BOOT_DONE && be_i[0] && wdata_i[0]) boot_done_q <= 1'b1;  // ignored in HW mode
@@ -269,7 +269,7 @@ assign boot_done_o = HW_BOOT_DONE ? boot_done_hw_i : boot_done_q;
 
 `software/boot/bootrom.S`: delete the CTRL1 write before `jr s6`. In HW mode it would be ignored anyway. The bootrom still prints and reads ENTRY before the jump.
 
-### R3 — Watchdog (D3) · `soc_recovery.sv`, `basic_soc_top.sv`
+### R3 — Watchdog (D3) · `soc_recovery.sv`, `final_soc_top.sv`
 
 The counter logic is unchanged: it already stops on `boot_done`, which is now the hardware event. Only the default changes:
 
@@ -277,7 +277,7 @@ The counter logic is unchanged: it already stops on `boot_done`, which is now th
 parameter int unsigned BOOT_WDT_CYCLES = 32'd2_000_000,  // 20 ms @ 100 MHz, see section 9
 ```
 
-### R4 — ISRAM locks on VERIFY start (D4) · `soc_secure_boot.sv`, `basic_soc_top.sv`, `soc_ctrl_regs.sv`
+### R4 — ISRAM locks on VERIFY start (D4) · `soc_secure_boot.sv`, `final_soc_top.sv`, `soc_ctrl_regs.sv`
 
 **Current:** `.ctrl_isram_lock_i ( isram_lock )`, the software CTRL0 bit only.
 
@@ -292,7 +292,7 @@ always_ff @(posedge clk_i or negedge rst_ni) begin
 end
 assign verify_started_o = started_q;
 
-// basic_soc_top.sv
+// final_soc_top.sv
 .ctrl_isram_lock_i ( isram_lock | verify_started ),
 // soc_ctrl_regs STATUS0[1] (isram_locked) reports the same effective lock
 ```
@@ -303,7 +303,7 @@ Writes after VERIFY start get a bus error. The existing "dirty → not verified"
 
 **Current:** BootROM fetches are never gated.
 
-**New** (new parameter `BOOTROM_XGATE`, set to `SECURE_BOOT` by `basic_soc_top`):
+**New** (new parameter `BOOTROM_XGATE`, set to `SECURE_BOOT` by `final_soc_top`):
 
 ```systemverilog
 logic bootrom_fetch_ok, bootrom_fetch_blocked_q;
@@ -332,7 +332,7 @@ Firmware rules that follow from this:
 - **Set `mtvec` as the very first thing.** `mtvec` resets to the BootROM, so an earlier trap would now fault in a loop. `app_demo.S` already does this.
 - **Clear the DSRAM data area at startup.** This removes anything a recovery session left behind.
 
-### R6 — Remove `dift_en_i` (D6) · `basic_soc_top.sv`, testbenches
+### R6 — Remove `dift_en_i` (D6) · `final_soc_top.sv`, testbenches
 
 Remove the port and drive the Ibex input with a constant `1'b1`. Remove `.dift_en_i(1'b1)` from `full_soc_tb`, `secure_boot_dbg_tb` and `dift_dbg_tb`. `soc_top.sv` has its own port and is not touched.
 
@@ -404,7 +404,7 @@ Sized from the **largest image that fits** (8 KB ISRAM = 2048 words):
 | W7 | A refused fetch now also happens on a resume at the wrong address in recovery | The debugger sees a fault and re-halts. Document it in the recovery procedure. |
 | W8 | The decoder input `fw_verified_i` actually carries `fetch_ok` (verified + address check) | Naming only; consider renaming to `fw_fetch_ok_i` |
 | W9 | Validly signed but broken firmware boots every time | Not fixable by the watchdog. The strap is the way back in (D11). |
-| W10 | The `dift_en_i` removal and the new ports change `basic_soc_top`'s interface | Update all three TB instantiations. The older tops are not affected. |
+| W10 | The `dift_en_i` removal and the new ports change `final_soc_top`'s interface | Update all three TB instantiations. The older tops are not affected. |
 
 ---
 

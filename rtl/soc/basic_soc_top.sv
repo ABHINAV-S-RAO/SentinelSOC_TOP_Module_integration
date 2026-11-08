@@ -375,7 +375,10 @@ module basic_soc_top #(
   // debugger stores into DSRAM, which are tagged 1 below.
   localparam logic [31:0] DBG_DATA_ADDR = DBG_BASE_ADDR + 32'(dm::DataAddr);
   localparam logic [31:0] DBG_DATA_END  = DBG_DATA_ADDR + 4 * 32'(dm::DataCount);
-  assign tag_in_dbgdata = core_debug_mode &&
+  // Loads only: a store response carries no data, so it must carry no tag
+  // (otherwise the debugger's own abstract-read store into data0 would come
+  // back "tainted" and trip the LSU's response-tag check).
+  assign tag_in_dbgdata = core_debug_mode && !tag_we &&
                           ({tag_addr, 2'b00} >= DBG_DATA_ADDR) && ({tag_addr, 2'b00} < DBG_DATA_END);
 
   // External input is untrusted: every load from the APB peripheral window
@@ -389,7 +392,8 @@ module basic_soc_top #(
   localparam logic [31:0] PERIPH_BASE = 32'h1000_0000;   // soc_addr_decode APB_BASE
   localparam logic [31:0] PERIPH_MASK = 32'hF000_0000;   // soc_addr_decode APB_MASK
   localparam logic [31:0] DBG_MASK_TAG = 32'hFFFF_0000;  // soc_addr_decode DBG_MASK
-  assign tag_in_periph = (({tag_addr, 2'b00} & PERIPH_MASK) == PERIPH_BASE) &&
+  assign tag_in_periph = !tag_we &&                      // loads only (see tag_in_dbgdata)
+                         (({tag_addr, 2'b00} & PERIPH_MASK) == PERIPH_BASE) &&
                          (({tag_addr, 2'b00} & DBG_MASK_TAG) != DBG_BASE_ADDR);
 
   always_ff @(posedge clk_i or negedge sys_rst_n) begin

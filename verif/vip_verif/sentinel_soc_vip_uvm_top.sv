@@ -280,12 +280,16 @@ module sentinel_soc_vip_uvm_top;
 
 `ifdef DEBUG_BUS_TRACE
   always @(posedge clk_i) begin
-    if (u_obi_if.req || u_dut.core_data_rvalid || u_dut.apb_req_struct.psel)
-      $display("[HW_TRACE] %0t: req=%b we=%b addr=%08h gnt=%b rv=%b err=%b rdata=%08h | psel=%b penable=%b paddr=%08h pready=%b pslverr=%b | irq_timer=%b",
-        $time, u_dut.core_data_req, u_dut.core_data_we, u_dut.core_data_addr,
-        u_dut.core_data_gnt, u_dut.core_data_rvalid, u_dut.core_data_err, u_dut.core_data_rdata,
+    if (u_obi_if.req || u_dut.core_data_rvalid || u_dut.dift_data_req || u_dut.dift_data_rvalid ||
+        u_dut.apb_req || u_dut.apb_rvalid || u_dut.apb_req_struct.psel)
+      $display("[HW_TRACE] %0t: rst=%b sys_rst=%b | core req=%b we=%b addr=%08h gnt=%b rv=%b err=%b | dift req=%b gnt=%b rv=%b | apbport req=%b gnt=%b rv=%b | psel=%b pen=%b paddr=%08h pready=%b pslverr=%b",
+        $time, rst_ni, u_dut.sys_rst_n,
+        u_dut.core_data_req, u_dut.core_data_we, u_dut.core_data_addr,
+        u_dut.core_data_gnt, u_dut.core_data_rvalid, u_dut.core_data_err,
+        u_dut.dift_data_req, u_dut.dift_data_gnt, u_dut.dift_data_rvalid,
+        u_dut.apb_req, u_dut.apb_gnt, u_dut.apb_rvalid,
         u_dut.apb_req_struct.psel, u_dut.apb_req_struct.penable, u_dut.apb_req_struct.paddr,
-        u_dut.apb_rsp_struct.pready, u_dut.apb_rsp_struct.pslverr, u_dut.irq_timer_periph);
+        u_dut.apb_rsp_struct.pready, u_dut.apb_rsp_struct.pslverr);
   end
 `endif
 `endif

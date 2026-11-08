@@ -194,28 +194,28 @@ package sentinel_soc_vip_uvm_pkg;
 
       // 1. Set DLAB (bit 7 of LCR) to expose DLL/DLM at offsets 0/1
       start_item(item);
-      item.addr = 32'h1050_3000 + 3; // LCR
+      item.addr = 32'h1050_3000 + 32'h0C; // LCR (final_soc_top: register n at +4*n, see software/soc.h)
       item.data = 32'h0000_0083;     // DLAB=1, 8 data bits, no parity, 1 stop bit
       item.we = 1; item.be = 4'h1;
       finish_item(item);
 
       // 2. Write DLL (low byte of divisor) at offset 0
       start_item(item);
-      item.addr = 32'h1050_3000 + 0;
+      item.addr = 32'h1050_3000 + 32'h00; // DLL
       item.data = 32'h0000_0057; // 5207 & 0xFF = 0x57 (fixed)
       item.we = 1; item.be = 4'h1;
       finish_item(item);
 
       // 3. Write DLM (high byte of divisor) at offset 1
       start_item(item);
-      item.addr = 32'h1050_3000 + 1;
+      item.addr = 32'h1050_3000 + 32'h04; // DLM
       item.data = 32'h0000_0014; // 5207 >> 8 = 0x14 (fixed)
       item.we = 1; item.be = 4'h1;
       finish_item(item);
 
       // 4. Clear DLAB — offsets 0/1 go back to RBR/THR and IER
       start_item(item);
-      item.addr = 32'h1050_3000 + 3;
+      item.addr = 32'h1050_3000 + 32'h0C; // LCR
       item.data = 32'h0000_0003; // DLAB=0, 8N1 stays set
       item.we = 1; item.be = 4'h1;
       finish_item(item);

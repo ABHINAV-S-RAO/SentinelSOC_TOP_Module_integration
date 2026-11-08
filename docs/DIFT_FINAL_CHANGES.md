@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | Date | 2026-11-08 |
-| Branch | `boot_handoff` |
+| Branch | Done on `boot_handoff`, merged into `main` (Xcelium regression passed) |
 | Scope | DIFT in the core (`ibex_core` + `rtl/core/dift/`) and in the SoC (`final_soc_top`) |
 | Related docs | `USER_MODE_AND_DIFT_CHANGES.md` (User mode, F1–F4), `SOC_MODES_AND_SECURITY.md` (boot handoff, modes), `debug_secure_boot_integration.md` (debugger findings D01–D13) |
 
@@ -150,7 +150,7 @@ Two decisions taken: **bit 7 is made to work on stores**, and **the store tag fo
 - `rtl/core/ibex_core/rtl/ibex_core.sv`
 
 ### C2. The load address check (bit 21) runs before the bus access
-**Problem:** bit 21 was checked in `riscv_load_check` at writeback, using the same wrong register as C1. Its result also only drove the core's `dift_exception_o` output, **which isn't connected in `final_soc_top`**, so in the SoC it never trapped.
+**Problem:** bit 21 was checked in `riscv_load_check` at writeback, using the same wrong register as C1. Its result also only drove the core's `dift_exception_o` output. In `final_soc_top` that output reaches the core only as a one-cycle pulse on the non-maskable interrupt line (core → `dift_obi_ctrl` → `irq_dift` → `irq_nm_i`), not as a trap on the offending load, so the load itself was never stopped.
 
 **Fix:** the check decoder (`ibex_dift_tmu`) now has a load case: source 1 = bit 21. `ibex_dift_logic` evaluates it for loads in EX. The violation is a normal DIFT exception (`mcause` 2), and the load is never sent to the bus.
 - `rtl/core/dift/ibex_dift_tmu.sv`, `rtl/core/dift/ibex_dift_logic.sv`
@@ -175,7 +175,7 @@ Two decisions taken: **bit 7 is made to work on stores**, and **the store tag fo
 - **For the current policies nothing changes:** TPR `0xAAAA` has OR, bit 15 = 1 and bit 16 = 0, so stored tag = data tag, exactly as before.
 
 ### C5. Loaded-data checks (bits 7 / 8) now actually trap
-**Problem:** `riscv_load_check` drove only the unconnected `dift_exception_o` (see C2), so bits 7 and 8 on loads never trapped in the SoC.
+**Problem:** `riscv_load_check` drove only `dift_exception_o`, the NMI pulse (see C2), so bits 7 and 8 on loads never trapped the offending load in the SoC.
 
 **Fix:**
 - `riscv_load_check` now checks the loaded word's tag (bit 7) and the propagated destination tag (bit 8) on the raw load response.
@@ -226,7 +226,7 @@ Use the same `xrun` options you used before for each TB. The lines above only sh
 |---|---|
 | `app_demo.S` policy | It can add bits 6 and 21 (`TCR = 0x0020_0043`) now that bit 6 no longer fires on peripheral reads. Needs an image rebuild and re-sign |
 | DIFT trap cause | EX-stage violations report **illegal instruction** (`mcause` 2, `mtval` = PC), and loaded-data violations report **load access fault** (`mcause` 5). A trap handler can't tell a DIFT trap from a real illegal instruction or bus error. A custom cause code (e.g. 24) would fix that; it's a small controller change |
-| `dift_exception_o` | The core output isn't connected in `final_soc_top` (it is in the older `soc_top`, through the PLIC). Every violation already traps, so it's only needed for an interrupt or a status bit |
+| `dift_exception_o` → NMI | The core output **is** connected: core → `dift_obi_ctrl` → `irq_dift` → Ibex `irq_nm_i` (non-maskable interrupt). So a violation in normal running raises the trap **and** a one-cycle NMI pulse. `secure_boot_dbg_tb` checks that a violation in debug mode never comes back later as an NMI (D09), but no test fires a violation while the firmware runs normally, so what the core does with the trap plus the NMI pulse is **untested**. Decide whether the NMI is wanted (an alarm), and add a full-SoC test either way |
 | Bit 7 on loads vs stores | One bit controls both "load of a tainted word" and "store of tainted data". With peripheral input tainted, enabling it traps the first UART read. Splitting it would need a new TCR bit; we kept the existing bit map |
 | APB timer | Timer reads are labelled tainted like the other peripherals. It could be excluded if firmware needs clean timer values |
 | Trap handler in Machine mode | Can still rewrite TCR/TPR. Keep it small (see `USER_MODE_AND_DIFT_CHANGES.md` 2.5) |

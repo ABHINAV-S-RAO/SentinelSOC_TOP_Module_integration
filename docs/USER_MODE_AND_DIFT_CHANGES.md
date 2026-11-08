@@ -3,13 +3,13 @@
 | | |
 |---|---|
 | Date | 2026-10-25 |
-| Branch | `boot_handoff` (uncommitted local changes) |
+| Branch | Done on `boot_handoff`, merged into `main` |
 | Builds on | `docs/SOC_MODES_AND_SECURITY.md` (boot handoff, already committed) |
-| Status | RTL, firmware, testbenches and signed images updated. **`full_soc_tb` passes in all three modes** (Verilator, locally). The debugger TBs are to be run on Xcelium. |
+| Status | **Verified on Xcelium**: `full_soc_tb` (all three modes), `secure_boot_dbg_tb` and `dift_dbg_tb` pass with `DIFT-FINDINGS=0`. Sections 5.1 and 6 were later superseded by `DIFT_FINAL_CHANGES.md`. |
 
 ---
 
-## 1. Summarya
+## 1. Summary
 
 | # | Change | Kind | Files |
 |---|---|---|---|
@@ -126,6 +126,8 @@ Under a firmware policy that checks **load/store addresses** (TCR bit 6), an add
 - After boot, with an address-checking policy, the debugger can still halt the firmware and read and write registers. It can't use its own pointers for memory access. That's DIFT working as intended: debugger data is untrusted.
 
 ### 3.4 Open question: peripherals
+
+> **Resolved:** done as F4 (section 5). Peripheral loads are tainted unconditionally, not gated by `boot_done`.
 Your note said "the same way we do peripherals post boot". In the current RTL, **loads from peripherals (APB, CLINT, PLIC) return tag 0**; only DSRAM has tags. If peripheral input (UART RX, SPI RX, GPIO) is meant to be tainted after boot, that's a separate change: one more address window in the same tag read path, gated by `boot_done`. **Not done here**, tell me if you want it.
 
 ---

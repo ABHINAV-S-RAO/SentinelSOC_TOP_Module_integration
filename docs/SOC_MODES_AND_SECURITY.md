@@ -2,8 +2,8 @@
 
 | | |
 |---|---|
-| Status | **Locked.** This is the reference for the RTL and testbench changes. |
-| Branch | Implement on a new branch off `full_soc` |
+| Status | **Implemented and verified.** R1–R6 are in the RTL and all checks in section 11 pass on Xcelium (Nov 2026). Sections 6 and 12 are kept as the record of what changed; the "Current" code blocks show the old behaviour. |
+| Branch | Done on `boot_handoff`, merged into `main` |
 | Date | 2026-10-02 |
 | Scope | `SECURE_BOOT=1` builds (`final_soc_top` with `soc_secure_boot`). `SECURE_BOOT=0` builds and the older `soc_top.sv` keep today's behaviour. |
 
@@ -206,6 +206,8 @@ There is no separate recovery mechanism.
 
 ## 6. Changes to implement
 
+> **Status:** all six changes (R1–R6) are implemented. "Current" = the behaviour before, "New" = what the RTL does now.
+
 All new behaviour is enabled only when `SECURE_BOOT=1`. Legacy builds are unchanged.
 
 ### R1 — Hardware `boot_done` + single entry (D1, D2)
@@ -393,6 +395,8 @@ Sized from the **largest image that fits** (8 KB ISRAM = 2048 words):
 
 ## 10. Things to watch (could break later)
 
+> **Status (Nov 2026):** W1 is done: `secure_boot_dbg_tb` now boots a signed ISRAM test firmware through the real flow. W3 is confirmed by `full_soc_tb` (`boot_done` rises one cycle after the ENTRY fetch, and ENTRY+4 is fetched fine). W5 is confirmed by `secure_boot_dbg_tb` (F-CTRL1: clean halt, 0 exceptions before the halt). W6, W8 and W9 still apply.
+
 | # | Risk | Handling |
 |---|---|---|
 | W1 | **`secure_boot_dbg_tb` runs its test firmware from the BootROM** (`fw_load()` at `0x80`, heartbeat loop, CTRL1 write via the `set_boot_done` knob). With R1/R2/R5, CTRL1 is ignored and BootROM code cannot run after boot. | Rework that TB: build its DIFT test firmware as a signed ISRAM image (`gen_signed_image.py`) and boot it through the real flow. Watchdog tests trigger by "bootrom never jumps" instead of "firmware doesn't set `boot_done`". |
@@ -409,6 +413,8 @@ Sized from the **largest image that fits** (8 KB ISRAM = 2048 words):
 ---
 
 ## 11. Test plan
+
+> **Status (Nov 2026):** every row below is implemented as a check in `full_soc_tb` (normal, `+TAMPER`, `+BIGIMAGE`) or `secure_boot_dbg_tb`, and passes. `+BIGIMAGE` (T7) hands over at about 661k cycles, 33% of the watchdog.
 
 **Existing tests that must still pass:**
 
@@ -435,6 +441,8 @@ Sized from the **largest image that fits** (8 KB ISRAM = 2048 words):
 ---
 
 ## 12. Implementation order
+
+> **Status:** completed. Kept for the record.
 
 1. Create a branch off `full_soc`.
 2. **R6** (remove `dift_en_i`): an interface-only change. Re-run all three TBs.

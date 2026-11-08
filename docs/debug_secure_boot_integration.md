@@ -1,7 +1,9 @@
 # SentinelSoC: Debugger, Secure Boot and Full-SoC Integration
 
 This document explains the work done on the `debugger2` → `jtag-recovery` →
-`soc-boot-flow` → `full_soc` branches:
+`soc-boot-flow` → `full_soc` branches (all merged into `main` since). Later
+changes are in `SOC_MODES_AND_SECURITY.md` (hardware boot handoff),
+`USER_MODE_AND_DIFT_CHANGES.md` and `DIFT_FINAL_CHANGES.md`:
 
 1. [How the debugger works internally](#1-how-the-debugger-works-internally): read this first
 2. [Architecture changes and why](#2-architecture-changes-and-why)
@@ -240,7 +242,7 @@ That is the key to the whole integration:
 | Timer | `0x1050_1000` | PULP `apb_timer` → PLIC source 5 |
 | SPI #2 | `0x1050_2000` | General-purpose SPI master |
 | UART | `0x1050_3000` | 16550-style → PLIC source 1 |
-| GPIO | `0x1060_0000` | Waiting for the PULP `apb_gpio` IP (`HAS_GPIO`) |
+| GPIO | `0x1060_0000` | PULP `apb_gpio`, built in only with `HAS_GPIO=1` (default 0, so the window returns a bus error). The VIP tests build it in; whether it goes on silicon is still open |
 | Debug | `0x1A11_0000` | riscv-dbg |
 
 PLIC source IDs follow `software/soc.h`: UART=1, SPI=2, QSPI=3, GPIO=4,
@@ -257,7 +259,9 @@ POR → BootROM @0x80: UART banner
     → CTRL0.isram_lock
     → VERIFY_CTRL.start → hardware feeder + SHA-512 + Ed25519 (~4 ms @ clk/2)
     → verified?  no → print error, halt (watchdog → JTAG recovery)
-                 yes → read ENTRY, set boot_done, jump to 0x1_0044
+                 yes → read ENTRY, jump to 0x1_0044
+    → HARDWARE sets boot_done on the first verified fetch at ENTRY
+      (CTRL1 is ignored; see SOC_MODES_AND_SECURITY.md R1/R2)
     → firmware (vectored mtvec, UART/SPI/CLINT/PLIC ...)
 ```
 
@@ -323,15 +327,17 @@ names.
 |---|---|---|
 | `dbg_tb_top.sv` | `files.f` | Smoke test: activate DM, halt, write/read x1, resume |
 | `dift_dbg_tb.sv` | `files_dift_dbg.f` | Debug spec + DIFT + JTAG recovery, with the verdict faked through the legacy `crypto_verified` pin (`SECURE_BOOT=0`) |
-| `secure_boot_dbg_tb.sv` | `files_secure_boot_dbg.f` | Everything above + hardware secure boot (142 checks) |
+| `secure_boot_dbg_tb.sv` | `files_secure_boot_dbg.f` | Everything above + hardware secure boot + hardware boot handoff (189 checks) |
 
-**The JTAG BFM** (`interface/jtag_if.sv`) bit-bangs TCK/TMS/TDI:
+**The JTAG BFM** (`jtag_if.sv`; the filelists point at `verif/debugger/interface/jtag_if.sv`, which exists only on the lab server, while git has `verif/debugger/jtag_if.sv`) bit-bangs TCK/TMS/TDI:
 `tap_reset`, `shift_ir`, `shift_dr`, and `dmi_read`/`dmi_write`. Each op is
 followed by a NOP scan to fetch the result, retrying on `BUSY`, exactly like
 OpenOCD. One DMI op takes about 7 µs of simulated time.
 
-**Firmware inside the testbench**: the testbench assembles a small program and
-backdoor-loads it into the BootROM model. It reads its configuration
+**Firmware inside the testbench**: `dift_dbg_tb` assembles a small program and
+backdoor-loads it into the BootROM model. `secure_boot_dbg_tb` instead boots a
+signed ISRAM test firmware (`images/dift_fw_signed.mem`) through the real secure
+boot, which drops to User mode after writing the DIFT policy. It reads its configuration
 (TPR/TCR, secret values, whether to set `boot_done`) from DSRAM, loads
 "secrets" into `s0/a0/t1/s1`, arms TCR last, then loops writing a heartbeat to
 DSRAM.
@@ -353,7 +359,7 @@ and checks that GPR tags match the injected taint.
 - **B (DIFT × debug)**:
   - S1: tag bookkeeping.
   - S2: full policy, TCR/TPR lockout, tainted reads, violations inside progbuf.
-  - S5: `dift_en=0`.
+  - S5: DIFT has no off switch (the `dift_en_i` pin is gone).
   - S3: tainted `s0`.
   - S4/S6: tag aliasing and X tags.
 - **D (access policy)**:
@@ -414,6 +420,12 @@ It takes seconds.
   - PLIC claimed source 5
   - result `0xB007B007`
   - no errors
+- **Later additions** (see `USER_MODE_AND_DIFT_CHANGES.md`): hardware `boot_done`
+  at the ENTRY fetch, ISRAM lock at handoff, no BootROM fetch after it, drop to
+  User mode, the policy written once, a User-mode TCR write traps, UART data in
+  DSRAM tainted and a constant clean, no DIFT violation.
+- **`+BIGIMAGE`**: the largest image that fits ISRAM (8 KB); the handoff must
+  happen well inside the boot watchdog.
 - **`+TAMPER`**: flips one firmware bit in flash. The ROM must report the
   failure; no `boot_done`, no firmware.
 - **`+TRACE`**: bounded bring-up trace (fetches, data bus, APB, traps, FSM).
@@ -452,8 +464,10 @@ Background: DIFT gives every GPR and every DSRAM word a 1-bit tag
 (1 = untrusted/tainted). `TPR` decides how tags propagate (AND/OR/clear per
 instruction class). `TCR` decides which uses of tainted data fault (jump
 target, branch operand, load/store address or data, ALU operands...).
-Violations either raise a synchronous exception (`ex_tag_err`) or pulse the
-DIFT interrupt (`irq_nm`).
+Violations trap: illegal instruction (`mcause` 2) for checks in EX, load
+access fault (`mcause` 5) for checks on loaded data (`DIFT_FINAL_CHANGES.md`).
+Every violation also pulses the core's `dift_exception_o`, which reaches Ibex
+as a non-maskable interrupt (`irq_nm`) through `dift_obi_ctrl`.
 
 ### D06a: a debugger register write clears the register's taint *(closed: option b)*
 - **Seen in**: S1. `t1` is tainted; the debugger writes `t1` → tag becomes 0.
@@ -482,7 +496,7 @@ DIFT interrupt (`irq_nm`).
     untouched; but abstract writes would then keep the *old* tag).
   - (b) Add tag bits to `dscratch0/1` and save/restore them with the value.
 
-### D03: a tainted register can be read out over JTAG *(by design: tainted store data is not blocked)*
+### D03: a tainted register can be read out over JTAG *(closed by policy: TCR bit 7)*
 - **Seen in**: S2. `t1` holds a tainted secret; an abstract read returns it in `data0`.
 - **Why**:
   - An abstract read is `sw t1, 0x380(a0)`, a store to the DM, not DSRAM, so
@@ -533,11 +547,16 @@ verif/secure_boot/run_verilator.sh
 ./software/build_sim_images.sh                                         # rebuild ROM + signed image
 xrun -f verif/soc/files_full_soc.f -l full_soc.log                     # normal boot
 xrun -f verif/soc/files_full_soc.f -l full_soc_tamper.log +TAMPER      # tampered firmware
+xrun -f verif/soc/files_full_soc.f -l full_soc_big.log +BIGIMAGE       # largest image (8 KB)
 xrun -f verif/soc/files_full_soc.f -l full_soc.log +TRACE              # bring-up trace
 
 grep -E "\[(PASS|FAIL|FINDING|OBS)\]|checks=|TEST|UART \|" <log>
 ```
 
-**Still open**: GPIO IP, `+TAMPER` on the full SoC, a C port of the
-bootrom/firmware once GCC is installed (update `soc.h` to the VERIFY/CLINT/SPI #2
-map), DIFT exercised by real firmware, and decisions on D03/D06a/D08/D12.
+**Done since**: GPIO IP integrated (`HAS_GPIO=1`), `+TAMPER` and `+BIGIMAGE` on
+the full SoC, DIFT exercised by the User-mode firmware, and D03/D06a/D08/D12
+closed (section 5).
+
+**Still open**: a C port of the bootrom/firmware once GCC is installed (update
+`soc.h` to the VERIFY/CLINT/SPI #2 map), whether GPIO goes on silicon, and a
+full-SoC test of a DIFT violation during normal running (trap + NMI).

@@ -1,7 +1,7 @@
 // Copyright 2025
 // SoC Address Decoder
-// Wraps obi_demux for data path (9 slaves: BootROM/ISRAM/DSRAM/CTRL/BUF/
-// SHA/PLIC/APB/DBG + 1 error responder) and fetch path (3 slaves: BootROM,
+// Wraps obi_demux for data path (10 slaves: BootROM/ISRAM/DSRAM/CTRL/BUF/
+// SHA/PLIC/APB/DBG/CLINT + 1 error responder) and fetch path (3 slaves: BootROM,
 // ISRAM, DBG — DBG added for debug-ROM instruction fetch, see arbiter below)
 // Uses ObiDefaultConfig: 32-bit addr/data, 1-bit ID, no integrity, no optional fields
 //
@@ -16,12 +16,18 @@
 //   -----------------------------------------------------------------------------------------------
 //   Boot phase (boot_done_i=0)     | allowed    | allowed   | allowed (unless dbg)  | n/a (BootROM)
 //   Post-boot, normal execution    | BLOCKED    | BLOCKED   | BLOCKED (lock is set) | BLOCKED until fw_verified_i
-//   Any time, dbg_mode_i=1         | BLOCKED    | allowed   | BLOCKED (unconditional)| (fetch gate independent of dbg)
+//   Any time, dbg_mode_i=1         | BLOCKED    | allowed   | BLOCKED (see recovery) | (fetch gate independent of dbg)
+//   dbg_mode_i=1 AND recovery_i=1  | BLOCKED    | allowed   | allowed until          | still gated by fw_verified_i
+//     AND boot_done_i=0            |            |           | boot_done/isram_lock   |
 //
-// ISRAM writes are blocked by dbg_mode_i UNCONDITIONALLY (not just
-// post-boot) — a halted-core debug session must never be able to inject
-// or modify firmware in ISRAM, even during the boot window before the
-// bootloader's own write-lock is set.
+// ISRAM writes are blocked by dbg_mode_i (not just post-boot) — a
+// halted-core debug session must never be able to inject or modify
+// firmware in ISRAM, even during the boot window before the bootloader's
+// own write-lock is set. The ONE exception is JTAG recovery boot
+// (recovery_i, see soc_recovery.sv): with a faulty bootrom the debugger
+// loads a replacement image into ISRAM, allowed only while boot_done_i=0
+// and ctrl_isram_lock_i=0. Execution of that image is still gated by
+// fw_verified_i, so recovery cannot run unsigned code.
 //
 // Denied CSR accesses are redirected to SEL_ERR (reuses the existing
 // unmapped-address error responder — DEAD_BEEF + err=1). This keeps the
@@ -31,6 +37,13 @@
 // To add another privileged block in future (e.g. a second crypto CSR
 // range), add a BASE/MASK parameter pair and OR its hit condition into
 // priv_hit — no other change needed.
+//
+// BootROM execution (BOOTROM_XGATE=1, secure-boot SoCs): instruction fetches
+// from the BootROM are served only while boot_done_i=0 and recovery_i=0, i.e.
+// during a normal boot. After the handoff, and in recovery (debug mode
+// included -- the debugger runs from the Debug Module's own ROM and never
+// needs the BootROM), a BootROM fetch gets an error response: no bootrom
+// code can be re-used as gadgets. Data reads are unaffected (see data decode).
 //
 // NOTE ISRAM_write lock (ctrl_isram_lock_i) is a SEPARATE, orthogonal
 // mechanism: it gates *firmware writes into ISRAM* (bootloader sets it
@@ -56,7 +69,9 @@ module soc_addr_decode #(
   parameter logic [31:0] SHA_BASE      = 32'h0005_0000,
   parameter logic [31:0] SHA_MASK      = 32'hFFFF_F000, // 4KB
   parameter logic [31:0] PLIC_BASE = 32'h0C00_0000,
-  parameter logic [31:0] PLIC_MASK = 32'hFFC0_0000, // 4MB 	
+  parameter logic [31:0] PLIC_MASK = 32'hFFC0_0000, // 4MB
+  parameter logic [31:0] CLINT_BASE    = 32'h0200_0000,
+  parameter logic [31:0] CLINT_MASK    = 32'hFFFF_0000, // 64KB
 
   // ---------------------------------------------------------------------
   // PLACEHOLDER — reserve address space for future privileged blocks.
@@ -72,7 +87,16 @@ module soc_addr_decode #(
   parameter logic [31:0] APB_MASK      = 32'hF000_0000, // 256MB
 
   // Max outstanding transactions through the demux
-  parameter int unsigned NumMaxTrans   = 2
+  parameter int unsigned NumMaxTrans   = 2,
+
+  // 1 = SHA window (0x0005_0000) is backed by soc_secure_boot's VERIFY
+  // registers; 0 = unimplemented, accesses get an error response.
+  parameter bit          SHA_IMPL      = 1'b0,
+  // 1 = PLIC / CLINT windows routed to their ports; 0 = error response
+  parameter bit          PLIC_IMPL     = 1'b0,
+  parameter bit          CLINT_IMPL    = 1'b0,
+  // 1 = BootROM executable only during a normal boot (see header); 0 = always
+  parameter bit          BOOTROM_XGATE = 1'b0
 ) (
   input  logic clk_i,
   input  logic rst_ni,
@@ -138,17 +162,31 @@ module soc_addr_decode #(
   // in soc_ctrl_regs. Before this: full CSR RW access (boot phase).
   input  logic        boot_done_i,
 
-  // Direct wire from Ibex core debug_mode (core halted under active debug
-  // session). TODO: ibex_top does not currently expose this as a port —
-  // add `output logic debug_mode_o` to ibex_top, wired from
-  // u_ibex_core's internal debug_mode_q (in cs_registers), and connect
-  // here. Until that exists, tie to 1'b0 (fail-closed: no post-boot CSR
-  // reads at all) rather than 1'b1.
+  // Core is executing in debug mode, i.e. every access on this cycle comes
+  // from the debugger (debug ROM, abstract command or program buffer).
+  // basic_soc_top wires ibex_top.debug_mode_o here. Tie 1'b0 in a SoC
+  // without debug (fail-closed: no post-boot CSR reads at all).
   input  logic        dbg_mode_i,
 
-  // Firmware signature-verified status — direct wire from SHA+ED25519
-  // (same source soc_ctrl_regs.crypto_verified_i uses). Gates instruction
-  // fetch from ISRAM (Req 4).
+  // JTAG recovery boot active (soc_recovery.sv). Only relaxes the debug
+  // ISRAM-write block above; tie 1'b0 in SoCs without recovery.
+  input  logic        recovery_i,
+
+  //--------------------------------------------------------------------
+  // Secure-boot verifier ISRAM read port (soc_secure_boot feeder).
+  // Read-only, lowest priority (data > fetch > verifier). Tie ver_req_i
+  // to 1'b0 in SoCs without soc_secure_boot.
+  //--------------------------------------------------------------------
+  input  logic        ver_req_i,
+  input  logic [31:0] ver_addr_i,
+  output logic        ver_gnt_o,
+  output logic        ver_rvalid_o,
+  output logic [31:0] ver_rdata_o,
+
+  // ISRAM fetch permission for the CURRENT fetch address (Req 4). With
+  // soc_secure_boot this is fetch_ok_o: verified signature, ISRAM unchanged
+  // since, and instr_addr_i inside the signed code range. Legacy SoCs drive
+  // a plain verified flag.
   input  logic        fw_verified_i,
 
   //--------------------------------------------------------------------
@@ -215,6 +253,20 @@ module soc_addr_decode #(
   input  logic        plic_err_i,
 
   //--------------------------------------------------------------------
+  // CLINT (mtime/mtimecmp/msip) — OBI subordinate, not privileged.
+  // Tie the inputs off in SoCs without a CLINT (CLINT_IMPL=0).
+  //--------------------------------------------------------------------
+  output logic        clint_req_o,
+  input  logic        clint_gnt_i,
+  input  logic        clint_rvalid_i,
+  output logic [31:0] clint_addr_o,
+  output logic        clint_we_o,
+  output logic [ 3:0] clint_be_o,
+  output logic [31:0] clint_wdata_o,
+  input  logic [31:0] clint_rdata_i,
+  input  logic        clint_err_i,
+
+  //--------------------------------------------------------------------
   // OBI-to-APB Bridge — OBI subordinate
   //--------------------------------------------------------------------
   output logic        apb_req_o,
@@ -233,15 +285,13 @@ module soc_addr_decode #(
   // instruction fetch) via the arbiter below, mirroring the BootROM/
   // ISRAM arbiters. Both traffic types originate from the same halted
   // Ibex core executing the execution-based debug protocol, never from
-  // a second independent master (SBA is deliberately disconnected — see
-  // soc_top.sv).
+  // a second independent master (no System Bus Access: the DM is built with
+  // SbaEnable=0 in basic_soc_top).
   //
-  // dbg_gnt_i: ASSUMED PLACEHOLDER — the dm_top.sv shared so far has no
-  // gnt/rvalid on its slave port at all (just slave_rdata_o). This
-  // module assumes a fixed single-cycle latency (gnt=req, rvalid next
-  // cycle), matching soc_sram's convention, until confirmed against the
-  // real dm_top/dm_mem source. If dm_top's slave port is actually
-  // zero-latency combinational, this needs to change to match.
+  // dbg_gnt_i / dbg_rvalid_i: CONFIRMED against dm_obi_top.sv — slave_gnt_o
+  // is hardwired 1'b1 (always-ready) and slave_rvalid_o pulses one cycle
+  // after any granted request. Since gnt is unconditionally high, this
+  // matches the assumed "gnt=req, rvalid next cycle" model exactly.
   output logic        dbg_req_o,
   output logic [31:0] dbg_addr_o,
   output logic        dbg_we_o,
@@ -273,7 +323,8 @@ module soc_addr_decode #(
     SEL_PLIC	= 4'd6,
     SEL_APB     = 4'd7,
     SEL_DBG     = 4'd8,
-    SEL_ERR     = 4'd9
+    SEL_ERR     = 4'd9,
+    SEL_CLINT   = 4'd10
     // If a new privileged slave is added (e.g. SEL_CRYPTO2), widen this
     // enum, bump DataNumMgrPorts below, and add a new manager-port slot.
   } data_sel_e;
@@ -349,7 +400,13 @@ module soc_addr_decode #(
                // || ((data_addr_i & CRYPTO2_MASK) == CRYPTO2_BASE)
   end
 
-  assign priv_write_ok = ~boot_done_i;                 // writes: boot phase only, ever
+  // writes: boot phase only, never from the debugger -- except that in JTAG
+  // recovery the debugger may write the SHA window (VERIFY_CTRL.start), the
+  // only way to verify a debugger-loaded image. That register can only start
+  // a hardware-fed verification; it cannot influence the result.
+  logic sha_hit;
+  assign sha_hit       = ((data_addr_i & SHA_MASK) == SHA_BASE);
+  assign priv_write_ok = ~boot_done_i & (~dbg_mode_i | (sha_hit & recovery_i));
   assign priv_read_ok  = ~boot_done_i | dbg_mode_i;     // reads: boot phase, or debug-halted
   assign priv_denied   = priv_hit & (data_we_i ? ~priv_write_ok : ~priv_read_ok);
 
@@ -359,15 +416,19 @@ module soc_addr_decode #(
   data_sel_e data_sel;
 
   always_comb begin
-    if      ((data_addr_i & BOOTROM_MASK) == BOOTROM_BASE) data_sel = SEL_ERR; // BootROM is fetch-only
+    // BootROM: data READS allowed in the boot phase (strings/constants of the
+    // boot code, .rodata of a C bootrom) or from the debugger; writes, and
+    // reads by post-boot firmware, get an error.
+    if      ((data_addr_i & BOOTROM_MASK) == BOOTROM_BASE) data_sel = (!data_we_i && (!boot_done_i || dbg_mode_i)) ? SEL_BOOTROM : SEL_ERR;
     else if ((data_addr_i & ISRAM_MASK)   == ISRAM_BASE)   data_sel = SEL_ISRAM;
     else if ((data_addr_i & DSRAM_MASK)   == DSRAM_BASE)   data_sel = SEL_DSRAM;
     else if (priv_denied)                                  data_sel = SEL_ERR; // Req 1-3
     else if ((data_addr_i & CTRL_MASK)    == CTRL_BASE)    data_sel = SEL_CTRL;
     else if ((data_addr_i & BUF_MASK)     == BUF_BASE)     data_sel = SEL_ERR; // BUF unimplemented
-    else if ((data_addr_i & SHA_MASK)     == SHA_BASE)     data_sel = SEL_ERR; // SHA unimplemented
-    else if ((data_addr_i & PLIC_MASK) == PLIC_BASE)       data_sel = SEL_ERR; // PLIC unimplemented
-    else if ((data_addr_i & DBG_MASK)     == DBG_BASE)     data_sel = SEL_ERR; // DBG unimplemented
+    else if ((data_addr_i & SHA_MASK)     == SHA_BASE)     data_sel = SHA_IMPL ? SEL_SHA : SEL_ERR;
+    else if ((data_addr_i & PLIC_MASK)    == PLIC_BASE)    data_sel = PLIC_IMPL  ? SEL_PLIC  : SEL_ERR;
+    else if ((data_addr_i & CLINT_MASK)   == CLINT_BASE)   data_sel = CLINT_IMPL ? SEL_CLINT : SEL_ERR;
+    else if ((data_addr_i & DBG_MASK)     == DBG_BASE)     data_sel = SEL_DBG; // abstract data register access (dm_obi_top slave)
     else if ((data_addr_i & APB_MASK)     == APB_BASE)     data_sel = SEL_APB;
     else                                                    data_sel = SEL_ERR;
   end
@@ -386,7 +447,7 @@ module soc_addr_decode #(
   // --------------------------------------------------------------------------
   // Data demux — 9 manager ports (8 slaves + 1 error responder)
   // --------------------------------------------------------------------------
-  localparam int unsigned DataNumMgrPorts = 10; // SEL_BOOTROM..SEL_ERR = indices 0..8
+  localparam int unsigned DataNumMgrPorts = 11; // SEL_BOOTROM..SEL_CLINT = indices 0..10
 
   soc_obi_req_t [DataNumMgrPorts-1:0] data_mgr_req;
   soc_obi_rsp_t [DataNumMgrPorts-1:0] data_mgr_rsp;
@@ -435,28 +496,65 @@ module soc_addr_decode #(
 
   // --------------------------------------------------------------------------
   // BootROM — arbiter between fetch demux [FSEL_BOOTROM] and
-  //           data demux [SEL_BOOTROM]
-  // Simple priority: fetch wins over data (instruction fetch is latency-critical)
+  //           data demux [SEL_BOOTROM] (read-only; decode above rejects writes)
+  // Priority: data wins (a load stalls the pipeline; fetch just retries).
+  // Responses are routed by the LATCHED owner of the accepted request, the
+  // same scheme as the ISRAM / DBG arbiters.
   // --------------------------------------------------------------------------
+  logic bootrom_data_active, bootrom_resp_is_data_q;
+  logic bootrom_fetch_ok, bootrom_fetch_blocked_q;
+
+  // BootROM execute gate (header): normal boot only.
+  assign bootrom_fetch_ok = !BOOTROM_XGATE || (!boot_done_i && !recovery_i);
+
+  always_ff @(posedge clk_i or negedge rst_ni) begin
+    if (!rst_ni)                                bootrom_resp_is_data_q <= 1'b0;
+    else if (bootrom_req_o && bootrom_gnt_i)    bootrom_resp_is_data_q <= bootrom_data_active;
+  end
+
+  // A refused fetch never reaches the ROM; it is answered with an error one
+  // cycle after its grant (same scheme as the ISRAM fetch gate).
+  always_ff @(posedge clk_i or negedge rst_ni) begin
+    if (!rst_ni) bootrom_fetch_blocked_q <= 1'b0;
+    else         bootrom_fetch_blocked_q <= fetch_mgr_req[FSEL_BOOTROM].req &
+                                            ~bootrom_data_active & ~bootrom_fetch_ok;
+  end
+
   always_comb begin
-    // Default: fetch port drives BootROM
-    bootrom_req_o   = fetch_mgr_req[FSEL_BOOTROM].req;
-    bootrom_addr_o  = fetch_mgr_req[FSEL_BOOTROM].a.addr;
-    bootrom_we_o    = 1'b0; // BootROM is always read-only
-    bootrom_be_o    = fetch_mgr_req[FSEL_BOOTROM].a.be;
+    bootrom_data_active = data_mgr_req[SEL_BOOTROM].req;
+
+    bootrom_we_o    = 1'b0;   // BootROM is always read-only
     bootrom_wdata_o = '0;
+    bootrom_be_o    = 4'hF;
+    if (bootrom_data_active) begin
+      bootrom_req_o  = 1'b1;
+      bootrom_addr_o = data_mgr_req[SEL_BOOTROM].a.addr;
+    end else begin
+      bootrom_req_o  = fetch_mgr_req[FSEL_BOOTROM].req & bootrom_fetch_ok;
+      bootrom_addr_o = fetch_mgr_req[FSEL_BOOTROM].a.addr;
+    end
 
-    fetch_mgr_rsp[FSEL_BOOTROM].gnt    = bootrom_gnt_i;
-    fetch_mgr_rsp[FSEL_BOOTROM].rvalid = bootrom_rvalid_i;
-    fetch_mgr_rsp[FSEL_BOOTROM].r      = '0;
-    fetch_mgr_rsp[FSEL_BOOTROM].r.rdata = bootrom_rdata_i;
-    fetch_mgr_rsp[FSEL_BOOTROM].r.err   = bootrom_err_i;
+    fetch_mgr_rsp[FSEL_BOOTROM]     = '0;
+    fetch_mgr_rsp[FSEL_BOOTROM].gnt = bootrom_fetch_ok ? (bootrom_gnt_i & ~bootrom_data_active)
+                                                       : (fetch_mgr_req[FSEL_BOOTROM].req & ~bootrom_data_active);
+    data_mgr_rsp[SEL_BOOTROM]       = '0;
+    data_mgr_rsp[SEL_BOOTROM].gnt   = bootrom_gnt_i &  bootrom_data_active;
 
-    // Data port to BootROM: stall (not implemented yet)
-    data_mgr_rsp[SEL_BOOTROM].gnt    = 1'b0;
-    data_mgr_rsp[SEL_BOOTROM].rvalid = 1'b0;
-    data_mgr_rsp[SEL_BOOTROM].r      = '0;
-    data_mgr_rsp[SEL_BOOTROM].r.err  = 1'b1; // error: data access to BootROM not supported
+    if (bootrom_resp_is_data_q) begin
+      data_mgr_rsp[SEL_BOOTROM].rvalid  = bootrom_rvalid_i;
+      data_mgr_rsp[SEL_BOOTROM].r.rdata = bootrom_rdata_i;
+      data_mgr_rsp[SEL_BOOTROM].r.err   = bootrom_err_i;
+    end else begin
+      fetch_mgr_rsp[FSEL_BOOTROM].rvalid  = bootrom_rvalid_i;
+      fetch_mgr_rsp[FSEL_BOOTROM].r.rdata = bootrom_rdata_i;
+      fetch_mgr_rsp[FSEL_BOOTROM].r.err   = bootrom_err_i;
+    end
+
+    if (bootrom_fetch_blocked_q) begin
+      fetch_mgr_rsp[FSEL_BOOTROM].rvalid  = 1'b1;
+      fetch_mgr_rsp[FSEL_BOOTROM].r.rdata = 32'hDEAD_BEEF;
+      fetch_mgr_rsp[FSEL_BOOTROM].r.err   = 1'b1;
+    end
   end
 
   // --------------------------------------------------------------------------
@@ -465,13 +563,27 @@ module soc_addr_decode #(
 // Write port gated by ctrl_isram_lock_i
 // Fetch port gated by fw_verified_i (Req 4)
 // --------------------------------------------------------------------------
-logic isram_data_active, isram_fetch_active;
+logic isram_data_active, isram_fetch_active, isram_ver_active;
 logic isram_fetch_blocked_q;
+
+// Owner of the in-flight transaction when it came from the verifier port.
+logic isram_resp_is_ver_q;
 
 // NEW: remembers which port's request is the one currently in flight,
 // so the response (which arrives after req has already dropped) gets
 // routed back to the correct port instead of being silently dropped.
 logic isram_resp_is_data_q;
+
+// Debug-session ISRAM write block, relaxed only for JTAG recovery boot.
+logic isram_dbg_wr_block;
+assign isram_dbg_wr_block = dbg_mode_i & ~(recovery_i & ~boot_done_i);
+
+// Write-denied status of the in-flight data transaction. OBI err belongs to
+// the response phase, so it must be latched like the owner -- driving it only
+// in the request cycle meant a denied write was silently dropped with err=0.
+logic isram_wr_denied, isram_wr_denied_q;
+assign isram_wr_denied = data_mgr_req[SEL_ISRAM].a.we &
+                         (ctrl_isram_lock_i | isram_dbg_wr_block);
 
 always_ff @(posedge clk_i or negedge rst_ni) begin
   if (!rst_ni) isram_fetch_blocked_q <= 1'b0;
@@ -481,16 +593,21 @@ end
 always_ff @(posedge clk_i or negedge rst_ni) begin
   if (!rst_ni) begin
     isram_resp_is_data_q <= 1'b0;
+    isram_resp_is_ver_q  <= 1'b0;
+    isram_wr_denied_q    <= 1'b0;
   end else if (isram_req_o && isram_gnt_i) begin
     // A transaction was just accepted this cycle — latch which port it
     // came from so the eventual isram_rvalid_i pulse routes correctly.
     isram_resp_is_data_q <= isram_data_active;
+    isram_resp_is_ver_q  <= isram_ver_active;
+    isram_wr_denied_q    <= isram_data_active & isram_wr_denied;
   end
 end
 
 always_comb begin
   isram_data_active  = data_mgr_req[SEL_ISRAM].req;
   isram_fetch_active = fetch_mgr_req[FSEL_ISRAM].req & ~isram_data_active;
+  isram_ver_active   = ver_req_i & ~isram_data_active & ~fetch_mgr_req[FSEL_ISRAM].req;
 
   // Default outputs
   isram_req_o   = 1'b0;
@@ -509,21 +626,20 @@ always_comb begin
   fetch_mgr_rsp[FSEL_ISRAM].rvalid = 1'b0;
   fetch_mgr_rsp[FSEL_ISRAM].r      = '0;
 
+  // Verifier response defaults
+  ver_gnt_o    = 1'b0;
+  ver_rvalid_o = 1'b0;
+  ver_rdata_o  = '0;
+
   if (isram_data_active) begin
     // Data port drives ISRAM — apply write lock
     isram_req_o   = 1'b1;
     isram_addr_o  = data_mgr_req[SEL_ISRAM].a.addr;
-    isram_we_o    = data_mgr_req[SEL_ISRAM].a.we
-                     & ~ctrl_isram_lock_i
-                     & ~dbg_mode_i;
+    isram_we_o    = data_mgr_req[SEL_ISRAM].a.we & ~isram_wr_denied;
     isram_be_o    = data_mgr_req[SEL_ISRAM].a.be;
     isram_wdata_o = data_mgr_req[SEL_ISRAM].a.wdata;
 
     data_mgr_rsp[SEL_ISRAM].gnt = isram_gnt_i;
-    // err can still be flagged live off the current request's we/lock state
-    data_mgr_rsp[SEL_ISRAM].r.err =
-      isram_err_i | (data_mgr_req[SEL_ISRAM].a.we
-                      & (ctrl_isram_lock_i | dbg_mode_i));
   end else if (isram_fetch_active) begin
     if (fw_verified_i) begin
       isram_req_o   = 1'b1;
@@ -539,6 +655,14 @@ always_comb begin
       fetch_mgr_rsp[FSEL_ISRAM].r.rdata = 32'hDEAD_BEEF;
       fetch_mgr_rsp[FSEL_ISRAM].r.err   = 1'b1;
     end
+  end else if (isram_ver_active) begin
+    // Secure-boot verifier: read-only
+    isram_req_o   = 1'b1;
+    isram_addr_o  = ver_addr_i;
+    isram_we_o    = 1'b0;
+    isram_be_o    = 4'hF;
+    isram_wdata_o = '0;
+    ver_gnt_o     = isram_gnt_i;
   end
 
   // NEW: route the response using the LATCHED owner, not live req state.
@@ -547,10 +671,25 @@ always_comb begin
   if (isram_resp_is_data_q) begin
     data_mgr_rsp[SEL_ISRAM].rvalid  = isram_rvalid_i;
     data_mgr_rsp[SEL_ISRAM].r.rdata = isram_rdata_i;
+    data_mgr_rsp[SEL_ISRAM].r.err   = isram_err_i | isram_wr_denied_q;
+  end else if (isram_resp_is_ver_q) begin
+    ver_rvalid_o = isram_rvalid_i;
+    ver_rdata_o  = isram_rdata_i;
   end else begin
     fetch_mgr_rsp[FSEL_ISRAM].rvalid  = isram_rvalid_i;
     fetch_mgr_rsp[FSEL_ISRAM].r.rdata = isram_rdata_i;
     fetch_mgr_rsp[FSEL_ISRAM].r.err   = isram_err_i;
+  end
+
+  // A fetch refused by the fw_verified_i gate never reaches the ISRAM, so its
+  // response comes from here (one cycle after the gnt above). This must come
+  // after the routing block: previously the routing block overwrote it with
+  // isram_rvalid_i=0, so a blocked fetch never completed and wedged the core
+  // (and the fetch demux) instead of raising an instruction access fault.
+  if (isram_fetch_blocked_q) begin
+    fetch_mgr_rsp[FSEL_ISRAM].rvalid  = 1'b1;
+    fetch_mgr_rsp[FSEL_ISRAM].r.rdata = 32'hDEAD_BEEF;
+    fetch_mgr_rsp[FSEL_ISRAM].r.err   = 1'b1;
   end
 end
 
@@ -643,6 +782,23 @@ end
   end
 
   // --------------------------------------------------------------------------
+  // CLINT — data demux only, simple passthrough (not privileged)
+  // --------------------------------------------------------------------------
+  assign clint_req_o   = data_mgr_req[SEL_CLINT].req;
+  assign clint_addr_o  = data_mgr_req[SEL_CLINT].a.addr;
+  assign clint_we_o    = data_mgr_req[SEL_CLINT].a.we;
+  assign clint_be_o    = data_mgr_req[SEL_CLINT].a.be;
+  assign clint_wdata_o = data_mgr_req[SEL_CLINT].a.wdata;
+
+  always_comb begin
+    data_mgr_rsp[SEL_CLINT]         = '0;
+    data_mgr_rsp[SEL_CLINT].gnt     = clint_gnt_i;
+    data_mgr_rsp[SEL_CLINT].rvalid  = clint_rvalid_i;
+    data_mgr_rsp[SEL_CLINT].r.rdata = clint_rdata_i;
+    data_mgr_rsp[SEL_CLINT].r.err   = clint_err_i;
+  end
+
+  // --------------------------------------------------------------------------
   // APB Bridge
   // --------------------------------------------------------------------------
   assign apb_req_o   = data_mgr_req[SEL_APB].req;
@@ -672,6 +828,21 @@ end
   // --------------------------------------------------------------------------
   logic dbg_data_active, dbg_fetch_active;
 
+  // Same fix as the ISRAM arbiter: remember which port owns the in-flight
+  // transaction, so the rvalid pulse (which arrives after the manager has
+  // already dropped req) is routed back instead of silently dropped. Without
+  // this, Ibex's prefetch buffer loses debug-ROM fetch responses after a
+  // pipeline flush and wedges waiting for rvalid.
+  logic dbg_resp_is_data_q;
+
+  always_ff @(posedge clk_i or negedge rst_ni) begin
+    if (!rst_ni) begin
+      dbg_resp_is_data_q <= 1'b0;
+    end else if (dbg_req_o && dbg_gnt_i) begin
+      dbg_resp_is_data_q <= dbg_data_active;
+    end
+  end
+
   always_comb begin
     dbg_data_active  = data_mgr_req[SEL_DBG].req;
     dbg_fetch_active = fetch_mgr_req[FSEL_DBG].req & ~dbg_data_active;
@@ -693,9 +864,6 @@ end
       dbg_wdata_o = data_mgr_req[SEL_DBG].a.wdata;
 
       data_mgr_rsp[SEL_DBG].gnt     = dbg_gnt_i;
-      data_mgr_rsp[SEL_DBG].rvalid  = dbg_rvalid_i;
-      data_mgr_rsp[SEL_DBG].r.rdata = dbg_rdata_i;
-      data_mgr_rsp[SEL_DBG].r.err   = 1'b0;
 
     end else if (dbg_fetch_active) begin
       dbg_req_o   = 1'b1;
@@ -705,9 +873,15 @@ end
       dbg_wdata_o = '0;
 
       fetch_mgr_rsp[FSEL_DBG].gnt     = dbg_gnt_i;
+    end
+
+    // Route the response using the LATCHED owner, not live req state.
+    if (dbg_resp_is_data_q) begin
+      data_mgr_rsp[SEL_DBG].rvalid  = dbg_rvalid_i;
+      data_mgr_rsp[SEL_DBG].r.rdata = dbg_rdata_i;
+    end else begin
       fetch_mgr_rsp[FSEL_DBG].rvalid  = dbg_rvalid_i;
       fetch_mgr_rsp[FSEL_DBG].r.rdata = dbg_rdata_i;
-      fetch_mgr_rsp[FSEL_DBG].r.err   = 1'b0;
     end
   end
 

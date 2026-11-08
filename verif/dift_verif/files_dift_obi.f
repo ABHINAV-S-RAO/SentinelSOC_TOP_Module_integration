@@ -1,10 +1,10 @@
--sv
+-sv -timescale 1ns/1ps
 +incdir+rtl/core/ibex_core/vendor/lowrisc_ip/dv/sv/dv_utils
 +incdir+rtl/core/ibex_core/vendor/lowrisc_ip/ip/prim/rtl
 +incdir+rtl/core/ibex_core/vendor/lowrisc_ip/ip/prim_generic/rtl
-+incdir+.bender/git/checkouts/common_cells-229df333cc9dff23/include
-+incdir+.bender/git/checkouts/apb-1b178314edfb6925/include
-+incdir+.bender/git/checkouts/obi-75858655e8b256db/include
++incdir+/home/ibexcore/project/SentinelSOC_TOP_Module_integration/.bender/git/checkouts/common_cells-229df333cc9dff23/include
++incdir+/home/ibexcore/project/SentinelSOC_TOP_Module_integration/.bender/git/checkouts/apb-1b178314edfb6925/include
++incdir+/home/ibexcore/project/SentinelSOC_TOP_Module_integration/.bender/git/checkouts/obi-75858655e8b256db/include
 
 # Bender deps
 -f verif/bender_files.f

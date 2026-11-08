@@ -67,12 +67,14 @@ module mm_ram #(
 
     import dm_tb_pkg::*;
 
-    localparam int                    TIMER_IRQ_ID = 3;
+    localparam int TimerIrqId = 3;
 
     // mux for read and writes
-    enum logic [2:0]{RAM, DEBUG, ROM, UNMAP, IDLE_READ} select_rdata_d, select_rdata_q;
+    typedef enum logic [2:0] {RAM, DEBUG, ROM, UNMAP, IDLE_READ} read_select_e;
+    read_select_e select_rdata_d, select_rdata_q;
 
-    enum logic [1:0]{SB, CORE, IDLE_WRITE} select_wdata_d, select_wdata_q;
+    typedef enum logic [1:0] {SB, CORE, IDLE_WRITE} write_select_e;
+    write_select_e select_wdata_d, select_wdata_q;
 
     logic                          data_rvalid_d, data_rvalid_q;
     logic                          sb_rvalid_d, sb_rvalid_q;
@@ -167,12 +169,12 @@ module mm_ram #(
 
 
         // memory map:
-        // the ram is mapped from 0 to SRAM_LEN and SRAM_BASE to SRAM_BASE + SRAM_LEN
+        // The RAM is mapped from 0 to SramLen and from SRAM_BASE to SRAM_BASE + SramLen.
         // this mirroring is the same as in pulpissimo
 
         // instruction data reads to ram can always go
-        if (instr_req_i && ((instr_addr_i >= SRAM_BASE && instr_addr_i < SRAM_BASE + SRAM_LEN) ||
-                             (instr_addr_i >= 0 && instr_addr_i < SRAM_LEN))) begin
+        if (instr_req_i && ((instr_addr_i >= SRAM_BASE && instr_addr_i < SRAM_BASE + SramLen) ||
+                             (instr_addr_i >= 0 && instr_addr_i < SramLen))) begin
             instr_gnt_o    = '1;
             instr_rvalid_d = '1;
             ram_instr_req  = '1;
@@ -187,23 +189,24 @@ module mm_ram #(
             sb_rvalid_d  = '1;
 
             if (sb_we_i) begin // handle writes
-                if (sb_addr_i >= ROM_BASE && sb_addr_i < ROM_BASE + ROM_LEN) begin
-                end else if (sb_addr_i >= FLL_BASE && sb_addr_i < FLL_BASE + FLL_LEN) begin
-                end else if (sb_addr_i >= GPIO_BASE && sb_addr_i < GPIO_BASE + GPIO_LEN) begin
-                end else if (sb_addr_i >= UDMA_BASE && sb_addr_i < UDMA_BASE + UDMA_LEN) begin
-                end else if (sb_addr_i >= CNTRL_BASE && sb_addr_i < CNTRL_BASE + CNTRL_LEN) begin
-                end else if (sb_addr_i >= ADVTIMER_BASE && sb_addr_i < ADVTIMER_BASE + ADVTIMER_LEN) begin
-                end else if (sb_addr_i >= EVENT_BASE && sb_addr_i < EVENT_BASE + EVENT_LEN) begin
-                end else if (sb_addr_i >= TIMER_BASE && sb_addr_i < TIMER_BASE + TIMER_LEN) begin
-                end else if (sb_addr_i >= HWPE_BASE && sb_addr_i < HWPE_BASE + HWPE_LEN) begin
-                end else if (sb_addr_i >= STDOUT_BASE && sb_addr_i < STDOUT_BASE + STDOUT_LEN) begin
+                if (sb_addr_i >= ROM_BASE && sb_addr_i < ROM_BASE + RomLen) begin
+                end else if (sb_addr_i >= FLL_BASE && sb_addr_i < FLL_BASE + FllLen) begin
+                end else if (sb_addr_i >= GPIO_BASE && sb_addr_i < GPIO_BASE + GpioLen) begin
+                end else if (sb_addr_i >= UDMA_BASE && sb_addr_i < UDMA_BASE + UdmaLen) begin
+                end else if (sb_addr_i >= CNTRL_BASE && sb_addr_i < CNTRL_BASE + CntrlLen) begin
+                end else if (sb_addr_i >= ADVTIMER_BASE &&
+                             sb_addr_i < ADVTIMER_BASE + AdvTimerLen) begin
+                end else if (sb_addr_i >= EVENT_BASE && sb_addr_i < EVENT_BASE + EventLen) begin
+                end else if (sb_addr_i >= TIMER_BASE && sb_addr_i < TIMER_BASE + TimerLen) begin
+                end else if (sb_addr_i >= HWPE_BASE && sb_addr_i < HWPE_BASE + HwpeLen) begin
+                end else if (sb_addr_i >= STDOUT_BASE && sb_addr_i < STDOUT_BASE + StdoutLen) begin
                     select_wdata_d  = SB;
                     print_wdata = sb_wdata_i;
                     print_valid = '1;
 
-                end else if (sb_addr_i >= DEBUG_BASE && sb_addr_i < DEBUG_BASE + DEBUG_LEN) begin
-                end else if ((sb_addr_i >= SRAM_BASE && sb_addr_i < SRAM_BASE + SRAM_LEN) ||
-                                           (sb_addr_i >= 0 && sb_addr_i < SRAM_LEN)) begin
+                end else if (sb_addr_i >= DEBUG_BASE && sb_addr_i < DEBUG_BASE + DebugLen) begin
+                end else if ((sb_addr_i >= SRAM_BASE && sb_addr_i < SRAM_BASE + SramLen) ||
+                                           (sb_addr_i >= 0 && sb_addr_i < SramLen)) begin
                     select_wdata_d  = SB;
                     ram_data_req = sb_req_i;
                     ram_data_addr = sb_addr_i[RAM_ADDR_WIDTH-1:0]; // just clip higher bits
@@ -216,31 +219,32 @@ module mm_ram #(
                 end
 
             end else begin // handle reads
-                if (sb_addr_i >= ROM_BASE && sb_addr_i < ROM_BASE + ROM_LEN) begin
+                if (sb_addr_i >= ROM_BASE && sb_addr_i < ROM_BASE + RomLen) begin
                     select_rdata_d = ROM;
 
-                end else if (sb_addr_i >= FLL_BASE && sb_addr_i < FLL_BASE + FLL_LEN) begin
+                end else if (sb_addr_i >= FLL_BASE && sb_addr_i < FLL_BASE + FllLen) begin
                     select_rdata_d = UNMAP;
-                end else if (sb_addr_i >= GPIO_BASE && sb_addr_i < GPIO_BASE + GPIO_LEN) begin
+                end else if (sb_addr_i >= GPIO_BASE && sb_addr_i < GPIO_BASE + GpioLen) begin
                     select_rdata_d = UNMAP;
-                end else if (sb_addr_i >= UDMA_BASE && sb_addr_i < UDMA_BASE + UDMA_LEN) begin
+                end else if (sb_addr_i >= UDMA_BASE && sb_addr_i < UDMA_BASE + UdmaLen) begin
                     select_rdata_d = UNMAP;
-                end else if (sb_addr_i >= CNTRL_BASE && sb_addr_i < CNTRL_BASE + CNTRL_LEN) begin
+                end else if (sb_addr_i >= CNTRL_BASE && sb_addr_i < CNTRL_BASE + CntrlLen) begin
                     select_rdata_d = UNMAP;
-                end else if (sb_addr_i >= ADVTIMER_BASE && sb_addr_i < ADVTIMER_BASE + ADVTIMER_LEN) begin
+                end else if (sb_addr_i >= ADVTIMER_BASE &&
+                             sb_addr_i < ADVTIMER_BASE + AdvTimerLen) begin
                     select_rdata_d = UNMAP;
-                end else if (sb_addr_i >= EVENT_BASE && sb_addr_i < EVENT_BASE + EVENT_LEN) begin
+                end else if (sb_addr_i >= EVENT_BASE && sb_addr_i < EVENT_BASE + EventLen) begin
                     select_rdata_d = UNMAP;
-                end else if (sb_addr_i >= TIMER_BASE && sb_addr_i < TIMER_BASE + TIMER_LEN) begin
+                end else if (sb_addr_i >= TIMER_BASE && sb_addr_i < TIMER_BASE + TimerLen) begin
                     select_rdata_d = UNMAP;
-                end else if (sb_addr_i >= HWPE_BASE && sb_addr_i < HWPE_BASE + HWPE_LEN) begin
+                end else if (sb_addr_i >= HWPE_BASE && sb_addr_i < HWPE_BASE + HwpeLen) begin
                     select_rdata_d = UNMAP;
-                end else if (sb_addr_i >= STDOUT_BASE && sb_addr_i < STDOUT_BASE + STDOUT_LEN) begin
+                end else if (sb_addr_i >= STDOUT_BASE && sb_addr_i < STDOUT_BASE + StdoutLen) begin
                     select_rdata_d = UNMAP;
-                end else if (sb_addr_i >= DEBUG_BASE && sb_addr_i < DEBUG_BASE + DEBUG_LEN) begin
+                end else if (sb_addr_i >= DEBUG_BASE && sb_addr_i < DEBUG_BASE + DebugLen) begin
                     select_rdata_d = UNMAP;
-                end else if ((sb_addr_i >= SRAM_BASE && sb_addr_i < SRAM_BASE + SRAM_LEN) ||
-                                           (sb_addr_i >= 0 && sb_addr_i < SRAM_LEN)) begin
+                end else if ((sb_addr_i >= SRAM_BASE && sb_addr_i < SRAM_BASE + SramLen) ||
+                                           (sb_addr_i >= 0 && sb_addr_i < SramLen)) begin
                     select_rdata_d = RAM;
                     ram_data_req = sb_req_i;
                     ram_data_addr = sb_addr_i[RAM_ADDR_WIDTH-1:0];
@@ -258,26 +262,28 @@ module mm_ram #(
             data_rvalid_d  = '1;
 
             if (data_we_i) begin // handle writes
-                if (data_addr_i >= ROM_BASE && data_addr_i < ROM_BASE + ROM_LEN) begin
-                end else if (data_addr_i >= FLL_BASE && data_addr_i < FLL_BASE + FLL_LEN) begin
-                end else if (data_addr_i >= GPIO_BASE && data_addr_i < GPIO_BASE + GPIO_LEN) begin
-                end else if (data_addr_i >= UDMA_BASE && data_addr_i < UDMA_BASE + UDMA_LEN) begin
-                end else if (data_addr_i >= CNTRL_BASE && data_addr_i < CNTRL_BASE + CNTRL_LEN) begin
+                if (data_addr_i >= ROM_BASE && data_addr_i < ROM_BASE + RomLen) begin
+                end else if (data_addr_i >= FLL_BASE && data_addr_i < FLL_BASE + FllLen) begin
+                end else if (data_addr_i >= GPIO_BASE && data_addr_i < GPIO_BASE + GpioLen) begin
+                end else if (data_addr_i >= UDMA_BASE && data_addr_i < UDMA_BASE + UdmaLen) begin
+                end else if (data_addr_i >= CNTRL_BASE && data_addr_i < CNTRL_BASE + CntrlLen) begin
                     if(data_wdata_i === 32'hF00D)
                         tests_passed_o = 1'b1;
                     else
                         tests_failed_o = 1'b1;
 
-                end else if (data_addr_i >= ADVTIMER_BASE && data_addr_i < ADVTIMER_BASE + ADVTIMER_LEN) begin
-                end else if (data_addr_i >= EVENT_BASE && data_addr_i < EVENT_BASE + EVENT_LEN) begin
-                end else if (data_addr_i >= TIMER_BASE && data_addr_i < TIMER_BASE + TIMER_LEN) begin
-                end else if (data_addr_i >= HWPE_BASE && data_addr_i < HWPE_BASE + HWPE_LEN) begin
-                end else if (data_addr_i >= STDOUT_BASE && data_addr_i < STDOUT_BASE + STDOUT_LEN) begin
+                end else if (data_addr_i >= ADVTIMER_BASE &&
+                             data_addr_i < ADVTIMER_BASE + AdvTimerLen) begin
+                end else if (data_addr_i >= EVENT_BASE && data_addr_i < EVENT_BASE + EventLen) begin
+                end else if (data_addr_i >= TIMER_BASE && data_addr_i < TIMER_BASE + TimerLen) begin
+                end else if (data_addr_i >= HWPE_BASE && data_addr_i < HWPE_BASE + HwpeLen) begin
+                end else if (data_addr_i >= STDOUT_BASE &&
+                             data_addr_i < STDOUT_BASE + StdoutLen) begin
                     select_wdata_d  = CORE;
                     print_wdata = data_wdata_i;
                     print_valid = '1;
 
-                end else if (data_addr_i >= DEBUG_BASE && data_addr_i < DEBUG_BASE + DEBUG_LEN) begin
+                end else if (data_addr_i >= DEBUG_BASE && data_addr_i < DEBUG_BASE + DebugLen) begin
                     select_wdata_d  = CORE;
                     dm_req    = data_req_i;
                     dm_addr   = data_addr_i;
@@ -285,8 +291,8 @@ module mm_ram #(
                     dm_be     = data_be_i;
                     dm_wdata  = data_wdata_i;
 
-                end else if ((data_addr_i >= SRAM_BASE && data_addr_i < SRAM_BASE + SRAM_LEN) ||
-                                             (data_addr_i >= 0 && data_addr_i < SRAM_LEN)) begin
+                end else if ((data_addr_i >= SRAM_BASE && data_addr_i < SRAM_BASE + SramLen) ||
+                                             (data_addr_i >= 0 && data_addr_i < SramLen)) begin
                     select_wdata_d  = CORE;
                     ram_data_req = data_req_i;
                     ram_data_addr = data_addr_i[RAM_ADDR_WIDTH-1:0]; // just clip higher bits
@@ -298,39 +304,41 @@ module mm_ram #(
                 end
 
             end else begin // handle reads
-                if (data_addr_i >= ROM_BASE && data_addr_i < ROM_BASE + ROM_LEN) begin
+                if (data_addr_i >= ROM_BASE && data_addr_i < ROM_BASE + RomLen) begin
                     select_rdata_d = ROM;
                     rom_req  = data_req_i;
                     rom_addr = data_addr_i - ROM_BASE;
                     // TODO data_be_i
 
-                end else if (data_addr_i >= FLL_BASE && data_addr_i < FLL_BASE + FLL_LEN) begin
+                end else if (data_addr_i >= FLL_BASE && data_addr_i < FLL_BASE + FllLen) begin
                     select_rdata_d = UNMAP;
-                end else if (data_addr_i >= GPIO_BASE && data_addr_i < GPIO_BASE + GPIO_LEN) begin
+                end else if (data_addr_i >= GPIO_BASE && data_addr_i < GPIO_BASE + GpioLen) begin
                     select_rdata_d = UNMAP;
-                end else if (data_addr_i >= UDMA_BASE && data_addr_i < UDMA_BASE + UDMA_LEN) begin
+                end else if (data_addr_i >= UDMA_BASE && data_addr_i < UDMA_BASE + UdmaLen) begin
                     select_rdata_d = UNMAP;
-                end else if (data_addr_i >= CNTRL_BASE && data_addr_i < CNTRL_BASE + CNTRL_LEN) begin
+                end else if (data_addr_i >= CNTRL_BASE && data_addr_i < CNTRL_BASE + CntrlLen) begin
                     select_rdata_d = UNMAP;
-                end else if (data_addr_i >= ADVTIMER_BASE && data_addr_i < ADVTIMER_BASE + ADVTIMER_LEN) begin
+                end else if (data_addr_i >= ADVTIMER_BASE &&
+                             data_addr_i < ADVTIMER_BASE + AdvTimerLen) begin
                     select_rdata_d = UNMAP;
-                end else if (data_addr_i >= EVENT_BASE && data_addr_i < EVENT_BASE + EVENT_LEN) begin
+                end else if (data_addr_i >= EVENT_BASE && data_addr_i < EVENT_BASE + EventLen) begin
                     select_rdata_d = UNMAP;
-                end else if (data_addr_i >= TIMER_BASE && data_addr_i < TIMER_BASE + TIMER_LEN) begin
+                end else if (data_addr_i >= TIMER_BASE && data_addr_i < TIMER_BASE + TimerLen) begin
                     select_rdata_d = UNMAP;
-                end else if (data_addr_i >= HWPE_BASE && data_addr_i < HWPE_BASE + HWPE_LEN) begin
+                end else if (data_addr_i >= HWPE_BASE && data_addr_i < HWPE_BASE + HwpeLen) begin
                     select_rdata_d = UNMAP;
-                end else if (data_addr_i >= STDOUT_BASE && data_addr_i < STDOUT_BASE + STDOUT_LEN) begin
+                end else if (data_addr_i >= STDOUT_BASE &&
+                             data_addr_i < STDOUT_BASE + StdoutLen) begin
                     select_rdata_d = UNMAP;
-                end else if (data_addr_i >= DEBUG_BASE && data_addr_i < DEBUG_BASE + DEBUG_LEN) begin
+                end else if (data_addr_i >= DEBUG_BASE && data_addr_i < DEBUG_BASE + DebugLen) begin
                     select_rdata_d = DEBUG;
                     dm_req    = data_req_i;
                     dm_addr   = data_addr_i;
                     dm_we     = data_we_i;
                     dm_be     = data_be_i;
 
-                end else if ((data_addr_i >= SRAM_BASE && data_addr_i < SRAM_BASE + SRAM_LEN) ||
-                                             (data_addr_i >= 0 && data_addr_i < SRAM_LEN)) begin
+                end else if ((data_addr_i >= SRAM_BASE && data_addr_i < SRAM_BASE + SramLen) ||
+                                             (data_addr_i >= 0 && data_addr_i < SramLen)) begin
                     select_rdata_d = RAM;
                     ram_data_req = data_req_i;
                     ram_data_addr = data_addr_i[RAM_ADDR_WIDTH-1:0];
@@ -346,38 +354,40 @@ module mm_ram #(
             instr_gnt_o = '1;
             instr_rvalid_d  = '1;
             // handle reads
-            if (instr_addr_i >= ROM_BASE && instr_addr_i < ROM_BASE + ROM_LEN) begin
+            if (instr_addr_i >= ROM_BASE && instr_addr_i < ROM_BASE + RomLen) begin
                 select_rdata_d = ROM;
                 rom_req  = instr_req_i;
                 rom_addr = instr_addr_i - ROM_BASE - 32'h80;
 
-            end else if (instr_addr_i >= FLL_BASE && instr_addr_i < FLL_BASE + FLL_LEN) begin
+            end else if (instr_addr_i >= FLL_BASE && instr_addr_i < FLL_BASE + FllLen) begin
                 select_rdata_d = UNMAP;
-            end else if (instr_addr_i >= GPIO_BASE && instr_addr_i < GPIO_BASE + GPIO_LEN) begin
+            end else if (instr_addr_i >= GPIO_BASE && instr_addr_i < GPIO_BASE + GpioLen) begin
                 select_rdata_d = UNMAP;
-            end else if (instr_addr_i >= UDMA_BASE && instr_addr_i < UDMA_BASE + UDMA_LEN) begin
+            end else if (instr_addr_i >= UDMA_BASE && instr_addr_i < UDMA_BASE + UdmaLen) begin
                 select_rdata_d = UNMAP;
-            end else if (instr_addr_i >= CNTRL_BASE && instr_addr_i < CNTRL_BASE + CNTRL_LEN) begin
+            end else if (instr_addr_i >= CNTRL_BASE && instr_addr_i < CNTRL_BASE + CntrlLen) begin
                 select_rdata_d = UNMAP;
-            end else if (instr_addr_i >= ADVTIMER_BASE && instr_addr_i < ADVTIMER_BASE + ADVTIMER_LEN) begin
+            end else if (instr_addr_i >= ADVTIMER_BASE &&
+                         instr_addr_i < ADVTIMER_BASE + AdvTimerLen) begin
                 select_rdata_d = UNMAP;
-            end else if (instr_addr_i >= EVENT_BASE && instr_addr_i < EVENT_BASE + EVENT_LEN) begin
+            end else if (instr_addr_i >= EVENT_BASE && instr_addr_i < EVENT_BASE + EventLen) begin
                 select_rdata_d = UNMAP;
-            end else if (instr_addr_i >= TIMER_BASE && instr_addr_i < TIMER_BASE + TIMER_LEN) begin
+            end else if (instr_addr_i >= TIMER_BASE && instr_addr_i < TIMER_BASE + TimerLen) begin
                 select_rdata_d = UNMAP;
-            end else if (instr_addr_i >= HWPE_BASE && instr_addr_i < HWPE_BASE + HWPE_LEN) begin
+            end else if (instr_addr_i >= HWPE_BASE && instr_addr_i < HWPE_BASE + HwpeLen) begin
                 select_rdata_d = UNMAP;
-            end else if (instr_addr_i >= STDOUT_BASE && instr_addr_i < STDOUT_BASE + STDOUT_LEN) begin
+            end else if (instr_addr_i >= STDOUT_BASE &&
+                         instr_addr_i < STDOUT_BASE + StdoutLen) begin
                 select_rdata_d = UNMAP;
-            end else if (instr_addr_i >= DEBUG_BASE && instr_addr_i < DEBUG_BASE + DEBUG_LEN) begin
+            end else if (instr_addr_i >= DEBUG_BASE && instr_addr_i < DEBUG_BASE + DebugLen) begin
                 select_rdata_d = DEBUG;
                 dm_req    = '1;
                 dm_addr   = instr_addr_i;
                 dm_we     = '0;
                 dm_be     = 4'b1111;
 
-            end else if ((instr_addr_i >= SRAM_BASE && instr_addr_i < SRAM_BASE + SRAM_LEN) ||
-                                          (instr_addr_i >=0 && instr_addr_i < SRAM_LEN)) begin
+            end else if ((instr_addr_i >= SRAM_BASE && instr_addr_i < SRAM_BASE + SramLen) ||
+                                          (instr_addr_i >=0 && instr_addr_i < SramLen)) begin
                 // handled separately
                 select_rdata_d = RAM;
             end else begin
@@ -393,10 +403,10 @@ module mm_ram #(
     out_of_bounds_write: assert property
     (@(posedge clk_i) disable iff (!rst_ni)
         (data_req_i && data_gnt_o && data_we_i |->
-        (data_addr_i >= STDOUT_BASE && data_addr_i < STDOUT_BASE + STDOUT_LEN)
-        || (data_addr_i >= DEBUG_BASE && data_addr_i < DEBUG_BASE + DEBUG_LEN)
-        || (data_addr_i >= SRAM_BASE && data_addr_i < SRAM_BASE + SRAM_LEN)
-        || (data_addr_i >= 0 && data_addr_i < SRAM_LEN)))
+        (data_addr_i >= STDOUT_BASE && data_addr_i < STDOUT_BASE + StdoutLen)
+        || (data_addr_i >= DEBUG_BASE && data_addr_i < DEBUG_BASE + DebugLen)
+        || (data_addr_i >= SRAM_BASE && data_addr_i < SRAM_BASE + SramLen)
+        || (data_addr_i >= 0 && data_addr_i < SramLen)))
         else $error("out of bounds write to %08x with %08x",
                     data_addr_i, data_wdata_i);
 
@@ -456,7 +466,7 @@ module mm_ram #(
         end
     end
 
-    assign irq_id_o = TIMER_IRQ_ID;
+    assign irq_id_o = TimerIrqId;
     assign irq_o = irq_q;
 
     // Control timer. We need one to have some kind of timeout for tests that
@@ -484,9 +494,9 @@ module mm_ram #(
                     timer_cnt_q <= timer_cnt_q - 1;
 
                 if(timer_cnt_q == 1)
-                    irq_q <= 1'b1 && timer_irq_mask_q[TIMER_IRQ_ID];
+                    irq_q <= 1'b1 && timer_irq_mask_q[TimerIrqId];
 
-                if(irq_ack_i == 1'b1 && irq_id_i == TIMER_IRQ_ID)
+                if(irq_ack_i == 1'b1 && irq_id_i == TimerIrqId)
                     irq_q <= '0;
 
             end
@@ -518,10 +528,10 @@ module mm_ram #(
 
         .en_a_i    ( ram_instr_req                      ),
         .addr_a_i  ( ram_instr_addr[RAM_ADDR_WIDTH-1:0] ),
-        .wdata_a_i ( '0                                 ),	// Not writing so ignored
+        .wdata_a_i ( '0                                 ), // Not writing so ignored
         .rdata_a_o ( ram_instr_rdata                    ),
         .we_a_i    ( '0                                 ),
-        .be_a_i    ( 4'b1111                            ),	// Always want 32-bits
+        .be_a_i    ( 4'b1111                            ), // Always want 32-bits
 
         .en_b_i    ( ram_data_req    ),
         .addr_b_i  ( ram_data_addr   ),

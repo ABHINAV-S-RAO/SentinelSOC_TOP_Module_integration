@@ -637,6 +637,21 @@ soc_addr_decode #(
   // and ISRAM fetch-verification to actually function.
   .boot_done_i  ( ctrl_boot_done   ),
   .dbg_mode_i   ( dbg_mode         ),
+  .recovery_i   ( 1'b0             ),   // JTAG recovery boot not integrated in this top
+  .clint_req_o   (                  ),   // no CLINT in this top (CLINT_IMPL=0)
+  .clint_gnt_i   ( 1'b0             ),
+  .clint_rvalid_i( 1'b0             ),
+  .clint_addr_o  (                  ),
+  .clint_we_o    (                  ),
+  .clint_be_o    (                  ),
+  .clint_wdata_o (                  ),
+  .clint_rdata_i ( 32'h0            ),
+  .clint_err_i   ( 1'b0             ),
+  .ver_req_i    ( 1'b0             ),   // no hardware-fed secure boot in this top
+  .ver_addr_i   ( '0               ),
+  .ver_gnt_o    (                  ),
+  .ver_rvalid_o (                  ),
+  .ver_rdata_o  (                  ),
   .fw_verified_i ( sha_signature_valid ),
 
   // DSRAM
@@ -794,6 +809,10 @@ soc_addr_decode #(
     .rdata_o        ( ctrl_rdata      ),
     .err_o          ( ctrl_err        ),
     .crypto_verified_i ( sha_signature_valid ),
+    .recovery_i        ( 1'b0 ),   // JTAG recovery boot not integrated in this top
+    .recovery_wdt_i    ( 1'b0 ),
+    .boot_done_hw_i    ( 1'b0 ),   // legacy: boot_done set by software (CTRL1)
+    .isram_lock_hw_i   ( 1'b0 ),
     // Control outputs
     .boot_done_o    ( ctrl_boot_done ),
     .isram_lock_o   ( ctrl_isram_lock )

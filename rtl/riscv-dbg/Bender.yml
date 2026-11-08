@@ -43,7 +43,15 @@ sources:
     files:
     # Level 1
     - src/dmi_intf.sv
-    - tb/jtag_dmi/jtag_intf.sv
+    - tb/jtag_dmi/jtag_dv.sv
     - tb/jtag_dmi/jtag_test.sv
     # Level 3
     - tb/jtag_dmi/tb_jtag_dmi.sv
+
+  - target: dm_mem_test
+    files:
+    - tb/dm_mem/tb_dm_mem.sv
+
+  - target: multihart_resume_test
+    files:
+    - tb/dm_top/tb_dm_top_multihart_resume.sv

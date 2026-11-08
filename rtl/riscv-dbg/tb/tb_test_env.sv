@@ -28,16 +28,17 @@ module tb_test_env #(
     output logic tests_failed_o);
 
     // defs from pulpissimo
-    // localparam CLUSTER_ID         = 6'd31;
-    // localparam CORE_ID            = 4'd0;
+    // localparam logic [5:0] ClusterId = 6'd31;
+    // localparam logic [3:0] CoreId    = 4'd0;
     // test defs
-    localparam CLUSTER_ID         = 6'd0;
-    localparam CORE_ID            = 4'd0;
+    localparam logic [5:0] ClusterId = 6'd0;
+    localparam logic [3:0] CoreId    = 4'd0;
 
-    localparam CORE_MHARTID       = {21'b0, CLUSTER_ID, 1'b0, CORE_ID};
-    localparam NrHarts                               = 1;
-    localparam logic [NrHarts-1:0] SELECTABLE_HARTS  = 1 << CORE_MHARTID;
-    localparam HARTINFO           = {8'h0, 4'h2, 3'b0, 1'b1, dm::DataCount, dm::DataAddr};
+    localparam logic [31:0] CoreMhartId = {21'b0, ClusterId, 1'b0, CoreId};
+    localparam int unsigned NrHarts = 1;
+    localparam logic [NrHarts-1:0] SelectableHarts = 1 << CoreMhartId;
+    localparam dm::hartinfo_t HartInfo =
+        {8'h0, 4'h2, 3'b0, 1'b1, dm::DataCount, dm::DataAddr};
 
     // signals connecting core to memory
     logic                        instr_req;
@@ -96,9 +97,9 @@ module tb_test_env #(
 
     // irq signals (not used)
     logic                        irq;
-    logic [0:4]                  irq_id_in;
+    logic [4:0]                  irq_id_in;
     logic                        irq_ack;
-    logic [0:4]                  irq_id_out;
+    logic [4:0]                  irq_id_out;
 
     // make jtag bridge work
     assign sim_jtag_enable = JTAG_BOOT;
@@ -120,7 +121,7 @@ module tb_test_env #(
         .boot_addr_i            ( BOOT_ADDR             ),
         .mtvec_addr_i           ( 32'h00000000          ),
         .dm_halt_addr_i         ( 32'h1A110800          ),
-        .hart_id_i              ( CORE_MHARTID          ),
+        .hart_id_i              ( CoreMhartId          ),
         .dm_exception_addr_i    ( 32'h00000000          ),
 
         .instr_addr_o           ( instr_addr            ),
@@ -153,7 +154,7 @@ module tb_test_env #(
         .irq_ack_o              ( irq_ack               ),
         .irq_id_o               ( irq_id_out            ),
 
-        .debug_req_i            ( dm_debug_req[CORE_MHARTID] ),
+        .debug_req_i            ( dm_debug_req[CoreMhartId] ),
 
         .fetch_enable_i         ( fetch_enable_i        ),
         .core_sleep_o           ( core_sleep_o          )
@@ -240,7 +241,7 @@ module tb_test_env #(
     dm_top #(
        .NrHarts           ( NrHarts           ),
        .BusWidth          ( 32                ),
-       .SelectableHarts   ( SELECTABLE_HARTS  )
+       .SelectableHarts   ( SelectableHarts  )
     ) i_dm_top (
 
        .clk_i             ( clk_i             ),
@@ -250,8 +251,8 @@ module tb_test_env #(
        .ndmreset_o        ( ndmreset          ),
        .dmactive_o        (                   ), // active debug session TODO
        .debug_req_o       ( dm_debug_req      ),
-       .unavailable_i     ( ~SELECTABLE_HARTS ),
-       .hartinfo_i        ( HARTINFO          ),
+       .unavailable_i     ( ~SelectableHarts ),
+       .hartinfo_i        ( HartInfo          ),
 
        .slave_req_i       ( dm_req            ),
        .slave_we_i        ( dm_we             ),

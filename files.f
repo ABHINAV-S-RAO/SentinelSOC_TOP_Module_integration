@@ -59,7 +59,7 @@ rtl/peripheral/apb_uart/uart_tx.sv
 rtl/peripheral/apb_uart/uart_interrupt.sv
 rtl/peripheral/apb_uart/apb_uart.sv
 
-// QSPI -- ADDED. basic_soc_top.sv now instantiates apb_spi_master as a
+// QSPI -- ADDED. final_soc_top.sv now instantiates apb_spi_master as a
 // second APB peripheral (this session's restructuring); it was previously
 // only compiled under the standalone apb_qspi_tb.sv filelist and was
 // missing here entirely -- would have hard-failed elaboration.
@@ -107,9 +107,9 @@ rtl/crypto/ed25519/sha_ed25519_obi_wrapper.sv
 // FLAGGED, NOT REMOVED: if bootrom_*/isram_* are now exported top-level
 // ports backed externally (same pattern as the existing DSRAM export),
 // these two RTL memory macros are likely no longer instantiated inside
-// basic_soc_top.sv for simulation purposes -- soc_tb_top.sv's new
+// final_soc_top.sv for simulation purposes -- soc_tb_top.sv's new
 // u_tb_bootrom/u_tb_isram TB models would be standing in for them instead.
-// Confirm against the actual basic_soc_top.sv instantiation before pruning;
+// Confirm against the actual final_soc_top.sv instantiation before pruning;
 // left in place here since removing on a guess risks breaking a still-live
 // internal instantiation.
 rtl/soc/soc_bootrom.sv
@@ -133,7 +133,7 @@ rtl/soc/soc_ctrl_regs.sv
 rtl/soc/soc_buffer.sv
 rtl/soc/soc_secure_boot.sv
 rtl/soc/soc_recovery.sv
-rtl/soc/basic_soc_top.sv
+rtl/soc/final_soc_top.sv
 
 // =============================================================================
 // UVM Testbench Infrastructure

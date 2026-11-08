@@ -90,7 +90,7 @@ module soc_tb_top;
   logic [3:0]  data_be;
   logic [31:0] data_addr, data_wdata, data_rdata;
 
-  // BootROM export -- OBI-style, port list confirmed against basic_soc_top.sv
+  // BootROM export -- OBI-style, port list confirmed against final_soc_top.sv
   logic        bootrom_req, bootrom_gnt, bootrom_rvalid, bootrom_err, bootrom_we;
   logic [3:0]  bootrom_be;
   logic [31:0] bootrom_addr, bootrom_wdata, bootrom_rdata;
@@ -100,7 +100,7 @@ module soc_tb_top;
   logic [3:0]  isram_be;
   logic [31:0] isram_addr, isram_wdata, isram_rdata;
 
-  // QSPI pins -- confirmed against basic_soc_top.sv. No real flash BFM yet;
+  // QSPI pins -- confirmed against final_soc_top.sv. No real flash BFM yet;
   // tied off below until one exists.
   logic        spi_clk_o;
   logic [3:0]  spi_csn_o;
@@ -130,7 +130,7 @@ module soc_tb_top;
   // SECURE_BOOT=0: legacy mode, ISRAM fetch gated by the crypto_verified
   // pin as before. This UVM env preloads unsigned firmware into ISRAM; move
   // to SECURE_BOOT=1 once it loads signed images (see verif/debugger/images).
-  basic_soc_top #(
+  final_soc_top #(
     .SECURE_BOOT         ( 1'b0 )
   ) u_dut (
     .clk_i               ( clk_i ),
@@ -339,7 +339,7 @@ qspi_flash_bfm #(
   assign addr_decode_vif.sel_sysctrl  = u_dut.u_soc_addr_decode.ctrl_req_o;
   assign addr_decode_vif.sel_buffer   = u_dut.u_soc_addr_decode.buf_req_o;
   assign addr_decode_vif.sel_sha      = u_dut.u_soc_addr_decode.sha_req_o;
-  assign addr_decode_vif.psel_uart    = u_dut.psel_uart;  // driven inside basic_soc_top
+  assign addr_decode_vif.psel_uart    = u_dut.psel_uart;  // driven inside final_soc_top
   assign addr_decode_vif.psel_qspi    = u_dut.psel_qspi;
   assign addr_decode_vif.psel_plic    = u_dut.u_soc_addr_decode.plic_req_o;
   assign addr_decode_vif.psel_dbg     = u_dut.u_soc_addr_decode.dbg_req_o;

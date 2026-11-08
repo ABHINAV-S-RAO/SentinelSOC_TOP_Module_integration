@@ -2,7 +2,7 @@
 `include "obi/assign.svh"
 `include "apb/typedef.svh"
  
-module basic_soc_top #(
+module final_soc_top #(
   // Boot watchdog for JTAG recovery (soc_recovery.sv): cycles of core
   // execution without boot_done before recovery is forced. 0 = disabled.
   // Sized from the largest image that fits ISRAM (8 KB = 2048 words):

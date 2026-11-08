@@ -25,6 +25,8 @@ EXTRA_SRCS = [os.path.join(R, "rtl/core/ibex_core/rtl/ibex_pmp.sv"),
 def conv(path, opts, files):
     for raw in open(path):
         line = raw.split("//")[0].strip().replace(OLD, R)
+        if line.startswith("#"):          # some filelists use '#' comment lines
+            continue
         toks = line.split()
         i = 0
         while i < len(toks):

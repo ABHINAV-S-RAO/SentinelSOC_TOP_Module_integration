@@ -2,7 +2,7 @@
 // Ibex DIFT Testbench — corrected
 //
 // Key fixes vs previous version:
-//  1. Tag RF path: dut.tag_register_file_i.mem[N]  (not rf_reg[N][0])
+//  1. Tag RF path: dut.tag_register_file_i.rf_reg[N] (ibex_register_file_ff)
 //  2. build_preamble was called twice per task, appending a second mtvec +
 //     CSR setup block in the middle of the program.  Replaced with a single
 //     load_imm32 helper + explicit per-task program construction so every
@@ -276,14 +276,33 @@ module ibex_core_tb;
     fail_count++;
   endtask
 
-  // Run for max_cycles, latching any dift_exception pulse
+  // Run for max_cycles, latching any dift_exception pulse, and the PC of the
+  // instruction in ID/EX at the first one (with WritebackStage=0 a load or
+  // store is still in ID/EX when its response arrives, so this is also the
+  // faulting load for the loaded-data checks).
+  // (The instruction word is compared, not the PC: this TB's fetch model
+  // returns the word one fetch late, so PCs are shifted by one instruction.)
+  logic [31:0] exc_pc, exc_insn;
   task automatic run_program(input int max_cycles = 200);
     exception_seen = 1'b0;
+    exc_pc         = 32'hFFFF_FFFF;
+    exc_insn       = 32'hFFFF_FFFF;
     repeat (max_cycles) begin
       @(posedge clk);
+      if (dift_exception && !exception_seen) begin
+        exc_pc   = dut.pc_id;
+        exc_insn = dut.instr_rdata_id;
+      end
       if (dift_exception) exception_seen = 1'b1;
     end
   endtask
+
+  // A DIFT exception fired, and the first one was on the instruction written
+  // at word idx (proves WHICH check fired, not just that some DIFT exception
+  // happened). Test bodies make that instruction word unique in the program.
+  function automatic bit fired_at(input int idx);
+    return exception_seen && (exc_insn == instr_mem[idx]);
+  endfunction
 
   // Hard reset: zero dmem, tag_mem, reg_file; keep instr_mem intact
   task automatic do_reset();
@@ -297,10 +316,11 @@ module ibex_core_tb;
     @(posedge clk);
   endtask
 
+  // The tag RF is ibex_register_file_ff: its flops have an async reset to 0,
+  // and do_reset() holds rst_n low for 3 cycles, so every tag is already
+  // cleared here. (The old $deposit targeted the latch-based RF's 'mem' array,
+  // which no longer exists; rf_reg is a net and cannot be deposited.)
   task automatic init_tag_rf();
-    for (int i = 0; i < 32; i++) begin
-      $deposit(dut.tag_register_file_i.mem[i], 1'b0);
-    end
   endtask
 
   // =========================================================================
@@ -397,6 +417,65 @@ module ibex_core_tb;
   endfunction
   function automatic logic [31:0] f_rem(input logic [4:0] rd, rs1, rs2);
     return f_rtype(7'h01, rs2, rs1, rd, 3'b110, 7'h33);
+  endfunction
+
+  // --- NEW: I-type immediate variants (for coverage) ---
+  function automatic logic [31:0] f_slti(input logic [4:0] rd, rs1, input logic [11:0] imm);
+    return f_itype(imm, rs1, rd, 3'b010, 7'h13);
+  endfunction
+  function automatic logic [31:0] f_sltiu(input logic [4:0] rd, rs1, input logic [11:0] imm);
+    return f_itype(imm, rs1, rd, 3'b011, 7'h13);
+  endfunction
+  function automatic logic [31:0] f_xori(input logic [4:0] rd, rs1, input logic [11:0] imm);
+    return f_itype(imm, rs1, rd, 3'b100, 7'h13);
+  endfunction
+  function automatic logic [31:0] f_ori(input logic [4:0] rd, rs1, input logic [11:0] imm);
+    return f_itype(imm, rs1, rd, 3'b110, 7'h13);
+  endfunction
+  function automatic logic [31:0] f_andi(input logic [4:0] rd, rs1, input logic [11:0] imm);
+    return f_itype(imm, rs1, rd, 3'b111, 7'h13);
+  endfunction
+  function automatic logic [31:0] f_srai(input logic [4:0] rd, rs1, input logic [4:0] shamt);
+    return f_itype({7'b0100000, shamt}, rs1, rd, 3'b101, 7'h13);
+  endfunction
+
+  // --- NEW: R-type variants ---
+  function automatic logic [31:0] f_sub(input logic [4:0] rd, rs1, rs2);
+    return f_rtype(7'h20, rs2, rs1, rd, 3'b000, 7'h33);
+  endfunction
+  function automatic logic [31:0] f_srl(input logic [4:0] rd, rs1, rs2);
+    return f_rtype(7'h00, rs2, rs1, rd, 3'b101, 7'h33);
+  endfunction
+  function automatic logic [31:0] f_sra(input logic [4:0] rd, rs1, rs2);
+    return f_rtype(7'h20, rs2, rs1, rd, 3'b101, 7'h33);
+  endfunction
+  function automatic logic [31:0] f_sltu(input logic [4:0] rd, rs1, rs2);
+    return f_rtype(7'h00, rs2, rs1, rd, 3'b011, 7'h33);
+  endfunction
+
+  // --- NEW: M-extension variants ---
+  function automatic logic [31:0] f_mulh(input logic [4:0] rd, rs1, rs2);
+    return f_rtype(7'h01, rs2, rs1, rd, 3'b001, 7'h33);
+  endfunction
+  function automatic logic [31:0] f_mulhsu(input logic [4:0] rd, rs1, rs2);
+    return f_rtype(7'h01, rs2, rs1, rd, 3'b010, 7'h33);
+  endfunction
+  function automatic logic [31:0] f_mulhu(input logic [4:0] rd, rs1, rs2);
+    return f_rtype(7'h01, rs2, rs1, rd, 3'b011, 7'h33);
+  endfunction
+  function automatic logic [31:0] f_divu(input logic [4:0] rd, rs1, rs2);
+    return f_rtype(7'h01, rs2, rs1, rd, 3'b101, 7'h33);
+  endfunction
+  function automatic logic [31:0] f_remu(input logic [4:0] rd, rs1, rs2);
+    return f_rtype(7'h01, rs2, rs1, rd, 3'b111, 7'h33);
+  endfunction
+
+  // --- NEW: JAL and AUIPC ---
+  function automatic logic [31:0] f_jal(input logic [4:0] rd, input logic [20:0] imm);
+    return {imm[20], imm[10:1], imm[11], imm[19:12], rd, 7'h6f};
+  endfunction
+  function automatic logic [31:0] f_auipc(input logic [4:0] rd, input logic [19:0] imm20);
+    return f_utype(imm20, rd, 7'h17);
   endfunction
 
   localparam logic [31:0] ECALL    = 32'h0000_0073;
@@ -547,7 +626,7 @@ module ibex_core_tb;
   // dut.tag_register_file_i is ibex_register_file_latch_tag with DataWidth=1.
   // Its internal array is:  logic [DataWidth-1:0] mem[NUM_WORDS]
   // i.e. logic [0:0] mem[32] — a scalar 1-bit per entry.
-  `define TAG_RF(n) dut.tag_register_file_i.mem[n]
+  `define TAG_RF(n) dut.tag_register_file_i.rf_reg[n]
 
   // =========================================================================
   // ======================= INDIVIDUAL TESTS ================================
@@ -944,10 +1023,20 @@ module ibex_core_tb;
   // -----------------------------------------------------------------------
   // Test group G: TCR LOADSTORE checks
   // -----------------------------------------------------------------------
+  // Every test here checks that the exception fired AT the instruction under
+  // test (fired_at), so a check on an earlier instruction cannot make it pass.
+  // Where an earlier instruction would trip the same TCR bit, TCR is armed
+  // only right before the instruction under test (arm_tcr).
+  task automatic arm_tcr(input logic [31:0] tcr_val);
+    load_imm32(5'd29, tcr_val);
+    emit(f_csrrw(CSRA_TCR, 5'd29, 5'd0));
+  endtask
+
   task automatic tcr_loadstore_tests();
-    // LOADSTORE_CHECK_D (bit 8): exception when loaded word's dest tag is 1
-    // i.e. the tainted data lands in a register under a check.
-    // With OR mode, load of tag_mem[0]=1 gives dest tag=1 => fires.
+    automatic int tgt;
+    // G1 LOADSTORE_CHECK_D (bit 8): the tag the load's destination register
+    // would get is tainted. OR mode, tag_mem[0]=1 -> dest tag 1 -> fires at
+    // the load (load access fault on the response).
     test_num++;
     pc_wr = BOOT_WORD;
     emit_preamble(
@@ -955,17 +1044,18 @@ module ibex_core_tb;
       32'h1 << LOADSTORE_CHECK_D
     );
     load_imm32(5'd10, DMEM_BASE);
-    emit(f_lw(5'd12, 5'd10, 12'h0));
+    tgt = pc_wr; emit(f_lw(5'd12, 5'd10, 12'h0));
     emit(ECALL);
     do_reset();
     tag_mem[0] = 1'b1; data_mem[0] = 32'd12;
     run_program(150);
-    if (exception_seen) pass_t("TCR LOADSTORE_CHECK_D: tainted load dest fires");
-    else                fail_t("TCR LOADSTORE_CHECK_D: tainted load dest fires");
+    if (fired_at(tgt) && `TAG_RF(12) === 1'b0 && reg_file[12] != 32'd12)
+         pass_t("G1 TCR LOADSTORE_CHECK_D: tainted load dest fires at the load, value not written");
+    else fail_t($sformatf("G1 TCR LOADSTORE_CHECK_D: tainted load dest fires at the load (seen=%b insn=%08h exp=%08h x12=%0d)",
+                          exception_seen, exc_insn, instr_mem[tgt], reg_file[12]));
 
-    // LOADSTORE_CHECK_SA (bit 21): exception when load base address register
-    // is tainted.  x10 is loaded from a tainted source so it gets tainted;
-    // the second lw uses x10 as base.
+    // G2 LOADSTORE_CHECK_SA (bit 21): load through a tainted base register.
+    // The first lw (clean base x11) taints x10; the second uses x10 as base.
     test_num++;
     pc_wr = BOOT_WORD;
     emit_preamble(
@@ -974,34 +1064,40 @@ module ibex_core_tb;
     );
     load_imm32(5'd11, DMEM_BASE);
     emit(f_lw(5'd10, 5'd11, 12'h0));   // x10 = tainted address value
-    emit(f_lw(5'd12, 5'd10, 12'h0));   // load using tainted base => SA check
+    tgt = pc_wr; emit(f_lw(5'd12, 5'd10, 12'h4));   // load using tainted base => SA check
     emit(ECALL);
     do_reset();
     tag_mem[0] = 1'b1; data_mem[0] = DMEM_BASE; // x10 gets this tainted value
+    tag_mem[1] = 1'b0; data_mem[1] = 32'd77;
     run_program(150);
-    if (exception_seen) pass_t("TCR LOADSTORE_CHECK_SA: tainted load address fires");
-    else                fail_t("TCR LOADSTORE_CHECK_SA: tainted load address fires");
+    if (fired_at(tgt) && reg_file[12] != 32'd77)
+         pass_t("G2 TCR LOADSTORE_CHECK_SA: tainted load address fires at the load, load blocked");
+    else fail_t($sformatf("G2 TCR LOADSTORE_CHECK_SA: tainted load address fires at the load (seen=%b insn=%08h exp=%08h x12=%0d)",
+                          exception_seen, exc_insn, instr_mem[tgt], reg_file[12]));
 
-    // LOADSTORE_CHECK_S (bit 7): exception when store data is tainted.
+    // G3 LOADSTORE_CHECK_S (bit 7) on a STORE: tainted store data.
+    // TCR is armed after the load (bit 7 also checks loaded data).
     test_num++;
     pc_wr = BOOT_WORD;
     emit_preamble(
       tpr_set_ls_en(tpr_alu_mode(LOADSTORE_LOW, LOADSTORE_HIGH, ALU_MODE_OR),
                     1'b1, 1'b1, 1'b1),
-      32'h1 << LOADSTORE_CHECK_S
+      32'h0
     );
     load_imm32(5'd10, DMEM_BASE);
     emit(f_lw(5'd12, 5'd10, 12'h0));   // x12 = tainted
-    emit(f_sw(5'd12, 5'd10, 12'h4));   // store tainted data => S check
+    arm_tcr(32'h1 << LOADSTORE_CHECK_S);
+    tgt = pc_wr; emit(f_sw(5'd12, 5'd10, 12'h4));   // store tainted data => S check
     emit(ECALL);
     do_reset();
     tag_mem[0] = 1'b1; data_mem[0] = 32'd11;
     run_program(150);
-    if (exception_seen) pass_t("TCR LOADSTORE_CHECK_S: tainted store data fires");
-    else                fail_t("TCR LOADSTORE_CHECK_S: tainted store data fires");
+    if (fired_at(tgt) && data_mem[1] == 32'd0)
+         pass_t("G3 TCR LOADSTORE_CHECK_S: tainted store data fires at the store, store blocked");
+    else fail_t($sformatf("G3 TCR LOADSTORE_CHECK_S: tainted store data fires at the store (seen=%b insn=%08h exp=%08h mem=%0d)",
+                          exception_seen, exc_insn, instr_mem[tgt], data_mem[1]));
 
-    // LOADSTORE_CHECK_DA (bit 6): exception when store base address register
-    // is tainted.  Load a tainted address into x10, use x10 as store base.
+    // G4 LOADSTORE_CHECK_DA (bit 6): store through a tainted base register.
     test_num++;
     pc_wr = BOOT_WORD;
     emit_preamble(
@@ -1011,14 +1107,68 @@ module ibex_core_tb;
     load_imm32(5'd11, DMEM_BASE);
     emit(f_lw(5'd10, 5'd11, 12'h0));   // x10 = tainted address value
     emit(f_lw(5'd12, 5'd11, 12'h4));   // x12 = clean data to store
-    emit(f_sw(5'd12, 5'd10, 12'h0));   // store with tainted base => DA check
+    tgt = pc_wr; emit(f_sw(5'd12, 5'd10, 12'h0));   // store with tainted base => DA check
     emit(ECALL);
     do_reset();
     tag_mem[0] = 1'b1; data_mem[0] = DMEM_BASE + 8; // x10 = valid tainted addr
     tag_mem[1] = 1'b0; data_mem[1] = 32'd99;
     run_program(150);
-    if (exception_seen) pass_t("TCR LOADSTORE_CHECK_DA: tainted store address fires");
-    else                fail_t("TCR LOADSTORE_CHECK_DA: tainted store address fires");
+    if (fired_at(tgt) && data_mem[2] != 32'd99)
+         pass_t("G4 TCR LOADSTORE_CHECK_DA: tainted store address fires at the store, store blocked");
+    else fail_t($sformatf("G4 TCR LOADSTORE_CHECK_DA: tainted store address fires at the store (seen=%b insn=%08h exp=%08h mem2=%0d)",
+                          exception_seen, exc_insn, instr_mem[tgt], data_mem[2]));
+
+    // G5 LOADSTORE_CHECK_S (bit 7) on a LOAD: the loaded word is tainted.
+    test_num++;
+    pc_wr = BOOT_WORD;
+    emit_preamble(tpr_ls_or(), 32'h1 << LOADSTORE_CHECK_S);
+    load_imm32(5'd10, DMEM_BASE);
+    tgt = pc_wr; emit(f_lw(5'd12, 5'd10, 12'h0));
+    emit(ECALL);
+    do_reset();
+    tag_mem[0] = 1'b1; data_mem[0] = 32'd55;
+    run_program(150);
+    if (fired_at(tgt) && reg_file[12] != 32'd55)
+         pass_t("G5 TCR LOADSTORE_CHECK_S: tainted loaded word fires at the load, value not written");
+    else fail_t($sformatf("G5 TCR LOADSTORE_CHECK_S: tainted loaded word fires at the load (seen=%b insn=%08h exp=%08h x12=%0d)",
+                          exception_seen, exc_insn, instr_mem[tgt], reg_file[12]));
+
+    // G6 bit 6 is the STORE address check only: loading tainted data (e.g. a
+    // UART register) through a clean pointer must not fault. (Before the fix
+    // bit 6 also checked the loaded data in the LSU.)
+    test_num++;
+    pc_wr = BOOT_WORD;
+    emit_preamble(tpr_ls_or(), 32'h1 << LOADSTORE_CHECK_DA);
+    load_imm32(5'd10, DMEM_BASE);
+    emit(f_lw(5'd12, 5'd10, 12'h0));
+    emit(ECALL);
+    do_reset();
+    tag_mem[0] = 1'b1; data_mem[0] = 32'd66;
+    run_program(150);
+    if (!exception_seen && reg_file[12] == 32'd66 && `TAG_RF(12) === 1'b1)
+         pass_t("G6 TCR bit 6: tainted data through a clean pointer loads fine (tag kept)");
+    else fail_t($sformatf("G6 TCR bit 6: tainted data through a clean pointer loads fine (seen=%b x12=%0d tag=%b)",
+                          exception_seen, reg_file[12], `TAG_RF(12)));
+
+    // G7 bit 21 is the LOAD address check only: a store through a tainted
+    // pointer with only bit 21 set does not fault, and the store tag follows
+    // the TPR rule.
+    test_num++;
+    pc_wr = BOOT_WORD;
+    emit_preamble(tpr_ls_or(), 32'h1 << LOADSTORE_CHECK_SA);
+    load_imm32(5'd11, DMEM_BASE);
+    emit(f_lw(5'd10, 5'd11, 12'h0));   // x10 = tainted pointer
+    emit(f_lw(5'd12, 5'd11, 12'h4));   // x12 = clean data
+    emit(f_sw(5'd12, 5'd10, 12'h0));
+    emit(ECALL);
+    do_reset();
+    tag_mem[0] = 1'b1; data_mem[0] = DMEM_BASE + 8;
+    tag_mem[1] = 1'b0; data_mem[1] = 32'd44;
+    run_program(150);
+    if (!exception_seen && data_mem[2] == 32'd44)
+         pass_t("G7 TCR bit 21: store through a tainted pointer not checked by the load-address bit");
+    else fail_t($sformatf("G7 TCR bit 21: store through a tainted pointer not checked by the load-address bit (seen=%b mem2=%0d)",
+                          exception_seen, data_mem[2]));
   endtask
 
   // -----------------------------------------------------------------------
@@ -1170,6 +1320,626 @@ module ibex_core_tb;
     else                fail_t("M-ext MUL INTEGER_CHECK_D exception fires");
   endtask
 
+
+  // -----------------------------------------------------------------------
+  // Test group K: I-type immediate instructions through TMU check decoder
+  // -----------------------------------------------------------------------
+  task automatic itype_imm_tmu_tests();
+    // K1: SLTI — OPIMM funct3=010 => COMPARISON check path
+    test_num++; pc_wr = BOOT_WORD;
+    emit_preamble(tpr_all_or(), 32'h1 << COMPARISON_CHECK_S1);
+    load_imm32(5'd10, DMEM_BASE);
+    emit(f_lw(5'd12, 5'd10, 12'h0));
+    emit(f_slti(5'd14, 5'd12, 12'd100));
+    emit(ECALL); do_reset();
+    tag_mem[0] = 1'b1; data_mem[0] = 32'd5;
+    run_program(150);
+    if (exception_seen) pass_t("K1 SLTI COMPARISON_CHECK_S1 fires");
+    else                fail_t("K1 SLTI COMPARISON_CHECK_S1 fires");
+
+    // K2: SLTIU — OPIMM funct3=011 => COMPARISON check path
+    test_num++; pc_wr = BOOT_WORD;
+    emit_preamble(tpr_all_or(), 32'h1 << COMPARISON_CHECK_S1);
+    load_imm32(5'd10, DMEM_BASE);
+    emit(f_lw(5'd12, 5'd10, 12'h0));
+    emit(f_sltiu(5'd14, 5'd12, 12'd100));
+    emit(ECALL); do_reset();
+    tag_mem[0] = 1'b1; data_mem[0] = 32'd5;
+    run_program(150);
+    if (exception_seen) pass_t("K2 SLTIU COMPARISON_CHECK_S1 fires");
+    else                fail_t("K2 SLTIU COMPARISON_CHECK_S1 fires");
+
+    // K3: XORI — OPIMM funct3=100 => LOGICAL check path
+    test_num++; pc_wr = BOOT_WORD;
+    emit_preamble(tpr_all_or(), 32'h1 << LOGICAL_CHECK_S1);
+    load_imm32(5'd10, DMEM_BASE);
+    emit(f_lw(5'd12, 5'd10, 12'h0));
+    emit(f_xori(5'd14, 5'd12, 12'hFF));
+    emit(ECALL); do_reset();
+    tag_mem[0] = 1'b1; data_mem[0] = 32'hAA;
+    run_program(150);
+    if (exception_seen) pass_t("K3 XORI LOGICAL_CHECK_S1 fires");
+    else                fail_t("K3 XORI LOGICAL_CHECK_S1 fires");
+
+    // K4: ORI — OPIMM funct3=110 => LOGICAL check path
+    test_num++; pc_wr = BOOT_WORD;
+    emit_preamble(tpr_all_or(), 32'h1 << LOGICAL_CHECK_S1);
+    load_imm32(5'd10, DMEM_BASE);
+    emit(f_lw(5'd12, 5'd10, 12'h0));
+    emit(f_ori(5'd14, 5'd12, 12'hFF));
+    emit(ECALL); do_reset();
+    tag_mem[0] = 1'b1; data_mem[0] = 32'hBB;
+    run_program(150);
+    if (exception_seen) pass_t("K4 ORI LOGICAL_CHECK_S1 fires");
+    else                fail_t("K4 ORI LOGICAL_CHECK_S1 fires");
+
+    // K5: ANDI — OPIMM funct3=111 => LOGICAL check path
+    test_num++; pc_wr = BOOT_WORD;
+    emit_preamble(tpr_all_or(), 32'h1 << LOGICAL_CHECK_S1);
+    load_imm32(5'd10, DMEM_BASE);
+    emit(f_lw(5'd12, 5'd10, 12'h0));
+    emit(f_andi(5'd14, 5'd12, 12'hFF));
+    emit(ECALL); do_reset();
+    tag_mem[0] = 1'b1; data_mem[0] = 32'hCC;
+    run_program(150);
+    if (exception_seen) pass_t("K5 ANDI LOGICAL_CHECK_S1 fires");
+    else                fail_t("K5 ANDI LOGICAL_CHECK_S1 fires");
+
+    // K6: SRLI — OPIMM funct3=101 funct7=0000000 => SHIFT check path
+    test_num++; pc_wr = BOOT_WORD;
+    emit_preamble(tpr_all_or(), 32'h1 << SHIFT_CHECK_S1);
+    load_imm32(5'd10, DMEM_BASE);
+    emit(f_lw(5'd12, 5'd10, 12'h0));
+    emit(f_srli(5'd14, 5'd12, 5'd2));
+    emit(ECALL); do_reset();
+    tag_mem[0] = 1'b1; data_mem[0] = 32'd100;
+    run_program(150);
+    if (exception_seen) pass_t("K6 SRLI SHIFT_CHECK_S1 fires");
+    else                fail_t("K6 SRLI SHIFT_CHECK_S1 fires");
+
+    // K7: SRAI — OPIMM funct3=101 funct7=0100000 => SHIFT check path
+    test_num++; pc_wr = BOOT_WORD;
+    emit_preamble(tpr_all_or(), 32'h1 << SHIFT_CHECK_S1);
+    load_imm32(5'd10, DMEM_BASE);
+    emit(f_lw(5'd12, 5'd10, 12'h0));
+    emit(f_srai(5'd14, 5'd12, 5'd2));
+    emit(ECALL); do_reset();
+    tag_mem[0] = 1'b1; data_mem[0] = 32'hFFFF_FFF0;
+    run_program(150);
+    if (exception_seen) pass_t("K7 SRAI SHIFT_CHECK_S1 fires");
+    else                fail_t("K7 SRAI SHIFT_CHECK_S1 fires");
+
+    // K8-K14: TPR propagation for each I-type (OR mode, verify tag)
+    // SLTI propagation
+    test_num++; pc_wr = BOOT_WORD;
+    emit_preamble(
+      tpr_set_ls_en(tpr_alu_mode(COMPARISON_LOW, COMPARISON_HIGH, ALU_MODE_OR),
+                    1'b1, 1'b1, 1'b0) | tpr_ls_or(), 32'h0);
+    load_imm32(5'd10, DMEM_BASE);
+    emit(f_lw(5'd12, 5'd10, 12'h0));
+    emit(f_slti(5'd14, 5'd12, 12'd100));
+    emit(ECALL); do_reset();
+    tag_mem[0] = 1'b1; data_mem[0] = 32'd5;
+    run_program(150);
+    if (`TAG_RF(14) === 1'b1) pass_t("K8 SLTI OR propagation");
+    else                      fail_t("K8 SLTI OR propagation");
+
+    // XORI propagation
+    test_num++; pc_wr = BOOT_WORD;
+    emit_preamble(
+      tpr_set_ls_en(tpr_alu_mode(LOGICAL_LOW, LOGICAL_HIGH, ALU_MODE_OR),
+                    1'b1, 1'b1, 1'b0) | tpr_ls_or(), 32'h0);
+    load_imm32(5'd10, DMEM_BASE);
+    emit(f_lw(5'd12, 5'd10, 12'h0));
+    emit(f_xori(5'd14, 5'd12, 12'hFF));
+    emit(ECALL); do_reset();
+    tag_mem[0] = 1'b1; data_mem[0] = 32'hAA;
+    run_program(150);
+    if (`TAG_RF(14) === 1'b1) pass_t("K9 XORI OR propagation");
+    else                      fail_t("K9 XORI OR propagation");
+
+    // SRLI propagation
+    test_num++; pc_wr = BOOT_WORD;
+    emit_preamble(
+      tpr_set_ls_en(tpr_alu_mode(SHIFT_LOW, SHIFT_HIGH, ALU_MODE_OR),
+                    1'b1, 1'b1, 1'b0) | tpr_ls_or(), 32'h0);
+    load_imm32(5'd10, DMEM_BASE);
+    emit(f_lw(5'd12, 5'd10, 12'h0));
+    emit(f_srli(5'd14, 5'd12, 5'd1));
+    emit(ECALL); do_reset();
+    tag_mem[0] = 1'b1; data_mem[0] = 32'd200;
+    run_program(150);
+    if (`TAG_RF(14) === 1'b1) pass_t("K10 SRLI OR propagation");
+    else                      fail_t("K10 SRLI OR propagation");
+
+    // SRAI propagation
+    test_num++; pc_wr = BOOT_WORD;
+    emit_preamble(
+      tpr_set_ls_en(tpr_alu_mode(SHIFT_LOW, SHIFT_HIGH, ALU_MODE_OR),
+                    1'b1, 1'b1, 1'b0) | tpr_ls_or(), 32'h0);
+    load_imm32(5'd10, DMEM_BASE);
+    emit(f_lw(5'd12, 5'd10, 12'h0));
+    emit(f_srai(5'd14, 5'd12, 5'd1));
+    emit(ECALL); do_reset();
+    tag_mem[0] = 1'b1; data_mem[0] = 32'hFFFF_FFF0;
+    run_program(150);
+    if (`TAG_RF(14) === 1'b1) pass_t("K11 SRAI OR propagation");
+    else                      fail_t("K11 SRAI OR propagation");
+  endtask
+
+  // -----------------------------------------------------------------------
+  // Test group L: R-type M-extension variants (MULH, MULHSU, MULHU, DIVU, REMU)
+  // -----------------------------------------------------------------------
+  task automatic m_ext_variant_tests();
+    // MULH
+    test_num++; pc_wr = BOOT_WORD;
+    emit_preamble(
+      tpr_set_ls_en(tpr_alu_mode(INTEGER_LOW, INTEGER_HIGH, ALU_MODE_OR),
+                    1'b1, 1'b1, 1'b0) | tpr_ls_or(),
+      32'h1 << INTEGER_CHECK_S1);
+    load_imm32(5'd10, DMEM_BASE);
+    emit(f_lw(5'd12, 5'd10, 12'h0));
+    emit(f_lw(5'd13, 5'd10, 12'h4));
+    emit(f_mulh(5'd14, 5'd12, 5'd13));
+    emit(ECALL); do_reset();
+    tag_mem[0] = 1'b1; data_mem[0] = 32'h7FFF_FFFF;
+    tag_mem[1] = 1'b0; data_mem[1] = 32'd2;
+    run_program(250);
+    if (exception_seen) pass_t("L1 MULH INTEGER_CHECK_S1 fires");
+    else                fail_t("L1 MULH INTEGER_CHECK_S1 fires");
+
+    // MULHSU
+    test_num++; pc_wr = BOOT_WORD;
+    emit_preamble(
+      tpr_set_ls_en(tpr_alu_mode(INTEGER_LOW, INTEGER_HIGH, ALU_MODE_OR),
+                    1'b1, 1'b1, 1'b0) | tpr_ls_or(),
+      32'h1 << INTEGER_CHECK_S1);
+    load_imm32(5'd10, DMEM_BASE);
+    emit(f_lw(5'd12, 5'd10, 12'h0));
+    emit(f_lw(5'd13, 5'd10, 12'h4));
+    emit(f_mulhsu(5'd14, 5'd12, 5'd13));
+    emit(ECALL); do_reset();
+    tag_mem[0] = 1'b1; data_mem[0] = 32'hFFFF_FFFF;
+    tag_mem[1] = 1'b0; data_mem[1] = 32'd3;
+    run_program(250);
+    if (exception_seen) pass_t("L2 MULHSU INTEGER_CHECK_S1 fires");
+    else                fail_t("L2 MULHSU INTEGER_CHECK_S1 fires");
+
+    // MULHU
+    test_num++; pc_wr = BOOT_WORD;
+    emit_preamble(
+      tpr_set_ls_en(tpr_alu_mode(INTEGER_LOW, INTEGER_HIGH, ALU_MODE_OR),
+                    1'b1, 1'b1, 1'b0) | tpr_ls_or(),
+      32'h1 << INTEGER_CHECK_S1);
+    load_imm32(5'd10, DMEM_BASE);
+    emit(f_lw(5'd12, 5'd10, 12'h0));
+    emit(f_lw(5'd13, 5'd10, 12'h4));
+    emit(f_mulhu(5'd14, 5'd12, 5'd13));
+    emit(ECALL); do_reset();
+    tag_mem[0] = 1'b1; data_mem[0] = 32'hFFFF_FFFF;
+    tag_mem[1] = 1'b0; data_mem[1] = 32'd4;
+    run_program(250);
+    if (exception_seen) pass_t("L3 MULHU INTEGER_CHECK_S1 fires");
+    else                fail_t("L3 MULHU INTEGER_CHECK_S1 fires");
+
+    // DIVU
+    test_num++; pc_wr = BOOT_WORD;
+    emit_preamble(
+      tpr_set_ls_en(tpr_alu_mode(INTEGER_LOW, INTEGER_HIGH, ALU_MODE_OR),
+                    1'b1, 1'b1, 1'b0) | tpr_ls_or(),
+      32'h1 << INTEGER_CHECK_D);
+    load_imm32(5'd10, DMEM_BASE);
+    emit(f_lw(5'd12, 5'd10, 12'h0));
+    emit(f_lw(5'd13, 5'd10, 12'h4));
+    emit(f_divu(5'd14, 5'd12, 5'd13));
+    emit(ECALL); do_reset();
+    tag_mem[0] = 1'b1; data_mem[0] = 32'd100;
+    tag_mem[1] = 1'b0; data_mem[1] = 32'd3;
+    run_program(350);
+    if (exception_seen) pass_t("L4 DIVU INTEGER_CHECK_D fires");
+    else                fail_t("L4 DIVU INTEGER_CHECK_D fires");
+
+    // REMU
+    test_num++; pc_wr = BOOT_WORD;
+    emit_preamble(
+      tpr_set_ls_en(tpr_alu_mode(INTEGER_LOW, INTEGER_HIGH, ALU_MODE_OR),
+                    1'b1, 1'b1, 1'b0) | tpr_ls_or(),
+      32'h1 << INTEGER_CHECK_D);
+    load_imm32(5'd10, DMEM_BASE);
+    emit(f_lw(5'd12, 5'd10, 12'h0));
+    emit(f_lw(5'd13, 5'd10, 12'h4));
+    emit(f_remu(5'd14, 5'd12, 5'd13));
+    emit(ECALL); do_reset();
+    tag_mem[0] = 1'b1; data_mem[0] = 32'd100;
+    tag_mem[1] = 1'b0; data_mem[1] = 32'd7;
+    run_program(350);
+    if (exception_seen) pass_t("L5 REMU INTEGER_CHECK_D fires");
+    else                fail_t("L5 REMU INTEGER_CHECK_D fires");
+  endtask
+
+
+  // -----------------------------------------------------------------------
+  // Test group M: R-type shift/compare variants (SRL, SRA, SLTU, SUB)
+  // -----------------------------------------------------------------------
+  task automatic rtype_variant_tests();
+    // SRL
+    test_num++; pc_wr = BOOT_WORD;
+    emit_preamble(tpr_all_or(), 32'h1 << SHIFT_CHECK_S1);
+    load_imm32(5'd10, DMEM_BASE);
+    emit(f_lw(5'd12, 5'd10, 12'h0));
+    emit(f_lw(5'd13, 5'd10, 12'h4));
+    emit(f_srl(5'd14, 5'd12, 5'd13));
+    emit(ECALL); do_reset();
+    tag_mem[0] = 1'b1; data_mem[0] = 32'd256;
+    tag_mem[1] = 1'b0; data_mem[1] = 32'd2;
+    run_program(150);
+    if (exception_seen) pass_t("M1 SRL SHIFT_CHECK_S1 fires");
+    else                fail_t("M1 SRL SHIFT_CHECK_S1 fires");
+
+    // SRA
+    test_num++; pc_wr = BOOT_WORD;
+    emit_preamble(tpr_all_or(), 32'h1 << SHIFT_CHECK_S1);
+    load_imm32(5'd10, DMEM_BASE);
+    emit(f_lw(5'd12, 5'd10, 12'h0));
+    emit(f_lw(5'd13, 5'd10, 12'h4));
+    emit(f_sra(5'd14, 5'd12, 5'd13));
+    emit(ECALL); do_reset();
+    tag_mem[0] = 1'b1; data_mem[0] = 32'hFFFF_FF00;
+    tag_mem[1] = 1'b0; data_mem[1] = 32'd4;
+    run_program(150);
+    if (exception_seen) pass_t("M2 SRA SHIFT_CHECK_S1 fires");
+    else                fail_t("M2 SRA SHIFT_CHECK_S1 fires");
+
+    // SLTU
+    test_num++; pc_wr = BOOT_WORD;
+    emit_preamble(tpr_all_or(), 32'h1 << COMPARISON_CHECK_S1);
+    load_imm32(5'd10, DMEM_BASE);
+    emit(f_lw(5'd12, 5'd10, 12'h0));
+    emit(f_lw(5'd13, 5'd10, 12'h4));
+    emit(f_sltu(5'd14, 5'd12, 5'd13));
+    emit(ECALL); do_reset();
+    tag_mem[0] = 1'b1; data_mem[0] = 32'd1;
+    tag_mem[1] = 1'b0; data_mem[1] = 32'd2;
+    run_program(150);
+    if (exception_seen) pass_t("M3 SLTU COMPARISON_CHECK_S1 fires");
+    else                fail_t("M3 SLTU COMPARISON_CHECK_S1 fires");
+
+    // SUB
+    test_num++; pc_wr = BOOT_WORD;
+    emit_preamble(tpr_all_or(), 32'h1 << INTEGER_CHECK_S1);
+    load_imm32(5'd10, DMEM_BASE);
+    emit(f_lw(5'd12, 5'd10, 12'h0));
+    emit(f_lw(5'd13, 5'd10, 12'h4));
+    emit(f_sub(5'd14, 5'd12, 5'd13));
+    emit(ECALL); do_reset();
+    tag_mem[0] = 1'b1; data_mem[0] = 32'd10;
+    tag_mem[1] = 1'b0; data_mem[1] = 32'd3;
+    run_program(150);
+    if (exception_seen) pass_t("M4 SUB INTEGER_CHECK_S1 fires");
+    else                fail_t("M4 SUB INTEGER_CHECK_S1 fires");
+  endtask
+
+  // -----------------------------------------------------------------------
+  // Test group N: STORE/LUI/AUIPC through TMU check decoder
+  // -----------------------------------------------------------------------
+  task automatic store_lui_auipc_check_tests();
+    automatic int n1_tgt;
+    // N1: SW with LOADSTORE_CHECK_DA — store address tainted
+    // (reuses existing tcr_loadstore_tests pattern but ensures TMU STORE case hit)
+    test_num++; pc_wr = BOOT_WORD;
+    emit_preamble(tpr_ls_or(), 32'h0);
+    load_imm32(5'd11, DMEM_BASE);
+    emit(f_lw(5'd10, 5'd11, 12'h0));  // x10 = tainted addr
+    emit(f_lw(5'd12, 5'd11, 12'h4));  // x12 = tainted data
+    // armed after the loads: bit 7 also checks loaded data
+    load_imm32(5'd29, (32'h1 << LOADSTORE_CHECK_DA) | (32'h1 << LOADSTORE_CHECK_S));
+    emit(f_csrrw(CSRA_TCR, 5'd29, 5'd0));
+    n1_tgt = pc_wr;
+    emit(f_sw(5'd12, 5'd10, 12'h0));  // store: DA and S both tainted
+    emit(ECALL); do_reset();
+    tag_mem[0] = 1'b1; data_mem[0] = DMEM_BASE + 8;
+    tag_mem[1] = 1'b1; data_mem[1] = 32'hDEAD;
+    run_program(200);
+    if (fired_at(n1_tgt) && data_mem[2] != 32'hDEAD) pass_t("N1 SW LOADSTORE_CHECK_DA+S fires at the store, store blocked");
+    else fail_t($sformatf("N1 SW LOADSTORE_CHECK_DA+S fires at the store (seen=%b insn=%08h exp=%08h)",
+                          exception_seen, exc_insn, instr_mem[n1_tgt]));
+
+    // N2: AUIPC — hits OPCODE_AUIPC case in TMU (line 53)
+    // AUIPC writes rd = PC + imm<<12. With LOADSTORE_CHECK_D enabled,
+    // if result tag is tainted, exception fires. With OR mode and untainted
+    // sources, no exception should fire (negative test).
+    test_num++; pc_wr = BOOT_WORD;
+    emit_preamble(tpr_ls_or(), 32'h1 << LOADSTORE_CHECK_D);
+    emit(f_auipc(5'd14, 20'h1));  // x14 = PC + 0x1000
+    emit(ECALL); do_reset();
+    run_program(150);
+    if (!exception_seen) pass_t("N2 AUIPC LOADSTORE_CHECK_D clean no exception");
+    else                 fail_t("N2 AUIPC LOADSTORE_CHECK_D clean no exception");
+
+    // N3: LUI — hits OPCODE_LUI case in TMU
+    test_num++; pc_wr = BOOT_WORD;
+    emit_preamble(tpr_ls_or(), 32'h1 << LOADSTORE_CHECK_D);
+    emit(f_lui(5'd14, 20'hDEAD));  // x14 = 0xDEAD_0000
+    emit(ECALL); do_reset();
+    run_program(150);
+    if (!exception_seen) pass_t("N3 LUI LOADSTORE_CHECK_D clean no exception");
+    else                 fail_t("N3 LUI LOADSTORE_CHECK_D clean no exception");
+  endtask
+
+  // -----------------------------------------------------------------------
+  // Test group O: Load propagation variant paths
+  // -----------------------------------------------------------------------
+  task automatic load_propagation_variant_tests();
+    // O1: EN_SOURCE_ADDR=0, EN_SOURCE=1 — only data tag contributes
+    test_num++; pc_wr = BOOT_WORD;
+    emit_preamble(
+      tpr_set_ls_en(tpr_alu_mode(LOADSTORE_LOW, LOADSTORE_HIGH, ALU_MODE_OR),
+                    1'b0, 1'b1, 1'b0),  // addr disabled, data enabled
+      32'h0);
+    load_imm32(5'd10, DMEM_BASE);
+    emit(f_lw(5'd12, 5'd10, 12'h0));
+    emit(ECALL); do_reset();
+    tag_mem[0] = 1'b1; data_mem[0] = 32'd42;
+    run_program(150);
+    if (`TAG_RF(12) === 1'b1) pass_t("O1 Load EN_SRC=1 EN_ADDR=0 data tag propagates");
+    else                      fail_t("O1 Load EN_SRC=1 EN_ADDR=0 data tag propagates");
+
+    // O2: EN_SOURCE_ADDR=1, EN_SOURCE=0 — only addr tag contributes
+    // Base register x10 tag is 0 (loaded from immediate), so result should be 0
+    test_num++; pc_wr = BOOT_WORD;
+    emit_preamble(
+      tpr_set_ls_en(tpr_alu_mode(LOADSTORE_LOW, LOADSTORE_HIGH, ALU_MODE_OR),
+                    1'b1, 1'b0, 1'b0),  // addr enabled, data disabled
+      32'h0);
+    load_imm32(5'd10, DMEM_BASE);
+    emit(f_lw(5'd12, 5'd10, 12'h0));
+    emit(ECALL); do_reset();
+    tag_mem[0] = 1'b1; data_mem[0] = 32'd42;
+    run_program(150);
+    // data tag disabled so even though tag_mem=1, data tag is masked. addr tag=0
+    if (`TAG_RF(12) === 1'b0) pass_t("O2 Load EN_SRC=0 EN_ADDR=1 data masked");
+    else                      fail_t("O2 Load EN_SRC=0 EN_ADDR=1 data masked");
+
+    // O3: AND mode, both addr tag=1 and data tag=1 => result=1
+    // The pointer x10 is loaded under OR mode (under AND a load through the
+    // clean x11 could never taint it), then TPR switches to AND for the load
+    // under test.
+    test_num++; pc_wr = BOOT_WORD;
+    emit_preamble(
+      tpr_set_ls_en(tpr_alu_mode(LOADSTORE_LOW, LOADSTORE_HIGH, ALU_MODE_OR),
+                    1'b1, 1'b1, 1'b0),
+      32'h0);
+    load_imm32(5'd11, DMEM_BASE);
+    emit(f_lw(5'd10, 5'd11, 12'h0));   // x10 = tainted addr (data_mem[0]), tag 1
+    load_imm32(5'd28, tpr_set_ls_en(tpr_alu_mode(LOADSTORE_LOW, LOADSTORE_HIGH, ALU_MODE_AND),
+                                    1'b1, 1'b1, 1'b0));
+    emit(f_csrrw(CSRA_TPR, 5'd28, 5'd0));
+    emit(f_lw(5'd12, 5'd10, 12'h0));   // load using tainted base from tainted mem
+    emit(ECALL); do_reset();
+    tag_mem[0] = 1'b1; data_mem[0] = DMEM_BASE + 4;  // x10 = valid tainted addr
+    tag_mem[1] = 1'b1; data_mem[1] = 32'd99;          // tainted data at dest
+    run_program(200);
+    // AND(addr_tag=1, data_tag=1) = 1
+    if (`TAG_RF(12) === 1'b1) pass_t("O3 Load AND both=1 => tag=1");
+    else                      fail_t("O3 Load AND both=1 => tag=1");
+
+    // O4: AND mode, addr tag=1 data tag=0 => result=0 (pointer tainted as in O3)
+    test_num++; pc_wr = BOOT_WORD;
+    emit_preamble(
+      tpr_set_ls_en(tpr_alu_mode(LOADSTORE_LOW, LOADSTORE_HIGH, ALU_MODE_OR),
+                    1'b1, 1'b1, 1'b0),
+      32'h0);
+    load_imm32(5'd11, DMEM_BASE);
+    emit(f_lw(5'd10, 5'd11, 12'h0));
+    load_imm32(5'd28, tpr_set_ls_en(tpr_alu_mode(LOADSTORE_LOW, LOADSTORE_HIGH, ALU_MODE_AND),
+                                    1'b1, 1'b1, 1'b0));
+    emit(f_csrrw(CSRA_TPR, 5'd28, 5'd0));
+    emit(f_lw(5'd12, 5'd10, 12'h0));
+    emit(ECALL); do_reset();
+    tag_mem[0] = 1'b1; data_mem[0] = DMEM_BASE + 4;
+    tag_mem[1] = 1'b0; data_mem[1] = 32'd88;  // clean data
+    run_program(200);
+    // AND(addr_tag=1, data_tag=0) = 0
+    if (`TAG_RF(12) === 1'b0) pass_t("O4 Load AND addr=1 data=0 => tag=0");
+    else                      fail_t("O4 Load AND addr=1 data=0 => tag=0");
+  endtask
+
+  // -----------------------------------------------------------------------
+  // Test group P: Store enable tag variants
+  // -----------------------------------------------------------------------
+  // Store tag rule: tag written to memory =
+  //   MODE(data_tag & EN_SOURCE(15), addr_tag & EN_DEST_ADDR(16)),
+  //   MODE = TPR[5:4]; OLD keeps the data tag, CLEAR gives 0.
+  // One store per test; x12 = data register, x10 = address register.
+  // data_t / addr_t select whether each is loaded from a tainted word.
+  // The data word is always loaded through a clean pointer under OR + EN_SOURCE
+  // (so its tag is data_t), then TPR switches to the policy under test.
+  task automatic store_rule_case(input string name, input logic [1:0] mode,
+                                 input logic en_src, en_dst, data_t, addr_t,
+                                 input logic exp);
+    test_num++; pc_wr = BOOT_WORD;
+    emit_preamble(tpr_ls_or(), 32'h0);              // loads: OR, data + addr tags
+    load_imm32(5'd11, DMEM_BASE);
+    emit(f_lw(5'd12, 5'd11, 12'h0));                // x12: data, tag = tag_mem[0]
+    emit(f_lw(5'd10, 5'd11, 12'h4));                // x10: pointer, tag = tag_mem[1]
+    load_imm32(5'd28, tpr_set_ls_en(tpr_alu_mode(LOADSTORE_LOW, LOADSTORE_HIGH, mode),
+                                    1'b1, en_src, en_dst));
+    emit(f_csrrw(CSRA_TPR, 5'd28, 5'd0));
+    emit(f_sw(5'd12, 5'd10, 12'h0));                // -> data_mem[3]
+    emit(ECALL); do_reset();
+    tag_mem[0] = data_t; data_mem[0] = 32'h0000_BEEF;
+    tag_mem[1] = addr_t; data_mem[1] = DMEM_BASE + 12;
+    tag_mem[3] = ~exp;   data_mem[3] = 32'h0;       // start opposite to the expectation
+    run_program(200);
+    if (data_mem[3] == 32'h0000_BEEF && tag_mem[3] === exp && !exception_seen)
+         pass_t($sformatf("%s store tag=%b", name, exp));
+    else fail_t($sformatf("%s store tag (got %b exp %b, mem=%08h exc=%b)",
+                          name, tag_mem[3], exp, data_mem[3], exception_seen));
+  endtask
+
+  task automatic store_enable_variant_tests();
+    //               name                                 mode            src  dst  data addr exp
+    store_rule_case("P1 OR  EN_SRC=1 EN_DST=0, data tainted", ALU_MODE_OR,    1, 0,  1,  0,  1'b1);
+    store_rule_case("P2 OR  EN_SRC=0 EN_DST=1, data tainted", ALU_MODE_OR,    0, 1,  1,  0,  1'b0);
+    store_rule_case("P3 OR  EN_SRC=0 EN_DST=1, addr tainted", ALU_MODE_OR,    0, 1,  0,  1,  1'b1);
+    store_rule_case("P4 OR  EN_SRC=1 EN_DST=0, addr tainted", ALU_MODE_OR,    1, 0,  0,  1,  1'b0);
+    store_rule_case("P5 AND both enabled, both tainted",      ALU_MODE_AND,   1, 1,  1,  1,  1'b1);
+    store_rule_case("P6 AND both enabled, data only",         ALU_MODE_AND,   1, 1,  1,  0,  1'b0);
+    store_rule_case("P7 CLEAR, both tainted",                 ALU_MODE_CLEAR, 1, 1,  1,  1,  1'b0);
+    store_rule_case("P8 OLD keeps the data tag",              ALU_MODE_OLD,   0, 0,  1,  0,  1'b1);
+    store_rule_case("P9 OR  both enabled, clean",             ALU_MODE_OR,    1, 1,  0,  0,  1'b0);
+  endtask
+
+  // -----------------------------------------------------------------------
+  // Test group Q: Tag RF address diversity (toggle coverage)
+  // -----------------------------------------------------------------------
+  task automatic tag_rf_diversity_tests();
+    // Write tainted data to diverse register indices: x1-x9, x16-x27
+    // Use a chain: load tainted, add to different dest registers
+    test_num++; pc_wr = BOOT_WORD;
+    emit_preamble(tpr_all_or(), 32'h0);
+    load_imm32(5'd10, DMEM_BASE);
+    emit(f_lw(5'd1,  5'd10, 12'h0));   // x1  = tainted
+    emit(f_lw(5'd2,  5'd10, 12'h0));   // x2  = tainted
+    emit(f_lw(5'd3,  5'd10, 12'h0));   // x3  = tainted
+    emit(f_lw(5'd4,  5'd10, 12'h0));   // x4  = tainted
+    emit(f_lw(5'd5,  5'd10, 12'h0));   // x5  = tainted
+    emit(f_lw(5'd6,  5'd10, 12'h0));   // x6  = tainted
+    emit(f_lw(5'd7,  5'd10, 12'h0));   // x7  = tainted
+    emit(f_lw(5'd8,  5'd10, 12'h0));   // x8  = tainted
+    emit(f_lw(5'd9,  5'd10, 12'h0));   // x9  = tainted
+    emit(f_lw(5'd16, 5'd10, 12'h0));   // x16 = tainted
+    emit(f_lw(5'd17, 5'd10, 12'h0));   // x17
+    emit(f_lw(5'd18, 5'd10, 12'h0));   // x18
+    emit(f_lw(5'd19, 5'd10, 12'h0));   // x19
+    emit(f_lw(5'd20, 5'd10, 12'h0));   // x20
+    emit(f_lw(5'd21, 5'd10, 12'h0));   // x21
+    emit(f_lw(5'd22, 5'd10, 12'h0));   // x22
+    emit(f_lw(5'd23, 5'd10, 12'h0));   // x23
+    emit(f_lw(5'd24, 5'd10, 12'h0));   // x24
+    emit(f_lw(5'd25, 5'd10, 12'h0));   // x25
+    emit(f_lw(5'd26, 5'd10, 12'h0));   // x26
+    emit(f_lw(5'd27, 5'd10, 12'h0));   // x27
+    emit(ECALL); do_reset();
+    tag_mem[0] = 1'b1; data_mem[0] = 32'd42;
+    run_program(400);
+    // Check a sample of registers
+    if (`TAG_RF(1) === 1'b1 && `TAG_RF(9) === 1'b1 &&
+        `TAG_RF(16) === 1'b1 && `TAG_RF(27) === 1'b1)
+      pass_t("Q1 Tag RF diversity: multiple registers tainted");
+    else
+      fail_t("Q1 Tag RF diversity: multiple registers tainted");
+
+    // Now clear them all by writing clean values
+    test_num++; pc_wr = BOOT_WORD;
+    emit_preamble(tpr_all_or(), 32'h0);
+    // addi xN, x0, 0 => clean tag (x0 tag is always 0, imm tag is 0)
+    emit(f_addi(5'd1,  5'd0, 12'h0));
+    emit(f_addi(5'd2,  5'd0, 12'h0));
+    emit(f_addi(5'd3,  5'd0, 12'h0));
+    emit(f_addi(5'd4,  5'd0, 12'h0));
+    emit(f_addi(5'd5,  5'd0, 12'h0));
+    emit(f_addi(5'd6,  5'd0, 12'h0));
+    emit(f_addi(5'd7,  5'd0, 12'h0));
+    emit(f_addi(5'd8,  5'd0, 12'h0));
+    emit(f_addi(5'd9,  5'd0, 12'h0));
+    emit(f_addi(5'd16, 5'd0, 12'h0));
+    emit(f_addi(5'd17, 5'd0, 12'h0));
+    emit(f_addi(5'd18, 5'd0, 12'h0));
+    emit(f_addi(5'd19, 5'd0, 12'h0));
+    emit(f_addi(5'd20, 5'd0, 12'h0));
+    emit(f_addi(5'd21, 5'd0, 12'h0));
+    emit(f_addi(5'd22, 5'd0, 12'h0));
+    emit(f_addi(5'd23, 5'd0, 12'h0));
+    emit(f_addi(5'd24, 5'd0, 12'h0));
+    emit(f_addi(5'd25, 5'd0, 12'h0));
+    emit(f_addi(5'd26, 5'd0, 12'h0));
+    emit(f_addi(5'd27, 5'd0, 12'h0));
+    emit(ECALL); do_reset();
+    run_program(400);
+    if (`TAG_RF(1) === 1'b0 && `TAG_RF(27) === 1'b0)
+      pass_t("Q2 Tag RF diversity: registers cleared (toggle 1->0)");
+    else
+      fail_t("Q2 Tag RF diversity: registers cleared (toggle 1->0)");
+  endtask
+
+  // -----------------------------------------------------------------------
+  // Test group R: Both-sources-tainted scenarios
+  // -----------------------------------------------------------------------
+  task automatic both_tainted_tests();
+    automatic logic exp;
+
+    // R1: ADD both tainted, AND mode => 1&1=1
+    test_num++; pc_wr = BOOT_WORD;
+    emit_preamble(
+      tpr_set_ls_en(tpr_alu_mode(INTEGER_LOW, INTEGER_HIGH, ALU_MODE_AND),
+                    1'b1, 1'b1, 1'b0) | tpr_ls_or(),
+      32'h0);
+    load_imm32(5'd10, DMEM_BASE);
+    emit(f_lw(5'd12, 5'd10, 12'h0));
+    emit(f_lw(5'd13, 5'd10, 12'h4));
+    emit(f_add(5'd14, 5'd12, 5'd13));
+    emit(ECALL); do_reset();
+    tag_mem[0] = 1'b1; data_mem[0] = 32'd10;
+    tag_mem[1] = 1'b1; data_mem[1] = 32'd20;
+    run_program(150);
+    if (`TAG_RF(14) === 1'b1) pass_t("R1 ADD both tainted AND=1");
+    else                      fail_t("R1 ADD both tainted AND=1");
+
+    // R2: ADD both tainted, OR mode => 1|1=1
+    test_num++; pc_wr = BOOT_WORD;
+    emit_preamble(
+      tpr_set_ls_en(tpr_alu_mode(INTEGER_LOW, INTEGER_HIGH, ALU_MODE_OR),
+                    1'b1, 1'b1, 1'b0) | tpr_ls_or(),
+      32'h0);
+    load_imm32(5'd10, DMEM_BASE);
+    emit(f_lw(5'd12, 5'd10, 12'h0));
+    emit(f_lw(5'd13, 5'd10, 12'h4));
+    emit(f_add(5'd14, 5'd12, 5'd13));
+    emit(ECALL); do_reset();
+    tag_mem[0] = 1'b1; data_mem[0] = 32'd10;
+    tag_mem[1] = 1'b1; data_mem[1] = 32'd20;
+    run_program(150);
+    if (`TAG_RF(14) === 1'b1) pass_t("R2 ADD both tainted OR=1");
+    else                      fail_t("R2 ADD both tainted OR=1");
+
+    // R3: ADD both tainted, CLEAR mode => 0
+    test_num++; pc_wr = BOOT_WORD;
+    emit_preamble(
+      tpr_set_ls_en(tpr_alu_mode(INTEGER_LOW, INTEGER_HIGH, ALU_MODE_CLEAR),
+                    1'b1, 1'b1, 1'b0) | tpr_ls_or(),
+      32'h0);
+    load_imm32(5'd10, DMEM_BASE);
+    emit(f_lw(5'd12, 5'd10, 12'h0));
+    emit(f_lw(5'd13, 5'd10, 12'h4));
+    emit(f_add(5'd14, 5'd12, 5'd13));
+    emit(ECALL); do_reset();
+    tag_mem[0] = 1'b1; data_mem[0] = 32'd10;
+    tag_mem[1] = 1'b1; data_mem[1] = 32'd20;
+    run_program(150);
+    if (`TAG_RF(14) === 1'b0) pass_t("R3 ADD both tainted CLEAR=0");
+    else                      fail_t("R3 ADD both tainted CLEAR=0");
+  endtask
+
+  // -----------------------------------------------------------------------
+  // Test group S: JAL instruction (not JALR)
+  // -----------------------------------------------------------------------
+  task automatic jal_test();
+    // S1: JAL with JUMP_CHECK_S2 enabled — tests OPCODE_JAL in TMU
+    // JAL has no register source, so no tag to check => no exception expected
+    test_num++; pc_wr = BOOT_WORD;
+    emit_preamble(tpr_ls_or(), 32'h1 << JUMP_CHECK_S2);
+    // JAL x14, +8 (skip next instr)
+    emit(f_jal(5'd14, 21'd8));
+    emit(NOP);  // skipped
+    emit(ECALL);
+    do_reset();
+    run_program(200);
+    if (!exception_seen) pass_t("S1 JAL JUMP_CHECK_S2 no source => no exception");
+    else                 fail_t("S1 JAL JUMP_CHECK_S2 no source => no exception");
+  endtask
+
+
   // =========================================================================
   // MAIN
   // =========================================================================
@@ -1195,10 +1965,21 @@ module ibex_core_tb;
     tcr_alu_tests();               // D: 13 tests
     tcr_branch_tests();            // E:  4 tests
     tcr_jump_tests();              // F:  2 tests
-    tcr_loadstore_tests();         // G:  4 tests
+    tcr_loadstore_tests();         // G:  7 tests
     execute_pc_test();             // H:  1 test
     csr_path_test();               // I:  1 test
     m_ext_tests();                 // J:  6 tests (4+1+1)
+
+    // --- NEW coverage test groups ---
+    itype_imm_tmu_tests();         // K: 11 tests (I-type immediates)
+    m_ext_variant_tests();         // L:  5 tests (MULH/MULHSU/MULHU/DIVU/REMU)
+    rtype_variant_tests();         // M:  4 tests (SRL/SRA/SLTU/SUB)
+    store_lui_auipc_check_tests(); // N:  3 tests (STORE/LUI/AUIPC check)
+    load_propagation_variant_tests(); // O: 4 tests (load prop variants)
+    store_enable_variant_tests();  // P:  9 tests (store tag rule)
+    tag_rf_diversity_tests();      // Q:  2 tests (RF address diversity)
+    both_tainted_tests();          // R:  3 tests (both sources tainted)
+    jal_test();                    // S:  1 test  (JAL instruction)
 
     $display("");
     $display("===== DIFT Testbench Complete =====");
@@ -1216,7 +1997,7 @@ module ibex_core_tb;
   // Timeout watchdog
   // =========================================================================
   initial begin
-    #1_000_000;
+    #5_000_000;
     $display("[TIMEOUT] Simulation exceeded 1ms — possible infinite loop");
     $finish;
   end

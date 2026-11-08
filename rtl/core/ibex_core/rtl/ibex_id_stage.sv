@@ -360,6 +360,13 @@ module ibex_id_stage #(
     // Set/Write Enables
     logic        register_set_tag;
     //logic        memory_set_tag;
+
+    // Store tag rule
+    logic        store_data_tag;   // rs2 tag | instruction tag
+    logic        store_addr_tag;   // rs1 (base address) tag
+    logic        store_src_en;     // data tag masked by TPR EN_SOURCE
+    logic        store_dst_en;     // address tag masked by TPR EN_DEST_ADDR
+    logic        store_mem_tag;    // tag written to the shadow tag memory
   `endif
 
   /////////////
@@ -722,7 +729,32 @@ module ibex_id_stage #(
   //assign alu_operand_a_tag = ((alu_op_a_mux_sel == OP_A_REG_A) ? operand_a_fw_id_tag : (alu_op_a_mux_sel == OP_A_CURRPC)   ? instr_tag_i : 1'b0) | instr_tag_i;
   //assign alu_operand_b_tag = ((alu_op_b_mux_sel == OP_B_REG_B) ? operand_b_fw_id_tag : 1'b0) | instr_tag_i;
   assign alu_operand_a_tag = (alu_op_a_mux_sel == OP_A_REG_A)  ? operand_a_fw_id_tag : (alu_op_a_mux_sel == OP_A_CURRPC) ? instr_tag_i : 1'b0;
-  assign alu_operand_b_tag = (alu_op_b_mux_sel == OP_B_REG_B)  ? operand_b_fw_id_tag : 1'b0;
+  // For a store the ALU adds rs1 + immediate, so operand B would carry the
+  // (always clean) immediate tag and the store-data check (TCR bit 7) could
+  // never fire. Stores put the store-data tag (rs2, plus the instruction tag)
+  // on operand B instead; a store writes no register, so this tag only feeds
+  // the check.
+  assign alu_operand_b_tag = (alu_op_b_mux_sel == OP_B_REG_B)  ? operand_b_fw_id_tag :
+                             is_store                          ? store_data_tag      : 1'b0;
+
+  // Store tag rule (TPR LOADSTORE mode bits 5:4, enables bits 15 / 16):
+  //   tag written to memory = MODE(data_tag & EN_SOURCE, addr_tag & EN_DEST_ADDR)
+  //   OLD   -> the store-data tag, unchanged (a store never drops taint)
+  //   AND   -> both enabled inputs must be tainted
+  //   OR    -> either enabled input tainted
+  //   CLEAR -> 0
+  assign store_data_tag = operand_b_fw_id_tag | instr_tag_i;
+  assign store_addr_tag = operand_a_fw_id_tag;
+  assign store_src_en   = store_data_tag & tpr_i[LOADSTORE_EN_SOURCE];
+  assign store_dst_en   = store_addr_tag & tpr_i[LOADSTORE_EN_DEST_ADDR];
+  always_comb begin
+    unique case (tpr_i[LOADSTORE_HIGH:LOADSTORE_LOW])
+      ALU_MODE_AND:   store_mem_tag = store_src_en & store_dst_en;
+      ALU_MODE_OR:    store_mem_tag = store_src_en | store_dst_en;
+      ALU_MODE_CLEAR: store_mem_tag = 1'b0;
+      default:        store_mem_tag = store_data_tag;   // ALU_MODE_OLD
+    endcase
+  end
 
   // 3. Control Flow & Policy
   //jump_target_tag is ORed result of the register operand tag and the instruction tag.
@@ -741,7 +773,7 @@ module ibex_id_stage #(
   // making the EX block use the previous instruction's stale tags.
   assign alu_op_a_tag_ex_o  = alu_operand_a_tag;
   assign alu_op_b_tag_ex_o  = alu_operand_b_tag;
-  assign lsu_wdata_tag_ex_o = is_store ? (operand_b_fw_id_tag | instr_tag_i) : 1'b0;
+  assign lsu_wdata_tag_ex_o = is_store ? store_mem_tag : 1'b0;
   assign pc_set_tag_o       = jump_target_tag;
   assign rf_we_tag_ex_o     = register_set_tag;
 
@@ -749,7 +781,14 @@ module ibex_id_stage #(
 
   assign multdiv_en_dec   = mult_en_dec | div_en_dec;
 
+`ifdef DIFT
+  // A load/store that violates the DIFT policy in EX (tainted address, tainted
+  // store data, tainted PC) must not reach the bus: the exception is taken in
+  // this same cycle, and the access is never requested.
+  assign lsu_req         = instr_executing ? data_req_allowed & lsu_req_dec & ~ex_tag_err_i : 1'b0;
+`else
   assign lsu_req         = instr_executing ? data_req_allowed & lsu_req_dec  : 1'b0;
+`endif
   assign mult_en_id      = instr_executing ? mult_en_dec                     : 1'b0;
   assign div_en_id       = instr_executing ? div_en_dec                      : 1'b0;
 

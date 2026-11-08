@@ -1,0 +1,26 @@
+# Regression list for Simple SPI - Full duplex 
+
+# Directed testcases
+SpiSimpleFd8BitsTest
+SpiSimpleFd16BitsTest
+SpiSimpleFd24BitsTest
+SpiSimpleFd32BitsTest
+SpiSimpleFd64BitsTest
+SpiSimpleFdMaximumBitsTest
+SpiSimpleFdMsbTest
+SpiSimpleFdLsbTest
+SpiSimpleFdNegativeScenariosTest
+SpiSimpleFd8BitsCtTest
+SpiSimpleFdNoOfSlavesTest
+SpiSimpleFdBaudrateTest
+SpiSimpleFdC2tDelayTest
+SpiSimpleFdCpol0Cpha0Test
+SpiSimpleFdCpol0Cpha1Test
+SpiSimpleFdCpol1Cpha0Test
+SpiSimpleFdCpol1Cpha1Test
+SpiSimpleFdCrossTest
+SpiSimpleFdDctTest
+SpiSimpleFdRandTest
+SpiSimpleFdT2cDelayTest
+SpiQuadSpiTypeTest
+SpiDualSpiTypeTest

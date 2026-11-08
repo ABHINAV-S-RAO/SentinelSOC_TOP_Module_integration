@@ -44,7 +44,25 @@ module ibex_dift_tmu import ibex_pkg::*; (
         dest_o     = 1'b0;
       end
 
-      OPCODE_STORE,
+      // Loads: only the address check is decided here (bit 21, base register
+      // rs1), in EX before the bus request, so a load through a tainted
+      // pointer never reaches the bus. The loaded-data checks (bits 7 / 8)
+      // are done on the response by riscv_load_check.
+      OPCODE_LOAD: begin
+        source_1_o = tcr_i[LOADSTORE_CHECK_SA];
+        source_2_o = 1'b0;
+        dest_o     = 1'b0;
+      end
+
+      // Stores: bit 6 = address (rs1), bit 7 = store data (rs2; the ID stage
+      // puts the store-data tag on operand B for stores). A store has no
+      // destination register, so bit 8 does not apply.
+      OPCODE_STORE: begin
+        source_1_o = tcr_i[LOADSTORE_CHECK_DA];
+        source_2_o = tcr_i[LOADSTORE_CHECK_S];
+        dest_o     = 1'b0;
+      end
+
       //OPCODE_STORE_POST,
       OPCODE_LUI,
       OPCODE_AUIPC
@@ -226,34 +244,25 @@ module ibex_dift_tmu import ibex_pkg::*; (
 endmodule
 
 // --- MODULE 2: LOAD CHECK UNIT ---
+// Checks on the loaded data, evaluated when the load response arrives:
+//   bit 7 (LOADSTORE_CHECK_S): the loaded word is tainted
+//   bit 8 (LOADSTORE_CHECK_D): the tag the destination register would get
+//                              (after TPR load propagation) is tainted
+// The load ADDRESS check (bit 21) is done earlier, in EX (ibex_dift_tmu).
+// resp_valid_i must be the raw load-response strobe (not the RF write enable,
+// which itself depends on this exception).
 module riscv_load_check import ibex_pkg::*; (
-  input  logic        regfile_wdata_wb_i_tag,
-  input  logic        rs1_i_tag,
-  input  logic        regfile_dest_tag,
+  input  logic        regfile_wdata_wb_i_tag,  // tag of the loaded word
+  input  logic        regfile_dest_tag,        // propagated destination tag
+  input  logic        regfile_dest_en,         // propagation writes the tag (mode != OLD)
   input  logic [31:0] tcr_i,
-  input  logic        regfile_we_wb_i,
+  input  logic        resp_valid_i,
   output logic        exception_o
 );
 
-  logic  check_s;
-  logic  check_sa;
-  logic  check_d;
-
-  assign check_s  = tcr_i[LOADSTORE_CHECK_S];
-  assign check_sa = tcr_i[LOADSTORE_CHECK_SA];
-  assign check_d  = tcr_i[LOADSTORE_CHECK_D];
-
-  always_comb
-  begin
-    exception_o = 1'b0;
-    if (regfile_we_wb_i) begin
-      if ((regfile_wdata_wb_i_tag & check_s) || (rs1_i_tag & check_sa) || (regfile_dest_tag & check_d)) begin
-        exception_o = 1'b1;
-      end else begin
-        exception_o = 1'b0;
-      end
-    end
-  end
+  assign exception_o = resp_valid_i &
+                       ((regfile_wdata_wb_i_tag & tcr_i[LOADSTORE_CHECK_S]) |
+                        (regfile_dest_tag & regfile_dest_en & tcr_i[LOADSTORE_CHECK_D]));
 endmodule
 
 // --- MODULE 3: LOAD PROPAGATION UNIT ---

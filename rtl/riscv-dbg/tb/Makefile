@@ -52,10 +52,11 @@ SIMV_FLAGS		=
 # verilator configuration
 VERILATOR		= verilator
 VERI_FLAGS		=
-VERI_COMPILE_FLAGS	=
+VERI_COMPILE_FLAGS	= --timing
 VERI_TRACE		=
 VERI_DIR		= cobj_dir
 VERI_CFLAGS		= -O2
+VERI_CXX_STD		= -std=gnu++17
 
 # RTL source files
 RTLSRC_TB_PKG		:=
@@ -144,12 +145,16 @@ RTLSRC_VLOG_TB_TOP	:= $(basename $(notdir $(RTLSRC_TB_TOP)))
 RTLSRC_VOPT_TB_TOP	:= $(addsuffix _vopt, $(RTLSRC_VLOG_TB_TOP))
 
 # riscv bare metal cross compiling
-RISCV			?= $(HOME)/.riscv
-RV_CC			= $(RISCV)/bin/riscv32-unknown-elf-gcc
-RV_CFLAGS		= -march=rv32imc -Os -g
+ifneq ($(RISCV),)
+RV_PREFIX		?= $(RISCV)/bin/riscv32-unknown-elf-
+else
+RV_PREFIX		?= riscv64-unknown-elf-
+endif
+RV_CC			?= $(RV_PREFIX)gcc
+RV_CFLAGS		?= -march=rv32imc_zicsr -mabi=ilp32 -Os -g
 RV_LDFLAGS		= -nostdlib -static -T prog/link.ld
 RV_LDLIBS		= -lc -lm -lgcc
-RV_OBJCOPY		= $(RISCV)/bin/riscv32-unknown-elf-objcopy
+RV_OBJCOPY		?= $(RV_PREFIX)objcopy
 
 # assume verilator if no target chosen
 .DEFAULT_GOAL := veri-run
@@ -204,13 +209,15 @@ verilate: testbench_verilator
 # remote_bitbang and manually link against librbs_veri since putting in
 # librbs_veri.so as parameter doesn't work because it searches in the build
 # directory
+# UNOPTFLAT is disabled for combinational paths in the vendored CV32E40P and
+# common_cells sources. The riscv-dbg sources are checked without this waiver.
 testbench_verilator: $(RTLSRC_VERI_TB) $(RTLSRC_PKG) $(RTLSRC) \
 			remote_bitbang/librbs_veri.so
 	$(VERILATOR) --cc --sv --exe $(VERI_TRACE) \
 		--Wno-lint --Wno-UNOPTFLAT --Wno-BLKANDNBLK --Wno-COMBDLY \
 		--Wno-MODDUP $(addprefix +incdir+,$(RTLSRC_INCDIR)) --top-module \
 		tb_top_verilator --Mdir $(VERI_DIR) \
-		-CFLAGS "-std=gnu++11 $(VERI_CFLAGS)" $(VERI_COMPILE_FLAGS) \
+		-CFLAGS "$(VERI_CXX_STD) $(VERI_CFLAGS)" $(VERI_COMPILE_FLAGS) \
 		$(RTLSRC_PKG) $(RTLSRC_VERI_TB) $(RTLSRC) \
 		-LDFLAGS "-L../remote_bitbang \
 		-Wl,--enable-new-dtags -Wl,-rpath,remote_bitbang -lrbs_veri" \
@@ -258,7 +265,8 @@ remote_bitbang/librbs_vcs.so:
 
 rbs-clean:
 	$(MAKE) -C remote_bitbang clean
-	rm -rf remote_bitbang/librbs_vsim.so remote_bitbang/librbs_vcs.so
+	rm -rf remote_bitbang/librbs_veri.so remote_bitbang/librbs_vsim.so \
+		remote_bitbang/librbs_vcs.so
 
 # run tb and exit
 .PHONY: vsim-tb-run

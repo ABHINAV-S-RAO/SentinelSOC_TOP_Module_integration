@@ -209,8 +209,12 @@ module ibex_wb_stage #(
     //DIFT Tag assigns 
     `ifdef DIFT
       assign rf_wdata_fwd_tag_wb_o = rf_wdata_tag_wb_q;
-      assign rf_wdata_tag_wb_o     = rf_wdata_tag_wb_q & wb_valid_q;
-      assign rf_we_tag_wb_o        = rf_we_tag_wb_q    & wb_valid_q;
+      // Load-data tags arrive straight from the LSU (same as rf_wdata_lsu_i on
+      // the data path) and must be muxed in here -- without this, loaded taint
+      // never reached the tag RF when WritebackStage=1.
+      assign rf_wdata_tag_wb_o     = rf_we_tag_lsu_i ? rf_wdata_tag_lsu_i
+                                                     : (rf_wdata_tag_wb_q & wb_valid_q);
+      assign rf_we_tag_wb_o        = rf_we_tag_lsu_i | (rf_we_tag_wb_q & wb_valid_q);
     `endif
 
     if (DummyInstructions) begin : g_dummy_instr_wb

@@ -30,9 +30,9 @@ module dp_ram #(
     input logic [3:0]                    be_b_i
 );
 
-    localparam bytes = 2**ADDR_WIDTH;
+    localparam int unsigned Bytes = 2**ADDR_WIDTH;
 
-    logic [7:0]                      mem[bytes];
+    logic [7:0]                      mem[Bytes];
     logic [ADDR_WIDTH-1:0]           addr_a_int;
     logic [ADDR_WIDTH-1:0]           addr_b_int;
 
@@ -71,11 +71,15 @@ module dp_ram #(
     export "DPI-C" function read_byte;
     export "DPI-C" task write_byte;
 
-    function int read_byte(input logic [ADDR_WIDTH-1:0] byte_addr);
+    function automatic int read_byte(input logic [ADDR_WIDTH-1:0] byte_addr);
         read_byte = mem[byte_addr];
     endfunction
 
-    task write_byte(input integer byte_addr, logic [7:0] val, output logic [7:0] other);
+    task automatic write_byte(
+        input integer byte_addr,
+        input logic [7:0] val,
+        output logic [7:0] other
+    );
         mem[byte_addr] = val;
         other          = mem[byte_addr];
 

@@ -76,7 +76,7 @@
       input  logic lsu_wdata_tag_i,  // From EX stage
       output logic lsu_rdata_tag_o,  // To WB stage
       output logic lsu_tag_err_o,    // To Controller
-      input  logic tcr_load_check_i  // Policy bit from TCR CSR
+      input  logic load_tag_viol_i   // loaded-data DIFT violation (riscv_load_check)
     `endif
   );
 
@@ -552,9 +552,12 @@
     assign data_be_o     = data_be;
 
     `ifdef DIFT
-      // Violation if (Taint is present) AND (Policy says check loads)
-      // Must be valid when data_rvalid_i is high
-      assign lsu_tag_err_o = data_rvalid_i && lsu_rdata_tag_o && tcr_load_check_i;
+      // Loaded-data violation (TCR bits 7 / 8, decided by riscv_load_check from
+      // lsu_rdata_tag_o). Loads only: a store response carries no data tag.
+      // The address checks (bits 6 / 21) are done in EX, before the request.
+      // Raised on the response like a bus error, so it becomes a precise
+      // load access fault and the loaded value is not written back.
+      assign lsu_tag_err_o = data_rvalid_i && !data_we_q && load_tag_viol_i;
     `endif
 
     /////////////////////////////////////

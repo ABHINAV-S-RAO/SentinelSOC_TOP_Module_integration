@@ -7,14 +7,14 @@ module tb_jtag_dmi;
 
   logic clk, rst_n;
 
-  localparam time ClkPeriod = 10ns;
-  localparam time ApplTime =  2ns;
-  localparam time TestTime =  8ns;
+  localparam realtime ClkPeriod = 10ns;
+  localparam realtime ApplTime =  2ns;
+  localparam realtime TestTime =  8ns;
 
-  localparam time JTAGPeriod = 50ns;
+  localparam realtime JTAGPeriod = 50ns;
 
   localparam int unsigned AW = 7;
-  localparam IDCode = 32'hdeadbeef | 32'b1;
+  localparam logic [31:0] IDCode = 32'hdeadbeef | 32'd1;
 
   // ----------------
   // Clock generation
@@ -139,22 +139,22 @@ module tb_jtag_dmi;
   );
 
   // Default part `7K325T` has an IrLength of 6.
-  localparam IRLength = i_jtag_sime2.IRLength;
-  localparam logic [23:0] IR_CAPTURE_VAL = 24'b010001010001010001010001,
-                          BYPASS_INSTR   = 24'b111111111111111111111111,
-                          IDCODE_INSTR   = 24'b001001001001001001001001,
-                          USER1_INSTR    = 24'b000010100100100100100100,
-                          USER2_INSTR    = 24'b000011100100100100100100,
-                          USER3_INSTR    = 24'b100010100100100100100100,
-                          USER4_INSTR    = 24'b100011100100100100100100;
+  localparam int unsigned IRLength = i_jtag_sime2.IRLength;
+  localparam logic [23:0] IrCaptureVal = 24'b010001010001010001010001,
+                          BypassInstr  = 24'b111111111111111111111111,
+                          IdcodeInstr  = 24'b001001001001001001001001,
+                          User1Instr   = 24'b000010100100100100100100,
+                          User2Instr   = 24'b000011100100100100100100,
+                          User3Instr   = 24'b100010100100100100100100,
+                          User4Instr   = 24'b100011100100100100100100;
 
   typedef jtag_test::riscv_dbg #(
-    .IDCODE (IDCODE_INSTR[23:(24-IRLength)]),
-    .DTMCSR (USER3_INSTR[23:(24-IRLength)]),
-    .DMIACCESS (USER4_INSTR[23:(24-IRLength)]),
+    .IDCODE (IdcodeInstr[23:(24-IRLength)]),
+    .DTMCSR (User3Instr[23:(24-IRLength)]),
+    .DMIACCESS (User4Instr[23:(24-IRLength)]),
     .IrLength (IRLength),
-    .TA (JTAGPeriod*0.1),
-    .TT (JTAGPeriod*0.9)
+    .TA (JTAGPeriod/10),
+    .TT (JTAGPeriod-JTAGPeriod/10)
   ) riscv_dbg_t;
 
   /// Helper function to bring instruction register values.
@@ -176,16 +176,17 @@ module tb_jtag_dmi;
 
   typedef jtag_test::riscv_dbg #(
     .IrLength (5),
-    .TA (JTAGPeriod*0.1),
-    .TT (JTAGPeriod*0.9)
+    .TA (JTAGPeriod/10),
+    .TT (JTAGPeriod-JTAGPeriod/10)
   ) riscv_dbg_t;
   `endif
 
   riscv_dbg_t::jtag_driver_t jtag_in = new (jtag_mst);
   riscv_dbg_t riscv_dbg = new (jtag_in);
 
-  mailbox req_mbx = new, rsp_mbx = new;
-  localparam NrRandomTransactions = 200;
+  mailbox #(dmi_test::req_t) req_mbx = new;
+  mailbox #(logic [31:0]) rsp_mbx = new;
+  localparam int unsigned NrRandomTransactions = 2_000;
   int unsigned nr_transactions = 0;
 
   initial begin
@@ -231,7 +232,7 @@ module tb_jtag_dmi;
       automatic dmi_test::req_t transaction = new;
       assert(transaction.randomize() with {
         op inside {dm::DTM_WRITE, dm::DTM_READ};
-      });
+      } == 1);
       if (transaction.op == dm::DTM_WRITE) begin
         req_mbx.put(transaction);
         riscv_dbg.write_dmi(dm::dm_csr_e'(transaction.addr), transaction.data);
@@ -265,10 +266,12 @@ module tb_jtag_dmi;
             $info("Resetting JTAG DMI using DMI dtmcs registers' dmihardreset control bit.");
             riscv_dbg.write_dtmcs(dtmcs_value);
           end
+
+          default: ;
         endcase
       end
     end
-    #1000;
+    wait (nr_transactions == NrRandomTransactions);
     $finish();
   end
 
@@ -289,9 +292,10 @@ module tb_jtag_dmi;
       assert(req.addr == req_mon.addr) else
         $error("Invalid dmi request. Got address %0x instead of %0x.", req_mon.addr, req.addr);
       assert(req.op == req_mon.op) else
-        $error("Invalid dmi request. Got op %0x instead of %0x.", req_mon.op, req.op);;
+        $error("Invalid dmi request. Got op %0x instead of %0x.", req_mon.op, req.op);
       if (req.op == dm::DTM_READ) begin
-        assert(rsp_mon.data == rsp);
+        assert(rsp_mon.data == rsp) else
+          $error("Invalid DMI read response. Got %08x instead of %08x.", rsp, rsp_mon.data);
       end else begin
         assert(req.data == req_mon.data);
       end

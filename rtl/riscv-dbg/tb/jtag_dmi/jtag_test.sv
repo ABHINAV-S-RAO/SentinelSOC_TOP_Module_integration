@@ -10,9 +10,9 @@ package jtag_test;
 
   class jtag_driver #(
     parameter int IrLength = 0,
-    parameter IDCODE    = 'h1,
-    parameter time TA = 0ns , // stimuli application time
-    parameter time TT = 0ns   // stimuli test time
+    parameter logic [IrLength-1:0] IDCODE = 'h1,
+    parameter realtime TA = 0ns , // stimuli application time
+    parameter realtime TT = 0ns   // stimuli test time
   );
 
     virtual JTAG_DV jtag;
@@ -50,10 +50,10 @@ package jtag_test;
 
     // Set IR, but only if it needs to be set.
     task set_ir(input logic [IrLength-1:0] opcode);
-      logic opcode_unpacked [IrLength];
+      logic opcode_unpacked [$];
       // check whether IR is already set to the right value
       if (this.ir_select == opcode) return;
-      {<<{opcode_unpacked}} = opcode;
+      for (int i = 0; i < IrLength; i++) opcode_unpacked.push_back(opcode[i]);
       write_tms(1); // select DR scan
       write_tms(1); // select IR scan
       write_tms(0); // capture IR
@@ -89,11 +89,12 @@ package jtag_test;
 
     // Assumes JTAG FSM is already in shift DR state
     task readwrite_bits(output logic rdata [$], input logic wdata [$], input logic tms_last);
+      rdata = {};
       for (int i = 0; i < wdata.size(); i++) begin
         jtag.tdi <= #TA wdata[i];
         if (i == (wdata.size() - 1)) jtag.tms <= #TA tms_last; // tms_last ? exit1 DR : shift DR
         cycle_start();
-        rdata[i] = jtag.tdo;
+        rdata.push_back(jtag.tdo);
         cycle_end();
       end
       jtag.tms <= #TA 0; // tms_last ? pause DR : shift DR
@@ -126,17 +127,23 @@ package jtag_test;
   // abstracts the debug module
   class riscv_dbg #(
     parameter int IrLength = 5,
-    parameter IDCODE    = 'h1,
-    parameter DTMCSR    = 'h10,
-    parameter DMIACCESS = 'h11,
-    parameter time TA = 0ns, // stimuli application time
-    parameter time TT = 0ns  // stimuli test time
+    parameter logic [IrLength-1:0] IDCODE    = 'h1,
+    parameter logic [IrLength-1:0] DTMCSR    = 'h10,
+    parameter logic [IrLength-1:0] DMIACCESS = 'h11,
+    parameter realtime TA = 0ns, // stimuli application time
+    parameter realtime TT = 0ns  // stimuli test time
   );
 
-    typedef jtag_test::jtag_driver#(.IrLength(IrLength), .IDCODE(IDCODE), .TA(TA), .TT(TT)) jtag_driver_t;
+    typedef jtag_test::jtag_driver #(
+      .IrLength (IrLength),
+      .IDCODE   (IDCODE),
+      .TA       (TA),
+      .TT       (TT)
+    ) jtag_driver_t;
     jtag_driver_t jtag;
 
-    localparam DMIWidth = $bits(dm::dmi_req_t);
+    localparam int unsigned DMIWidth = $bits(dm::dmi_req_t);
+    localparam int unsigned DMIAddrWidth = DMIWidth - 32 - $bits(dm::dtm_op_e);
 
     function new (jtag_driver_t jtag);
       this.jtag = jtag;
@@ -152,19 +159,20 @@ package jtag_test;
     endtask
 
     task get_idcode(output logic [31:0] idcode);
-      logic read_data [32], write_data [32];
-      write_data = '{default: 1'b0};
+      logic read_data [$];
+      logic write_data [$];
+      repeat (32) write_data.push_back(1'b0);
       jtag.set_ir(IDCODE);
       jtag.shift_dr();
       jtag.readwrite_bits(read_data, write_data, 1'b0);
       jtag.update_dr(1'b1);
-      idcode = {<<{read_data}};
+      foreach (read_data[i]) idcode[i] = read_data[i];
     endtask
 
     task write_dtmcs(input logic [31:0] data);
-      logic write_data [32];
+      logic write_data [$];
       logic [31:0] write_data_packed = {data};
-      {<<{write_data}} = write_data_packed;
+      for (int i = 0; i < 32; i++) write_data.push_back(write_data_packed[i]);
       jtag.set_ir(DTMCSR);
       jtag.shift_dr();
       jtag.write_bits(write_data, 1'b1);
@@ -172,14 +180,15 @@ package jtag_test;
     endtask
 
     task read_dtmcs(output dm::dtmcs_t data, input int wait_cycles = 10);
-      logic read_data [32], write_data [32];
+      logic read_data [$];
+      logic write_data [$];
       jtag.set_ir(DTMCSR);
       jtag.shift_dr();
       // shift out read data
-      {<<{write_data}} = 32'b0;
+      repeat (32) write_data.push_back(1'b0);
       jtag.readwrite_bits(read_data, write_data, 1'b1);
       jtag.update_dr(1'b0);
-      data = dm::dtmcs_t'({<<{read_data}});
+      foreach (read_data[i]) data[i] = read_data[i];
     endtask
 
     task reset_dmi();
@@ -188,9 +197,11 @@ package jtag_test;
     endtask
 
     task write_dmi(input dm::dm_csr_e address, input logic [31:0] data);
-      logic write_data [DMIWidth];
-      logic [DMIWidth-1:0] write_data_packed = {address, data, dm::DTM_WRITE};
-      {<<{write_data}} = write_data_packed;
+      logic write_data [$];
+      logic [DMIWidth-1:0] write_data_packed = {
+        address[DMIAddrWidth-1:0], data, dm::DTM_WRITE
+      };
+      for (int i = 0; i < DMIWidth; i++) write_data.push_back(write_data_packed[i]);
       jtag.set_ir(DMIACCESS);
       jtag.shift_dr();
       jtag.write_bits(write_data, 1'b1);
@@ -199,10 +210,13 @@ package jtag_test;
 
     task read_dmi(input dm::dm_csr_e address, output logic [31:0] data, input int wait_cycles = 10,
                   output dm::dtm_op_status_e op);
-      logic read_data [DMIWidth], write_data [DMIWidth];
+      logic read_data [$];
+      logic write_data [$];
       logic [DMIWidth-1:0] data_out = 0;
-      automatic logic [DMIWidth-1:0] write_data_packed = {address, 32'b0, dm::DTM_READ};
-      {<<{write_data}} = write_data_packed;
+      automatic logic [DMIWidth-1:0] write_data_packed = {
+        address[DMIAddrWidth-1:0], 32'b0, dm::DTM_READ
+      };
+      for (int i = 0; i < DMIWidth; i++) write_data.push_back(write_data_packed[i]);
       jtag.set_ir(DMIACCESS);
       // send read command
       jtag.shift_dr();
@@ -211,25 +225,22 @@ package jtag_test;
       jtag.wait_idle(wait_cycles);
       // shift out read data
       jtag.shift_dr();
-      write_data_packed = {address, 32'b0, dm::DTM_NOP};
-      {<<{write_data}} = write_data_packed;
+      write_data_packed = {address[DMIAddrWidth-1:0], 32'b0, dm::DTM_NOP};
+      foreach (write_data[i]) write_data[i] = write_data_packed[i];
       jtag.readwrite_bits(read_data, write_data, 1'b1);
       jtag.update_dr(1'b0);
-      data_out = {<<{read_data}};
+      foreach (read_data[i]) data_out[i] = read_data[i];
       op = dm::dtm_op_status_e'(data_out[1:0]);
       data = data_out[33:2];
     endtask
 
-    // Repeatedly read DMI until we get a valid response. 
+    // Repeatedly read DMI until we get a valid response.
     // The delay between Update-DR and Capture-DR of
     // successive operations is automatically adjusted through
     // an exponential backoff scheme.
     // Note: read operations which have side-effects (e.g.
     // reading SBData0) should not use this function
     task read_dmi_exp_backoff(input dm::dm_csr_e address, output logic [31:0] data);
-      logic read_data [DMIWidth], write_data [DMIWidth];
-      logic [DMIWidth-1:0] write_data_packed;
-      logic [DMIWidth-1:0] data_out = 0;
       dm::dtm_op_status_e op = dm::DTM_SUCCESS;
       int trial_idx = 0;
       int wait_cycles = 8;

@@ -1,5 +1,15 @@
 `timescale 1ns/1ps
 
+// =============================================================================
+// sentinel_soc_vip_uvm_top -- VIP "NoCore" testbench for basic_soc_top
+// (the tape-out SoC). The Ibex core is switched off and a UVM OBI CPU agent
+// drives the core's data bus; the UART/SPI/JTAG AVIPs, the QSPI flash BFM,
+// the GPIO VIP and the timer IRQ interface watch/drive the chip pins.
+//
+// Build with +define+NO_CORE (see Makefile). The boot watchdog is disabled in
+// this mode: with no core running, nothing ever finishes booting, and the
+// watchdog would otherwise drop the chip into JTAG recovery mid-test.
+// =============================================================================
 module sentinel_soc_vip_uvm_top;
   import uvm_pkg::*;
   import sentinel_soc_vip_uvm_pkg::*;
@@ -15,13 +25,10 @@ module sentinel_soc_vip_uvm_top;
     forever #10 clk_i = ~clk_i; // 50 MHz
   end
 
-    initial begin
+  initial begin
     // Start out of reset, then pulse reset low->high so any block waiting
-    // on @(negedge reset)/@(posedge reset) — e.g. UartRxMonitorBfm's
-    // WaitForReset() — actually observes a real falling edge. The previous
-    // version started already-low and only ever rose once, so no negedge
-    // ever occurred and the whole RX monitor forever-loop (including its
-    // uvm_config_db::set for uartConfigStruct) never ran.
+    // on @(negedge reset)/@(posedge reset) -- e.g. UartRxMonitorBfm's
+    // WaitForReset() -- actually observes a real falling edge.
     rst_ni = 1;
     #20;
     rst_ni = 0;
@@ -30,32 +37,40 @@ module sentinel_soc_vip_uvm_top;
   end
 
   // ---------------------------------------------------------------------------
-  // Interface Instantiation
+  // Interfaces
   // ---------------------------------------------------------------------------
   sentinel_soc_if vif(clk_i, rst_ni);
-  initial vif.dift_en = 1'b1;
 
-  // AVIP Interfaces
+  // UART AVIP
   UartIf u_uart_if(clk_i, rst_ni);
   UartTxAgentBfm u_uart_tx_bfm(u_uart_if);
   UartRxAgentBfm u_uart_rx_bfm(u_uart_if);
 
+  // SPI AVIP (on the general-purpose SPI master, spi2)
   SpiInterface  u_spi_if(clk_i, rst_ni);
+  SpiMasterMonitorBFM u_spi_master_monitor_bfm (.pclk(u_spi_if.pclk),
+                                               .areset(u_spi_if.areset),
+                                               .sclk(u_spi_if.sclk),
+                                               .cs(u_spi_if.cs),
+                                               .mosi0(u_spi_if.mosi0),
+                                               .mosi1(u_spi_if.mosi1),
+                                               .mosi2(u_spi_if.mosi2),
+                                               .mosi3(u_spi_if.mosi3),
+                                               .miso0(u_spi_if.miso0),
+                                               .miso1(u_spi_if.miso1),
+                                               .miso2(u_spi_if.miso2),
+                                               .miso3(u_spi_if.miso3));
 
-  // ---------------------------------------------------------------------------
-  // JTAG Clock Generation (25 MHz, Period = 40ns)
-  // Shifted by 10ns to provide robust setup/hold timing margin to DUT TAP
-  // ---------------------------------------------------------------------------
+  SpiSlaveAgentBFM  u_spi_slave_agent_bfm  (.spiInterface(u_spi_if));
+
+  // JTAG clock (25 MHz, period 40 ns)
   logic jtag_tck;
   initial begin
     jtag_tck = 0;
     forever #20 jtag_tck = ~jtag_tck;
   end
 
-  wire jtag_tck_dut;
-  assign jtag_tck_dut = jtag_tck;
-
-  // JTAG Interface & AVIP BFMs
+  // JTAG AVIP
   JtagIf u_jtag_if(jtag_tck, rst_ni);
   JtagControllerDeviceAgentBfm u_jtag_ctrl_bfm(u_jtag_if);
   JtagTargetDeviceMonitorBfm   u_jtag_target_mon_bfm (
@@ -67,103 +82,176 @@ module sentinel_soc_vip_uvm_top;
     .Trst  (u_jtag_if.Trst)
   );
 
-
-  // CPU Agent Interface
+  // CPU agent
   obi_if u_obi_if(clk_i, rst_ni);
-  
-  // GPIO Interface
+
+  // GPIO VIP
   gpio_if u_gpio_if(clk_i, rst_ni);
-  
-  // Timer IRQ Interface
+
+  // Timer IRQ
   timer_irq_if u_timer_if(clk_i, rst_ni);
 
-  logic qspi_sdi0, qspi_sdi1, qspi_sdi2, qspi_sdi3;
-  
-  // QSPI BFM Instantiation
-  qspi_flash_bfm u_qspi_bfm (
-    .spi_clk (vif.qspi_clk),
-    .spi_csn0(vif.qspi_csn),
-    .spi_mode(2'b00),
-    .spi_sdo0(vif.qspi_io[0]),
-    .spi_sdo1(vif.qspi_io[1]),
-    .spi_sdo2(vif.qspi_io[2]),
-    .spi_sdo3(vif.qspi_io[3]),
-    .spi_sdi0(qspi_sdi0),
-    .spi_sdi1(qspi_sdi1),
-    .spi_sdi2(qspi_sdi2),
-    .spi_sdi3(qspi_sdi3)
-  );
-
   // ---------------------------------------------------------------------------
-  // DUT Instantiation
+  // DUT pins
   // ---------------------------------------------------------------------------
-  logic dut_uart_tx;
+  logic        dut_uart_tx;
 
-  // JTAG pin conditioning (IEEE 1149.1 pullups)
-  // Prevents 'X' propagation from VIP padding bits into the DUT TAP FSM
+  // QSPI flash controller (0x1050_0000)
+  logic        qspi_clk;
+  logic [3:0]  qspi_csn;
+  logic [1:0]  qspi_mode;
+  logic [3:0]  qspi_sdo;
+  logic        qspi_sdi0, qspi_sdi1, qspi_sdi2, qspi_sdi3;
+
+  // General-purpose SPI master (0x1050_2000)
+  logic [3:0]  spi2_csn;
+
+  // GPIO pads: the chip has split in/out/dir, the GPIO VIP has one shared
+  // bus. The chip drives a pin only where its direction bit is 1 (output).
+  logic [31:0] gpio_out, gpio_dir;
+  genvar gi;
+  generate
+    for (gi = 0; gi < 32; gi++) begin : gen_gpio_pad
+      assign u_gpio_if.gpio_pins[gi] = gpio_dir[gi] ? gpio_out[gi] : 1'bz;
+    end
+  endgenerate
+
+  // Memories outside the chip (SRAM macro ports)
+  logic        bootrom_req, bootrom_gnt, bootrom_rvalid, bootrom_we, bootrom_err;
+  logic [3:0]  bootrom_be;
+  logic [31:0] bootrom_addr, bootrom_wdata, bootrom_rdata;
+  logic        isram_req, isram_gnt, isram_rvalid, isram_we, isram_err;
+  logic [3:0]  isram_be;
+  logic [31:0] isram_addr, isram_wdata, isram_rdata;
+  logic        data_req, data_gnt, data_rvalid, data_we, data_err;
+  logic [3:0]  data_be;
+  logic [31:0] data_addr, data_wdata, data_rdata;
+
+  // JTAG pin conditioning (IEEE 1149.1 pull-ups): keeps 'X' from the VIP's
+  // padding bits out of the DUT TAP state machine.
   wire dut_jtag_tms    = ($isunknown(u_jtag_if.Tms))  ? 1'b1 : u_jtag_if.Tms;
   wire dut_jtag_tdi    = ($isunknown(u_jtag_if.Tdi))  ? 1'b0 : u_jtag_if.Tdi;
   wire dut_jtag_trst_n = ($isunknown(u_jtag_if.Trst)) ? 1'b1 : u_jtag_if.Trst;
 
-  sentinel_soc_top u_dut (
-    .clk_i              ( vif.clk ),
-    .rst_ni             ( vif.rst_n ),
-
-    // QSPI
-    .qspi_csn_o         ( vif.qspi_csn ),
-    .qspi_clk_o         ( vif.qspi_clk ),
-    .qspi_io_io         ( vif.qspi_io ),
+  // ---------------------------------------------------------------------------
+  // DUT: the tape-out SoC
+  // ---------------------------------------------------------------------------
+  basic_soc_top #(
+`ifdef NO_CORE
+    .BOOT_WDT_CYCLES   ( 0 ),               // no core -> no boot -> no watchdog
+`endif
+    .SECURE_BOOT       ( 1'b1 ),
+    .CRYPTO_CLK_DIV    ( 2 ),
+    .HAS_GPIO          ( 1'b1 )
+  ) u_dut (
+    .clk_i             ( clk_i ),
+    .rst_ni            ( rst_ni ),
+    .crypto_verified_i ( 1'b0 ),            // unused with SECURE_BOOT=1
+    .boot_mode_i       ( 1'b0 ),            // normal boot strap
 
     // UART
-    .uart_tx_o          ( dut_uart_tx ), // DUT TX goes to VIP RX
-    .uart_rx_i          ( u_uart_if.tx ), // VIP TX goes to DUT RX
+    .uart_tx_o         ( dut_uart_tx ),     // DUT TX -> VIP RX
+    .uart_rx_i         ( u_uart_if.tx ),    // VIP TX -> DUT RX
+
+    // Memories
+    .bootrom_req_o     ( bootrom_req    ),
+    .bootrom_gnt_i     ( bootrom_gnt    ),
+    .bootrom_rvalid_i  ( bootrom_rvalid ),
+    .bootrom_addr_o    ( bootrom_addr   ),
+    .bootrom_we_o      ( bootrom_we     ),
+    .bootrom_be_o      ( bootrom_be     ),
+    .bootrom_wdata_o   ( bootrom_wdata  ),
+    .bootrom_rdata_i   ( bootrom_rdata  ),
+    .bootrom_err_i     ( bootrom_err    ),
+    .isram_req_o       ( isram_req      ),
+    .isram_gnt_i       ( isram_gnt      ),
+    .isram_rvalid_i    ( isram_rvalid   ),
+    .isram_addr_o      ( isram_addr     ),
+    .isram_we_o        ( isram_we       ),
+    .isram_be_o        ( isram_be       ),
+    .isram_wdata_o     ( isram_wdata    ),
+    .isram_rdata_i     ( isram_rdata    ),
+    .isram_err_i       ( isram_err      ),
+
+    // QSPI -> flash BFM
+    .spi_clk_o         ( qspi_clk ),
+    .spi_csn_o         ( qspi_csn ),
+    .spi_mode_o        ( qspi_mode ),
+    .spi_sdo_o         ( qspi_sdo ),
+    .spi_sdi_i         ( {qspi_sdi3, qspi_sdi2, qspi_sdi1, qspi_sdi0} ),
+
+    // SPI2 -> SPI AVIP (single lane, chip select 0)
+    .spi2_clk_o        ( u_spi_if.sclk ),
+    .spi2_csn_o        ( spi2_csn ),
+    .spi2_sdo_o        ( u_spi_if.mosi0 ),
+    .spi2_sdi_i        ( u_spi_if.miso0 ),
 
     // GPIO
-    .gpio_io            ( vif.gpio ),
+    .gpio_in_i         ( u_gpio_if.gpio_pins ),
+    .gpio_out_o        ( gpio_out ),
+    .gpio_dir_o        ( gpio_dir ),
 
-    // SPI
-    .spi_csn_o          ( u_spi_if.cs[0] ),
-    .spi_clk_o          ( u_spi_if.sclk ),
-    .spi_mosi_o         ( u_spi_if.mosi0 ),
-    .spi_miso_i         ( u_spi_if.miso0),
-    
+    // DSRAM
+    .data_req_o        ( data_req    ),
+    .data_gnt_i        ( data_gnt    ),
+    .data_rvalid_i     ( data_rvalid ),
+    .data_addr_o       ( data_addr   ),
+    .data_we_o         ( data_we     ),
+    .data_be_o         ( data_be     ),
+    .data_wdata_o      ( data_wdata  ),
+    .data_rdata_i      ( data_rdata  ),
+    .data_err_i        ( data_err    ),
+
     // JTAG
-    .jtag_tck_i         ( jtag_tck_dut ),
-    .jtag_tms_i         ( dut_jtag_tms ),
-    .jtag_tdi_i         ( dut_jtag_tdi ),
-    .jtag_tdo_o         ( u_jtag_if.Tdo ),
-    .jtag_trst_ni       ( dut_jtag_trst_n )
+    .jtag_tck_i        ( jtag_tck ),
+    .jtag_tms_i        ( dut_jtag_tms ),
+    .jtag_trst_ni      ( dut_jtag_trst_n ),
+    .jtag_tdi_i        ( dut_jtag_tdi ),
+    .jtag_tdo_o        ( u_jtag_if.Tdo )
+  );
 
-`ifdef DIFT
-    ,
-    .dift_en_i          ( vif.dift_en )
-`endif
+  assign u_spi_if.cs[0] = spi2_csn[0];
+
+  // ---------------------------------------------------------------------------
+  // External memory models (same models as full_soc_tb)
+  // ---------------------------------------------------------------------------
+  bootrom_model #(.DEPTH(16384), .HEX_FILE("")) u_bootrom (
+    .clk_i(clk_i), .rst_ni(rst_ni), .req_i(bootrom_req), .gnt_o(bootrom_gnt),
+    .rvalid_o(bootrom_rvalid), .addr_i(bootrom_addr), .we_i(bootrom_we),
+    .be_i(bootrom_be), .wdata_i(bootrom_wdata), .rdata_o(bootrom_rdata), .err_o(bootrom_err));
+
+  isram_model #(.DEPTH(65536), .HEX_FILE("")) u_isram (
+    .clk_i(clk_i), .rst_ni(rst_ni), .req_i(isram_req), .gnt_o(isram_gnt),
+    .rvalid_o(isram_rvalid), .addr_i(isram_addr), .we_i(isram_we),
+    .be_i(isram_be), .wdata_i(isram_wdata), .rdata_o(isram_rdata), .err_o(isram_err));
+
+  dsram_model #(.DEPTH(16384), .HEX_FILE("")) u_dsram (
+    .clk_i(clk_i), .rst_ni(rst_ni), .req_i(data_req), .gnt_o(data_gnt),
+    .rvalid_o(data_rvalid), .addr_i(data_addr), .we_i(data_we),
+    .be_i(data_be), .wdata_i(data_wdata), .rdata_o(data_rdata), .err_o(data_err));
+
+  // ---------------------------------------------------------------------------
+  // QSPI flash BFM on the boot-flash pins
+  // ---------------------------------------------------------------------------
+  qspi_flash_bfm u_qspi_bfm (
+    .spi_clk  ( qspi_clk ),
+    .spi_csn0 ( qspi_csn[0] ),
+    .spi_mode ( qspi_mode ),
+    .spi_sdo0 ( qspi_sdo[0] ),
+    .spi_sdo1 ( qspi_sdo[1] ),
+    .spi_sdo2 ( qspi_sdo[2] ),
+    .spi_sdo3 ( qspi_sdo[3] ),
+    .spi_sdi0 ( qspi_sdi0 ),
+    .spi_sdi1 ( qspi_sdi1 ),
+    .spi_sdi2 ( qspi_sdi2 ),
+    .spi_sdi3 ( qspi_sdi3 )
   );
 
   // ---------------------------------------------------------------------------
-  // Load Firmware
-  // ---------------------------------------------------------------------------
-  initial begin
-    $display("[VIP-TB] Loading default firmware: software/bootrom.hex");
-    $readmemh("software/bootrom.hex", u_dut.u_bootrom.mem);
-  end
-
-  // ---------------------------------------------------------------------------
-  // NoCore Bypassing (CPU Agent Injection)
+  // NoCore: switch Ibex off, drive its data bus from the UVM CPU agent
   // ---------------------------------------------------------------------------
 `ifdef NO_CORE
-  initial begin
-    // Force Ibex fetch disable so it doesn't do anything
-    force u_dut.u_ibex_top.fetch_enable_i = 4'b1010;
-    
-    // Fully silence Ibex's instruction bus
-    force u_dut.core_instr_req = 1'b0;
-    $assertoff(0, sentinel_soc_vip_uvm_top.u_dut.u_ibex_top);
-  end
-
-  // Continuously force OBI signals from our obi_if into the crossbar/dift_obi_ctrl.
-  // In SystemVerilog, force inside an initial block with a variable on the RHS evaluates once.
-  // BUT if the RHS is a single net (wire), the simulator sets up continuous tracking!
+  // A force with a single net on the right-hand side tracks it continuously.
   wire        tb_req   = u_obi_if.req;
   wire        tb_we    = u_obi_if.we;
   wire [31:0] tb_addr  = u_obi_if.addr;
@@ -171,13 +259,13 @@ module sentinel_soc_vip_uvm_top;
   wire [ 3:0] tb_be    = u_obi_if.be;
 
   initial begin
-    // Force Ibex fetch disable so it doesn't do anything
-    force u_dut.u_ibex_top.fetch_enable_i = 4'b1010;
-    
-    // Fully silence Ibex's instruction bus
-    force u_dut.core_instr_req = 1'b0;
+    $assertoff(0, sentinel_soc_vip_uvm_top.u_dut.u_ibex_top);
 
-    // Force data bus to track testbench wires continuously
+    // Ibex never fetches, and its instruction bus stays silent
+    force u_dut.u_ibex_top.fetch_enable_i = 4'b1010;   // IbexMuBiOff
+    force u_dut.instr_req_int = 1'b0;
+
+    // Data bus follows the CPU agent
     force u_dut.core_data_req   = tb_req;
     force u_dut.core_data_we    = tb_we;
     force u_dut.core_data_addr  = tb_addr;
@@ -185,58 +273,39 @@ module sentinel_soc_vip_uvm_top;
     force u_dut.core_data_be    = tb_be;
   end
 
-  // Assign monitor signals back to obi_if
   assign u_obi_if.gnt    = u_dut.core_data_gnt;
   assign u_obi_if.rvalid = u_dut.core_data_rvalid;
   assign u_obi_if.rdata  = u_dut.core_data_rdata;
   assign u_obi_if.err    = u_dut.core_data_err;
 
-  // DEBUG MONITOR
 `ifdef DEBUG_BUS_TRACE
   always @(posedge clk_i) begin
-    if (($time >= 140 && $time <= 350) || ($time >= 140000 && $time <= 350000) || u_obi_if.req || u_dut.core_data_rvalid || u_dut.apb_bridge_rvalid) begin
-      $display("[HW_TRACE_POS] %0t: req=%b gnt=%b rv=%b | demux_gnt=%b inflight=%0d sel_q=%0d sel_d=%0d | tsxn=%b penable=%b psel_tim=%b pen_gated=%b | pr_comb=%b pr_q=%b apb_pr=%b | port7_rv=%b sbr_rv=%b | irq=%b", 
-        $time, 
-        u_dut.core_data_req, u_dut.core_data_gnt, u_dut.core_data_rvalid,
-        u_dut.u_addr_decode.u_data_demux.sbr_port_gnt, u_dut.u_addr_decode.u_data_demux.in_flight,
-        u_dut.u_addr_decode.u_data_demux.select_q, u_dut.u_addr_decode.u_data_demux.select_d,
-        u_dut.u_obi_to_apb.gen_hs_buffers.tsxn_in_progress, u_dut.apb_req.penable, u_dut.psel_timer, u_dut.apb_penable_gated,
-        u_dut.apb_rsp_pready_comb, u_dut.apb_rsp_pready_q, u_dut.apb_rsp.pready,
-        u_dut.u_addr_decode.u_data_demux.mgr_ports_rsp_i[7].rvalid, u_dut.u_addr_decode.u_data_demux.sbr_port_rsp_o.rvalid,
-        u_dut.irq_timer_periph
-      );
-    end
-  end
-
-  always @(negedge clk_i) begin
-    if (($time >= 140 && $time <= 350) || ($time >= 140000 && $time <= 350000)) begin
-      $display("[HW_TRACE_NEG] %0t: vif_req=%b vif_gnt=%b vif_rv=%b | tsxn=%b penable=%b pen_gated=%b pr_q=%b | port7_rv=%b core_rv=%b | irq=%b",
-        $time,
-        u_obi_if.req, u_obi_if.gnt, u_obi_if.rvalid,
-        u_dut.u_obi_to_apb.gen_hs_buffers.tsxn_in_progress, u_dut.apb_req.penable, u_dut.apb_penable_gated, u_dut.apb_rsp_pready_q,
-        u_dut.u_addr_decode.u_data_demux.mgr_ports_rsp_i[7].rvalid, u_dut.core_data_rvalid,
-        u_dut.irq_timer_periph
-      );
-    end
+    if (u_obi_if.req || u_dut.core_data_rvalid || u_dut.apb_req_struct.psel)
+      $display("[HW_TRACE] %0t: req=%b we=%b addr=%08h gnt=%b rv=%b err=%b rdata=%08h | psel=%b penable=%b paddr=%08h pready=%b pslverr=%b | irq_timer=%b",
+        $time, u_dut.core_data_req, u_dut.core_data_we, u_dut.core_data_addr,
+        u_dut.core_data_gnt, u_dut.core_data_rvalid, u_dut.core_data_err, u_dut.core_data_rdata,
+        u_dut.apb_req_struct.psel, u_dut.apb_req_struct.penable, u_dut.apb_req_struct.paddr,
+        u_dut.apb_rsp_struct.pready, u_dut.apb_rsp_struct.pslverr, u_dut.irq_timer_periph);
   end
 `endif
 `endif
 
   // ---------------------------------------------------------------------------
-  // UART RX Monitor Workaround
+  // UART RX: UartRxDriverBfm drives rx to 1. To avoid two drivers on that
+  // line, force it to the DUT's TX instead.
   // ---------------------------------------------------------------------------
-  // UartRxDriverBfm drives uartIf.rx procedurally (idle=1). Force the
-  // interface net itself continuously so both driver and monitor see
-  // dut_uart_tx. 'force' on a logic net beats procedural drivers.
-  assign u_uart_if.monitor_rx = dut_uart_tx;
+  initial begin
+    force u_uart_if.rx = dut_uart_tx;
+  end
 
   // ---------------------------------------------------------------------------
-  // Timer IRQ Interface Connection
+  // Timer IRQ
   // ---------------------------------------------------------------------------
   assign u_timer_if.irq_timer     = u_dut.irq_timer_periph;
-  assign u_timer_if.irq_timer_raw = u_dut.irq_timer_raw;
+  assign u_timer_if.irq_timer_raw = u_dut.timer_irqs;
+
   // ---------------------------------------------------------------------------
-  // UVM Initialization
+  // UVM
   // ---------------------------------------------------------------------------
   initial begin
     uvm_config_db#(virtual sentinel_soc_if)::set(null, "*", "vif", vif);
@@ -245,18 +314,19 @@ module sentinel_soc_vip_uvm_top;
     uvm_config_db#(virtual gpio_if)::set(null, "*", "vif_gpio", u_gpio_if);
     uvm_config_db#(virtual timer_irq_if)::set(null, "*", "vif_timer", u_timer_if);
     uvm_config_db#(virtual SpiInterface)::set(null, "*", "vif_spi", u_spi_if);
+    uvm_config_db#(virtual SpiMasterMonitorBFM)::set(null, "*", "SpiMasterMonitorBFM", u_spi_master_monitor_bfm);
     uvm_config_db#(virtual JtagIf)::set(null, "*", "vif_jtag", u_jtag_if);
     uvm_config_db#(virtual JtagTargetDeviceMonitorBfm)::set(null, "*", "jtagTargetDeviceMonitorBfm", u_jtag_target_mon_bfm);
-    
+
     run_test();
   end
 
   // ---------------------------------------------------------------------------
-  // Waveform Dumping
+  // Waveforms
   // ---------------------------------------------------------------------------
   initial begin
     $shm_open("waves_vip.shm");
-    $shm_probe("ACMT");
+    $shm_probe(sentinel_soc_vip_uvm_top, "AS");
   end
 
 endmodule

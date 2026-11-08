@@ -1,0 +1,100 @@
+// Verilated -*- C++ -*-
+// DESCRIPTION: Verilator output: Design implementation internals
+// See Vtb_secure_boot.h for the primary calling header
+
+#include "Vtb_secure_boot__pch.h"
+
+VL_ATTR_COLD void Vtb_secure_boot_sha512_pkg___eval_static__TOP__sha512_pkg(Vtb_secure_boot_sha512_pkg* vlSelf) {
+    VL_DEBUG_IF(VL_DBG_MSGF("+          Vtb_secure_boot_sha512_pkg___eval_static__TOP__sha512_pkg\n"); );
+    Vtb_secure_boot__Syms* const __restrict vlSymsp VL_ATTR_UNUSED = vlSelf->vlSymsp;
+    auto& vlSelfRef = std::ref(*vlSelf).get();
+    // Body
+    vlSelfRef.SHA512_IV[0U] = 0x6a09e667f3bcc908ULL;
+    vlSelfRef.SHA512_IV[1U] = 0xbb67ae8584caa73bULL;
+    vlSelfRef.SHA512_IV[2U] = 0x3c6ef372fe94f82bULL;
+    vlSelfRef.SHA512_IV[3U] = 0xa54ff53a5f1d36f1ULL;
+    vlSelfRef.SHA512_IV[4U] = 0x510e527fade682d1ULL;
+    vlSelfRef.SHA512_IV[5U] = 0x9b05688c2b3e6c1fULL;
+    vlSelfRef.SHA512_IV[6U] = 0x1f83d9abfb41bd6bULL;
+    vlSelfRef.SHA512_IV[7U] = 0x5be0cd19137e2179ULL;
+    vlSelfRef.K[0U] = 0x428a2f98d728ae22ULL;
+    vlSelfRef.K[1U] = 0x7137449123ef65cdULL;
+    vlSelfRef.K[2U] = 0xb5c0fbcfec4d3b2fULL;
+    vlSelfRef.K[3U] = 0xe9b5dba58189dbbcULL;
+    vlSelfRef.K[4U] = 0x3956c25bf348b538ULL;
+    vlSelfRef.K[5U] = 0x59f111f1b605d019ULL;
+    vlSelfRef.K[6U] = 0x923f82a4af194f9bULL;
+    vlSelfRef.K[7U] = 0xab1c5ed5da6d8118ULL;
+    vlSelfRef.K[8U] = 0xd807aa98a3030242ULL;
+    vlSelfRef.K[9U] = 0x12835b0145706fbeULL;
+    vlSelfRef.K[10U] = 0x243185be4ee4b28cULL;
+    vlSelfRef.K[11U] = 0x550c7dc3d5ffb4e2ULL;
+    vlSelfRef.K[12U] = 0x72be5d74f27b896fULL;
+    vlSelfRef.K[13U] = 0x80deb1fe3b1696b1ULL;
+    vlSelfRef.K[14U] = 0x9bdc06a725c71235ULL;
+    vlSelfRef.K[15U] = 0xc19bf174cf692694ULL;
+    vlSelfRef.K[16U] = 0xe49b69c19ef14ad2ULL;
+    vlSelfRef.K[17U] = 0xefbe4786384f25e3ULL;
+    vlSelfRef.K[18U] = 0x0fc19dc68b8cd5b5ULL;
+    vlSelfRef.K[19U] = 0x240ca1cc77ac9c65ULL;
+    vlSelfRef.K[20U] = 0x2de92c6f592b0275ULL;
+    vlSelfRef.K[21U] = 0x4a7484aa6ea6e483ULL;
+    vlSelfRef.K[22U] = 0x5cb0a9dcbd41fbd4ULL;
+    vlSelfRef.K[23U] = 0x76f988da831153b5ULL;
+    vlSelfRef.K[24U] = 0x983e5152ee66dfabULL;
+    vlSelfRef.K[25U] = 0xa831c66d2db43210ULL;
+    vlSelfRef.K[26U] = 0xb00327c898fb213fULL;
+    vlSelfRef.K[27U] = 0xbf597fc7beef0ee4ULL;
+    vlSelfRef.K[28U] = 0xc6e00bf33da88fc2ULL;
+    vlSelfRef.K[29U] = 0xd5a79147930aa725ULL;
+    vlSelfRef.K[30U] = 0x06ca6351e003826fULL;
+    vlSelfRef.K[31U] = 0x142929670a0e6e70ULL;
+    vlSelfRef.K[32U] = 0x27b70a8546d22ffcULL;
+    vlSelfRef.K[33U] = 0x2e1b21385c26c926ULL;
+    vlSelfRef.K[34U] = 0x4d2c6dfc5ac42aedULL;
+    vlSelfRef.K[35U] = 0x53380d139d95b3dfULL;
+    vlSelfRef.K[36U] = 0x650a73548baf63deULL;
+    vlSelfRef.K[37U] = 0x766a0abb3c77b2a8ULL;
+    vlSelfRef.K[38U] = 0x81c2c92e47edaee6ULL;
+    vlSelfRef.K[39U] = 0x92722c851482353bULL;
+    vlSelfRef.K[40U] = 0xa2bfe8a14cf10364ULL;
+    vlSelfRef.K[41U] = 0xa81a664bbc423001ULL;
+    vlSelfRef.K[42U] = 0xc24b8b70d0f89791ULL;
+    vlSelfRef.K[43U] = 0xc76c51a30654be30ULL;
+    vlSelfRef.K[44U] = 0xd192e819d6ef5218ULL;
+    vlSelfRef.K[45U] = 0xd69906245565a910ULL;
+    vlSelfRef.K[46U] = 0xf40e35855771202aULL;
+    vlSelfRef.K[47U] = 0x106aa07032bbd1b8ULL;
+    vlSelfRef.K[48U] = 0x19a4c116b8d2d0c8ULL;
+    vlSelfRef.K[49U] = 0x1e376c085141ab53ULL;
+    vlSelfRef.K[50U] = 0x2748774cdf8eeb99ULL;
+    vlSelfRef.K[51U] = 0x34b0bcb5e19b48a8ULL;
+    vlSelfRef.K[52U] = 0x391c0cb3c5c95a63ULL;
+    vlSelfRef.K[53U] = 0x4ed8aa4ae3418acbULL;
+    vlSelfRef.K[54U] = 0x5b9cca4f7763e373ULL;
+    vlSelfRef.K[55U] = 0x682e6ff3d6b2b8a3ULL;
+    vlSelfRef.K[56U] = 0x748f82ee5defb2fcULL;
+    vlSelfRef.K[57U] = 0x78a5636f43172f60ULL;
+    vlSelfRef.K[58U] = 0x84c87814a1f0ab72ULL;
+    vlSelfRef.K[59U] = 0x8cc702081a6439ecULL;
+    vlSelfRef.K[60U] = 0x90befffa23631e28ULL;
+    vlSelfRef.K[61U] = 0xa4506cebde82bde9ULL;
+    vlSelfRef.K[62U] = 0xbef9a3f7b2c67915ULL;
+    vlSelfRef.K[63U] = 0xc67178f2e372532bULL;
+    vlSelfRef.K[64U] = 0xca273eceea26619cULL;
+    vlSelfRef.K[65U] = 0xd186b8c721c0c207ULL;
+    vlSelfRef.K[66U] = 0xeada7dd6cde0eb1eULL;
+    vlSelfRef.K[67U] = 0xf57d4f7fee6ed178ULL;
+    vlSelfRef.K[68U] = 0x06f067aa72176fbaULL;
+    vlSelfRef.K[69U] = 0x0a637dc5a2c898a6ULL;
+    vlSelfRef.K[70U] = 0x113f9804bef90daeULL;
+    vlSelfRef.K[71U] = 0x1b710b35131c471bULL;
+    vlSelfRef.K[72U] = 0x28db77f523047d84ULL;
+    vlSelfRef.K[73U] = 0x32caab7b40c72493ULL;
+    vlSelfRef.K[74U] = 0x3c9ebe0a15c9bebcULL;
+    vlSelfRef.K[75U] = 0x431d67c49c100d4cULL;
+    vlSelfRef.K[76U] = 0x4cc5d4becb3e42b6ULL;
+    vlSelfRef.K[77U] = 0x597f299cfc657e2aULL;
+    vlSelfRef.K[78U] = 0x5fcb6fab3ad6faecULL;
+    vlSelfRef.K[79U] = 0x6c44198c4a475817ULL;
+}

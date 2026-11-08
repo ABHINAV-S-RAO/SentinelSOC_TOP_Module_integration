@@ -139,6 +139,7 @@ module ibex_core import ibex_pkg::*; #(
 
   // Debug Interface
   input  logic                         debug_req_i,
+  output logic                         debug_mode_o,        // SoC: core executing in debug mode
   output crash_dump_t                  crash_dump_o,
   // SEC_CM: EXCEPTION.CTRL_FLOW.LOCAL_ESC
   // SEC_CM: EXCEPTION.CTRL_FLOW.GLOBAL_ESC
@@ -377,6 +378,7 @@ module ibex_core import ibex_pkg::*; #(
 
   logic        debug_mode;
   logic        debug_mode_entering;
+  assign debug_mode_o = debug_mode;
   dbg_cause_e  debug_cause;
   logic        debug_csr_save;
   logic        debug_single_step;
@@ -474,6 +476,18 @@ module ibex_core import ibex_pkg::*; #(
   logic        rf_tag_we_load;       // Enable writing rf_we_tag_load to tag RF
   logic        ex_exception;         // EX-stage taint violation from ibex_dift_logic
   logic        pc_exception;         // PC tag violation (new add)
+
+  // Debug scratch CSR tags (finding D08): dscratch0/1 carry the tag of the
+  // value they hold, so s0/a0 -- which the debug ROM parks there -- keep
+  // their taint across halt/resume.
+  logic        dscratch0_tag_q, dscratch1_tag_q;
+
+  // Load address tag carried from issue to response, and the destination tag
+  // a load would get (for the bit 8 check)
+  logic        load_addr_tag_q;
+  logic        load_dest_tag_chk, load_dest_en_chk;
+  logic        csr_is_dscratch0, csr_is_dscratch1;
+  logic        regfile_wdata_tag_dbg; // EX result tag, or the dscratch tag for a dscratch read
 `endif
 
   //////////////////////
@@ -517,26 +531,53 @@ module ibex_core import ibex_pkg::*; #(
     .execute_pc_o  ( dift_pc_check   )
   );
 
-  // 2. Check if a LOAD operation violates the security policy (TCR-based)
-  //    Uses WB-stage signals: runs when rf_we_wb_o is asserted (load data retiring).
-  riscv_load_check u_ibex_load_check (
-    .regfile_wdata_wb_i_tag ( lsu_rdata_tag    ),  // tag of loaded word (from shadow RAM)
-    .rs1_i_tag              ( rf_rdata_a_tag   ),  // tag of base-address register
-    .regfile_dest_tag       ( rf_wdata_tag_wb  ),  // tag to be written to destination
-    .tcr_i                  ( tcr_csr          ),
-    .regfile_we_wb_i        ( rf_we_lsu         ),  // WB write enable (load retiring)
-    .exception_o            ( load_exception   )
-  );
+  // 2. Load address tag, captured when the load is issued.
+  //    The load response can arrive after the load has left ID/EX (with the
+  //    writeback stage, ID already holds the next instruction), so the tag RF
+  //    read port no longer shows the load's base register at that point.
+  //    Ibex has at most one data access outstanding (data_req_allowed), so one
+  //    register is enough; a new load can only be issued in the cycle its
+  //    predecessor's response arrives, and the flop updates after that cycle.
+  always_ff @(posedge clk_i or negedge rst_ni) begin
+    if (!rst_ni)                load_addr_tag_q <= 1'b0;
+    // (not on the second half of a misaligned load: its address comes from the
+    // LSU's last address, not rs1, and operand A carries no tag then)
+    else if (lsu_req && !lsu_we && !lsu_addr_incr_req)
+                                 load_addr_tag_q <= alu_op_a_tag_ex;  // rs1 tag (forwarded)
+  end
 
   // 3. Compute destination tag for LOAD (TPR-based propagation)
   //    Output rf_we_tag_load is the computed tag VALUE for the loaded register.
   riscv_load_propagation u_ibex_load_propagation (
     .regfile_wdata_wb_i_tag ( lsu_rdata_tag    ),  // tag of loaded word
-    .rs1_i_tag              ( rf_rdata_a_tag   ),  // tag of base-address register
+    .rs1_i_tag              ( load_addr_tag_q  ),  // tag of the load's base register
     .regfile_we_wb_i        ( rf_we_lsu         ),
     .tpr_i                  ( tpr_csr          ),
     .regfile_dest_tag       ( rf_we_tag_load   ),  // computed tag for destination
     .regfile_enable_tag     ( rf_tag_we_load   )
+  );
+
+  // Same propagation, evaluated on the raw response (for the bit 8 check;
+  // rf_we_lsu above already depends on the check result)
+  riscv_load_propagation u_ibex_load_propagation_chk (
+    .regfile_wdata_wb_i_tag ( lsu_rdata_tag    ),
+    .rs1_i_tag              ( load_addr_tag_q  ),
+    .regfile_we_wb_i        ( 1'b1             ),
+    .tpr_i                  ( tpr_csr          ),
+    .regfile_dest_tag       ( load_dest_tag_chk ),
+    .regfile_enable_tag     ( load_dest_en_chk  )
+  );
+
+  // 4. Loaded-data checks (TCR bits 7 / 8). The result goes to the LSU, which
+  //    turns it into a load access fault for this load (precise, mcause 5),
+  //    and the tainted value is not written to the register file.
+  riscv_load_check u_ibex_load_check (
+    .regfile_wdata_wb_i_tag ( lsu_rdata_tag     ),  // tag of loaded word (from shadow RAM)
+    .regfile_dest_tag       ( load_dest_tag_chk ),  // tag the destination would get
+    .regfile_dest_en        ( load_dest_en_chk  ),
+    .tcr_i                  ( tcr_csr           ),
+    .resp_valid_i           ( 1'b1              ),  // qualified with the response inside the LSU
+    .exception_o            ( load_exception    )
   );
 
   // 4. Decode ALU tag propagation MODE from TPR
@@ -562,7 +603,38 @@ module ibex_core import ibex_pkg::*; #(
   logic unused_dift_tmu;
   assign unused_dift_tmu = rf_tag_we_tmu ^ is_store_tmu ^ memory_set_tmu ^ is_store_post_tmu;
   assign pc_exception = instr_valid_id & dift_pc_check & pc_id_tag; //PC tag violation : new add
-  assign dift_exception_o = (load_exception | lsu_tag_err | ex_exception | pc_exception) & dift_en_i;
+  // load_exception is already contained in lsu_tag_err (qualified with the
+  // load response), so it is not ORed in again here.
+  assign dift_exception_o = (lsu_tag_err | ex_exception | pc_exception) & dift_en_i;
+
+  // 6. Debug scratch CSR tags (finding D08)
+  //    The debug ROM parks s0/a0 in dscratch0/1 on every debug entry
+  //    ("csrw dscratchN, reg") and restores them before running a command and
+  //    on resume ("csrr reg, dscratchN"). The CSRs used to keep only the value,
+  //    so a halt/resume silently cleared the taint of s0/a0. Each scratch CSR
+  //    now has a tag bit: a write stores the tag of its source operand, a read
+  //    returns the stored tag as the destination tag. The same path carries the
+  //    "debugger data is untrusted" tag (D06a) into a0 when the debugger writes
+  //    a0 (riscv-dbg routes that write through dscratch1).
+  assign csr_is_dscratch0 = csr_access && (csr_addr == CSR_DSCRATCH0);
+  assign csr_is_dscratch1 = csr_access && (csr_addr == CSR_DSCRATCH1);
+
+  always_ff @(posedge clk_i or negedge rst_ni) begin
+    if (!rst_ni) begin
+      dscratch0_tag_q <= 1'b0;
+      dscratch1_tag_q <= 1'b0;
+    end else if (csr_op_en && !illegal_csr_insn_id && (csr_op != CSR_OP_READ)) begin
+      // csrw replaces the value; csrs/csrc merge into it, so keep any old taint
+      if (csr_is_dscratch0)
+        dscratch0_tag_q <= (csr_op == CSR_OP_WRITE) ? alu_op_a_tag_ex : (dscratch0_tag_q | alu_op_a_tag_ex);
+      if (csr_is_dscratch1)
+        dscratch1_tag_q <= (csr_op == CSR_OP_WRITE) ? alu_op_a_tag_ex : (dscratch1_tag_q | alu_op_a_tag_ex);
+    end
+  end
+
+  // A dscratch read returns the old value (and tag) even when it also writes
+  assign regfile_wdata_tag_dbg = csr_is_dscratch0 ? dscratch0_tag_q :
+                                 csr_is_dscratch1 ? dscratch1_tag_q : regfile_wdata_tag;
 `endif
 
   //////////////
@@ -1019,8 +1091,8 @@ module ibex_core import ibex_pkg::*; #(
     .data_rdata_tag_i  (data_rdata_tag_gated),// tag from shadow RAM (masked by dift_en_i)
     .lsu_wdata_tag_i   (lsu_wdata_tag_lsu),   // store-data tag from EX
     .lsu_rdata_tag_o   (lsu_rdata_tag),       // loaded-data tag → WB
-    .lsu_tag_err_o     (lsu_tag_err),         // address taint violation
-    .tcr_load_check_i  (tcr_csr[LOADSTORE_CHECK_DA])  // policy bit: check address tag
+    .lsu_tag_err_o     (lsu_tag_err),         // loaded-data taint violation (bits 7 / 8)
+    .load_tag_viol_i   (load_exception & dift_en_i)   // from riscv_load_check
 `endif
   );
 
@@ -1080,7 +1152,7 @@ module ibex_core import ibex_pkg::*; #(
 `ifdef DIFT
     ,
     // From EX block: ALU/mult result tag
-    .rf_wdata_tag_id_i     (regfile_wdata_tag),   // EX result tag
+    .rf_wdata_tag_id_i     (regfile_wdata_tag_dbg), // EX result tag (dscratch tag on a dscratch read)
     .rf_we_tag_id_i        (rf_we_tag_ex_out),    // EX write-enable tag
     // From LSU: loaded data tag
     .rf_wdata_tag_lsu_i    (rf_we_tag_load),       // loaded-word tag
@@ -1399,10 +1471,15 @@ module ibex_core import ibex_pkg::*; #(
   // used in an unsafe manner, it raises a security exception."
   //
   // Sources of DIFT exceptions in this implementation:
-  //   load_exception : raised by riscv_load_check when a load violates TCR
-  //                    (tainted address or tainted source used as load address)
-  //   lsu_tag_err    : raised by ibex_load_store_unit when the memory address
-  //                    itself is tainted and LOADSTORE_CHECK_DA bit is set
+  //   ex_exception   : ibex_dift_logic in EX -- ALU / branch / jump checks,
+  //                    load address (bit 21), store address (bit 6), store
+  //                    data (bit 7). Illegal-instruction trap (mcause 2); the
+  //                    load/store never reaches the bus.
+  //   pc_exception   : tainted PC (bit 0), same trap.
+  //   load_exception : riscv_load_check on the load response -- loaded word
+  //                    tainted (bit 7) or propagated destination tag tainted
+  //                    (bit 8). Sent to the LSU as lsu_tag_err -> load access
+  //                    fault (mcause 5), value not written back.
   // ===========================================================================
 /*`ifdef DIFT
   // Suppress lint: lsu_rdata_tag is produced by LSU for potential future use;

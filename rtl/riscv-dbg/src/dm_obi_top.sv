@@ -67,7 +67,11 @@ module dm_obi_top #(
   parameter int unsigned        DmBaseAddress    = 'h1000, // default to non-zero page
   // Bitmask to select physically available harts for systems
   // that don't use hart numbers in a contiguous fashion.
-  parameter logic [NrHarts-1:0] SelectableHarts  = {NrHarts{1'b1}}
+  parameter logic [NrHarts-1:0] SelectableHarts        = {NrHarts{1'b1}},
+  // Maximum width supported by Access Register commands; must be 32 or 64.
+  parameter int unsigned        MaxRegisterAccessWidth = BusWidth,
+  // SentinelSoC: 0 = System Bus Access not implemented (see dm_csrs)
+  parameter bit                 SbaEnable              = 1'b1
 ) (
   input  logic                  clk_i,           // clock
   // asynchronous reset active low, connect PoR here, not the system reset
@@ -123,10 +127,12 @@ module dm_obi_top #(
 
   // dm_top instance
   dm_top #(
-    .NrHarts                 ( NrHarts               ),
-    .BusWidth                ( BusWidth              ),
-    .DmBaseAddress           ( DmBaseAddress         ),
-    .SelectableHarts         ( SelectableHarts       )
+    .NrHarts                ( NrHarts                ),
+    .BusWidth               ( BusWidth               ),
+    .DmBaseAddress          ( DmBaseAddress          ),
+    .SelectableHarts        ( SelectableHarts        ),
+    .MaxRegisterAccessWidth ( MaxRegisterAccessWidth ),
+    .SbaEnable              ( SbaEnable              )
   ) i_dm_top (
     .clk_i                   ( clk_i                 ),
     .rst_ni                  ( rst_ni                ),

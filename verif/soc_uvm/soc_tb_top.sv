@@ -127,10 +127,16 @@ module soc_tb_top;
   // ---------------------------------------------------------------------------
   // DUT Instantiation
   // ---------------------------------------------------------------------------
-  basic_soc_top u_dut (
+  // SECURE_BOOT=0: legacy mode, ISRAM fetch gated by the crypto_verified
+  // pin as before. This UVM env preloads unsigned firmware into ISRAM; move
+  // to SECURE_BOOT=1 once it loads signed images (see verif/debugger/images).
+  basic_soc_top #(
+    .SECURE_BOOT         ( 1'b0 )
+  ) u_dut (
     .clk_i               ( clk_i ),
     .rst_ni              ( rst_ni ),
     .crypto_verified_i   ( crypto_verified ),
+    .boot_mode_i         ( 1'b0            ),   // normal boot (no JTAG recovery)
 `ifdef DIFT
     .dift_en_i           ( dift_en ),
 `endif
@@ -162,6 +168,13 @@ module soc_tb_top;
     .spi_mode_o          ( spi_mode_o ),
     .spi_sdo_o           ( spi_sdo_o ),
     .spi_sdi_i           ( spi_sdi_i ),
+    .spi2_clk_o        (                ),   // general-purpose SPI unused here
+    .spi2_csn_o        (                ),
+    .spi2_sdo_o        (                ),
+    .spi2_sdi_i        ( 1'b0           ),
+    .gpio_in_i         ( 32'h0          ),   // GPIO unused here
+    .gpio_out_o        (                ),
+    .gpio_dir_o        (                ),
 
     .data_req_o          ( data_req ),
     .data_gnt_i          ( data_gnt ),

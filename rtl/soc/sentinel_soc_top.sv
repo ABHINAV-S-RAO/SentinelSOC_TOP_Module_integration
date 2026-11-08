@@ -917,38 +917,36 @@ soc_addr_decode #(
   assign psel_spi   = apb_req.psel && (apb_req.paddr >= 32'h1050_2000 && apb_req.paddr < 32'h1050_3000);
   assign psel_gpio  = apb_req.psel && (apb_req.paddr >= 32'h1060_0000 && apb_req.paddr < 32'h1060_1000);
 
-  // APB response mux — combine responses from all peripherals
+    // ---------------------------------------------------------------------------
+  // APB response mux + 1-cycle PREADY stretch
+  // (stretch added so obi_demux's registered select_q always has a chance
+  //  to catch up to the just-granted port before rvalid appears — see the
+  //  cold-start hazard writeup)
+  // ---------------------------------------------------------------------------
+  logic apb_rsp_pready_comb;
+  logic apb_rsp_pready_d, apb_rsp_pready_q;
+
   always_comb begin
-    apb_rsp.prdata  = 32'h0;
-    apb_rsp.pready  = 1'b1;
-    apb_rsp.pslverr = 1'b0;
-    if (psel_uart) begin
-      apb_rsp.prdata  = prdata_uart;
-      apb_rsp.pready  = pready_uart;
-      apb_rsp.pslverr = pslverr_uart;
-    end
-    if (psel_timer) begin
-      apb_rsp.prdata  = prdata_timer;
-      apb_rsp.pready  = pready_timer;
-      apb_rsp.pslverr = pslverr_timer;
-    end
-    if (psel_qspi) begin
-      apb_rsp.prdata  = prdata_qspi;
-      apb_rsp.pready  = pready_qspi;
-      apb_rsp.pslverr = pslverr_qspi;
-    end
-    if (psel_spi) begin
-      apb_rsp.prdata  = prdata_spi;
-      apb_rsp.pready  = pready_spi & apb_req.penable; //gate with penable
-      apb_rsp.pslverr = pslverr_spi;
-    end
-    if (psel_gpio) begin
-      apb_rsp.prdata  = prdata_gpio;
-      apb_rsp.pready  = pready_gpio & apb_req.penable; //gate with penable
-      apb_rsp.pslverr = pslverr_gpio;
-    end
+    apb_rsp.prdata      = 32'h0;
+    apb_rsp_pready_comb = 1'b1;
+    apb_rsp.pslverr     = 1'b0;
+    if (psel_uart)  begin apb_rsp.prdata = prdata_uart;  apb_rsp_pready_comb = pready_uart;  apb_rsp.pslverr = pslverr_uart;  end
+    if (psel_timer) begin apb_rsp.prdata = prdata_timer; apb_rsp_pready_comb = pready_timer; apb_rsp.pslverr = pslverr_timer; end
+    if (psel_qspi)  begin apb_rsp.prdata = prdata_qspi;  apb_rsp_pready_comb = pready_qspi;  apb_rsp.pslverr = pslverr_qspi;  end
+    if (psel_spi)   begin apb_rsp.prdata = prdata_spi;   apb_rsp_pready_comb = pready_spi;   apb_rsp.pslverr = pslverr_spi;   end
+    if (psel_gpio)  begin apb_rsp.prdata = prdata_gpio;  apb_rsp_pready_comb = pready_gpio;  apb_rsp.pslverr = pslverr_gpio;  end
   end
 
+  assign apb_rsp_pready_d = apb_rsp_pready_comb & apb_req.penable & ~apb_rsp_pready_q;
+
+  always_ff @(posedge clk_i or negedge rst_ni) begin
+    if (!rst_ni) apb_rsp_pready_q <= 1'b0;
+    else         apb_rsp_pready_q <= apb_rsp_pready_d;
+  end
+
+  assign apb_rsp.pready = apb_req.penable ? apb_rsp_pready_q : 1'b0;
+  wire apb_penable_gated = apb_req.penable & ~apb_rsp_pready_q;
+  
   // ---------------------------------------------------------------------------
   // APB peripheral stubs
   // TODO: replace each with actual CrocSoC IP instantiation
@@ -966,7 +964,7 @@ soc_addr_decode #(
     .PWDATA (apb_req.pwdata),
     .PWRITE (apb_req.pwrite),
     .PSEL (psel_uart),
-    .PENABLE (apb_req.penable),
+    .PENABLE (apb_penable_gated),
     .PRDATA (prdata_uart),
     .PREADY (pready_uart),
     .PSLVERR (pslverr_uart),
@@ -1014,6 +1012,7 @@ soc_addr_decode #(
     .spi_sdi2 ( 1'b0 ),
     .spi_sdi3 ( 1'b0 )
   );
+
 
   // QSPI
   logic [1:0] qspi_events;
@@ -1093,9 +1092,26 @@ soc_addr_decode #(
     .interrupt         (irq_gpio)
   );
 
-  // Timer
-  // u_apb_timer : apb_timer #(...) (...)
-  assign irq_timer_periph = 1'b0;
+  // Timer (PULP apb_timer)
+  logic [3:0] irq_timer_raw;
+  apb_timer #(
+    .APB_ADDR_WIDTH ( 12 ),
+    .TIMER_CNT      ( 2  )
+  ) u_apb_timer (
+    .HCLK           ( clk_i              ),
+    .HRESETn        ( rst_ni             ),
+    .PADDR          ( apb_req.paddr[11:0] ),
+    .PWDATA         ( apb_req.pwdata     ),
+    .PWRITE         ( apb_req.pwrite     ),
+    .PSEL           ( psel_timer         ),
+    .PENABLE        ( apb_req.penable    ),
+    .PRDATA         ( prdata_timer       ),
+    .PREADY         ( pready_timer       ),
+    .PSLVERR        ( pslverr_timer      ),
+    .irq_o          ( irq_timer_raw      )
+  );
+
+  assign irq_timer_periph = |irq_timer_raw;
 
   // OBI -> PLIC reg adapter
   // OBI is req/gnt/rvalid, reg bus is valid/ready/rdata

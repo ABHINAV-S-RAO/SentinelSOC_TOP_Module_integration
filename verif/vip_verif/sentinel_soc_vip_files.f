@@ -1,5 +1,5 @@
 // =============================================================================
-// VIP "NoCore" testbench filelist -- DUT is basic_soc_top (the tape-out SoC).
+// VIP "NoCore" testbench filelist -- DUT is final_soc_top (the tape-out SoC).
 // The chip part below is the same RTL list as verif/soc/files_full_soc.f;
 // keep the two in step when RTL files are added or renamed.
 // =============================================================================
@@ -8,9 +8,10 @@
 +incdir+rtl/core/ibex_core/vendor/lowrisc_ip/dv/sv/dv_utils
 +incdir+rtl/core/ibex_core/vendor/lowrisc_ip/ip/prim/rtl
 +incdir+rtl/core/ibex_core/vendor/lowrisc_ip/ip/prim_generic/rtl
-+incdir+.bender/git/checkouts/common_cells-229df333cc9dff23/include
-+incdir+.bender/git/checkouts/apb-1b178314edfb6925/include
-+incdir+.bender/git/checkouts/obi-75858655e8b256db/include
+// Same absolute bender paths as verif/bender_files.f and files_full_soc.f
++incdir+/home/ibexcore/project/SentinelSOC_TOP_Module_integration/.bender/git/checkouts/common_cells-229df333cc9dff23/include
++incdir+/home/ibexcore/project/SentinelSOC_TOP_Module_integration/.bender/git/checkouts/apb-1b178314edfb6925/include
++incdir+/home/ibexcore/project/SentinelSOC_TOP_Module_integration/.bender/git/checkouts/obi-75858655e8b256db/include
 +incdir+rtl/obi_wrapper
 +incdir+verif/debugger
 
@@ -61,6 +62,9 @@ rtl/peripheral/apb_spi_master/spi_master_rx.sv
 rtl/peripheral/apb_spi_master/spi_master_apb_if.sv
 rtl/peripheral/apb_spi_master/spi_master_controller.sv
 rtl/peripheral/apb_spi_master/apb_spi_master.sv
+
+// GPIO (PULP apb_gpio submodule): the VIP top builds the chip with HAS_GPIO=1
+rtl/peripheral/apb_gpio/rtl/apb_gpio.sv
 
 // PLIC
 rtl/Interrupts/plic/plic_regmap.sv
@@ -116,7 +120,7 @@ rtl/soc/soc_ctrl_regs.sv
 rtl/soc/soc_buffer.sv
 rtl/soc/soc_secure_boot.sv
 rtl/soc/soc_recovery.sv
-rtl/soc/basic_soc_top.sv
+rtl/soc/final_soc_top.sv
 
 // External memory models (BootROM / ISRAM / DSRAM macros)
 verif/debugger/bootrom_model.sv

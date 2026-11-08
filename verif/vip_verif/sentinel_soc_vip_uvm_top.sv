@@ -1,7 +1,7 @@
 `timescale 1ns/1ps
 
 // =============================================================================
-// sentinel_soc_vip_uvm_top -- VIP "NoCore" testbench for basic_soc_top
+// sentinel_soc_vip_uvm_top -- VIP "NoCore" testbench for final_soc_top
 // (the tape-out SoC). The Ibex core is switched off and a UVM OBI CPU agent
 // drives the core's data bus; the UART/SPI/JTAG AVIPs, the QSPI flash BFM,
 // the GPIO VIP and the timer IRQ interface watch/drive the chip pins.
@@ -136,7 +136,7 @@ module sentinel_soc_vip_uvm_top;
   // ---------------------------------------------------------------------------
   // DUT: the tape-out SoC
   // ---------------------------------------------------------------------------
-  basic_soc_top #(
+  final_soc_top #(
 `ifdef NO_CORE
     .BOOT_WDT_CYCLES   ( 0 ),               // no core -> no boot -> no watchdog
 `endif

@@ -427,9 +427,22 @@ It takes seconds.
 
 ---
 
-## 5. The five "DIFT-FINDINGS" in every run
+## 5. The "DIFT-FINDINGS"
 
-`dift_dbg_tb` and `secure_boot_dbg_tb` end with
+> **Status update (2026-10-25)**, details in `docs/USER_MODE_AND_DIFT_CHANGES.md`:
+>
+> | Finding | Status | How |
+> |---|---|---|
+> | D06a | **Closed** | Option (b): DM data-window loads in debug mode return tag 1 (`basic_soc_top.sv`) |
+> | D08a/b | **Closed** | Option (b): `dscratch0/1` carry a tag bit (`ibex_core.sv`) |
+> | D03 | **By design, not a bug** | The policy architecture does not block tainted store *data*; only a tainted *address* traps. The TBs now print it as `[OBS]`. |
+> | D12 | **Closed** | The `dift_en_i` pin was removed; DIFT is always on |
+>
+> The testbenches now **check** D06a and D08 (a regression is a `[FAIL]`), so
+> both debugger TBs end with `DIFT-FINDINGS=0`. The text below is the original
+> analysis.
+
+Originally, `dift_dbg_tb` and `secure_boot_dbg_tb` ended with
 `DIFT-FINDINGS=5`. These are **not failures**: debug works correctly. Each one
 is a place where **DIFT semantics break when the debugger is involved**. The
 testbench reports them so they stay visible until a design decision closes
@@ -442,7 +455,7 @@ target, branch operand, load/store address or data, ALU operands...).
 Violations either raise a synchronous exception (`ex_tag_err`) or pulse the
 DIFT interrupt (`irq_nm`).
 
-### D06a: a debugger register write clears the register's taint
+### D06a: a debugger register write clears the register's taint *(closed: option b)*
 - **Seen in**: S1. `t1` is tainted; the debugger writes `t1` → tag becomes 0.
 - **Why**: an abstract register write executes `lw t1, 0x380(a0)`, loading
   from the DM's `data0`. The DM is not DSRAM, so the tag RAM returns tag 0, and
@@ -455,7 +468,7 @@ DIFT interrupt (`irq_nm`).
     like debugger stores to DSRAM. With TCR bit 6 set, this makes debugger
     register writes fault: the debugger becomes read-only by policy.
 
-### D08a / D08b: `s0` and `a0` lose their taint across halt/resume
+### D08a / D08b: `s0` and `a0` lose their taint across halt/resume *(closed: option b)*
 - **Seen in**: S1. Tainted `s0`/`a0` come back clean after halt → resume.
 - **Why**: the debug ROM uses `s0` and `a0` as scratch registers (Section 1.3).
   It saves their **values** in `dscratch0/1` and restores them with `csrr`, but
@@ -469,7 +482,7 @@ DIFT interrupt (`irq_nm`).
     untouched; but abstract writes would then keep the *old* tag).
   - (b) Add tag bits to `dscratch0/1` and save/restore them with the value.
 
-### D03: a tainted register can be read out over JTAG
+### D03: a tainted register can be read out over JTAG *(by design: tainted store data is not blocked)*
 - **Seen in**: S2. `t1` holds a tainted secret; an abstract read returns it in `data0`.
 - **Why**:
   - An abstract read is `sw t1, 0x380(a0)`, a store to the DM, not DSRAM, so
@@ -484,7 +497,7 @@ DIFT interrupt (`irq_nm`).
     store-data tag at the request, not the response).
   - (c) Debug authentication / lifecycle lock (riscv-dbg hardwires `authenticated=1`).
 
-### D12: `dift_en_i = 0` does not fully disable DIFT
+### D12: `dift_en_i = 0` does not fully disable DIFT *(closed: pin removed)*
 - **Seen in**: S5. With `dift_en_i=0`, a tainted source still faults
   program-buffer code (`addi s1, t1, 0` → `cmderr=3`).
 - **Why**: `dift_en_i` only masks memory tags and the DIFT interrupt

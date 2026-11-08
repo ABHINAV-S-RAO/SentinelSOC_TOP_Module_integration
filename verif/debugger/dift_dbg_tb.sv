@@ -766,31 +766,26 @@ module dift_dbg_tb;
       finding("D07b", "abstract read of tainted t1 copied its taint into tag_mem[0xE0] = shadow tag of DSRAM 0x20380 (data0 aliases a real DSRAM word)");
     check(`TAGRF[T1] === 1'b1, "t1 tag preserved by an abstract read");
 
-    u_dut.tag_mem[TAG_DATA0] = 1'b0;
+    // D06a (closed): every value the debugger writes into a register is loaded
+    // from the DM data registers, which read as tainted in debug mode -- the
+    // register is tagged UNTRUSTED, like a debugger store into DSRAM.
     reg_write(gpr(T1), 32'h0000_1234, err);
     check(err == 0 && `GPR[T1] == 32'h1234, "debugger write of t1 lands in the RF");
-    if (`TAGRF[T1] !== 1'b1)
-      finding("D06a", $sformatf("debugger write to tainted t1 CLEARED its tag (now %b): the value is loaded from DM data0 (untagged, reads tag 0), so debugger-written registers are clean -- open decision: tag them untrusted",
-                                `TAGRF[T1]));
-    u_dut.tag_mem[TAG_DATA0] = 1'b1;
+    check(`TAGRF[T1] === 1'b1,
+          $sformatf("D06a: debugger-written t1 tagged UNTRUSTED (tag=%b)", `TAGRF[T1]));
     reg_write(gpr(S1), 32'h0000_5678, err);
-    if (`TAGRF[S1] === 1'b1)
-      finding("D06b", "debugger write to clean s1 TAINTED it because tag_mem[0xE0] (DSRAM 0x20380) happened to be tainted -- tag of debugger-written data is an alias artefact");
-    else obs($sformatf("s1 tag after debugger write with tag_mem[0xE0]=1: %b", `TAGRF[S1]));
+    check(`TAGRF[S1] === 1'b1,
+          $sformatf("D06a: debugger write taints a clean register too, independent of any DSRAM tag (s1 tag=%b)", `TAGRF[S1]));
     reg_write(gpr(S1), VAL_S1, err);
 
     resume(ok);
     check(ok, "resume with tainted state");
     heartbeat(ok);
     check(ok, "firmware continues after resume");
-    if (`TAGRF[S0] !== 1'b1)
-      finding("D08a", $sformatf("s0 lost its taint across halt/resume (tag=%b): debug ROM uses s0 as scratch (add/lbu) and restores the VALUE from dscratch0, which has no tag",
-                                `TAGRF[S0]));
-    else pass("s0 taint survives halt/resume");
-    if (`TAGRF[A0] !== 1'b1)
-      finding("D08b", $sformatf("a0 lost its taint across halt/resume (tag=%b): debug ROM recomputes a0 (auipc/srli/slli) and restores the VALUE from dscratch1 only",
-                                `TAGRF[A0]));
-    else pass("a0 taint survives halt/resume");
+    // D08 (closed): the debug ROM parks s0/a0 in dscratch0/1, which now keep
+    // the tag along with the value
+    check(`TAGRF[S0] === 1'b1, $sformatf("D08a: s0 taint survives halt/resume (tag=%b)", `TAGRF[S0]));
+    check(`TAGRF[A0] === 1'b1, $sformatf("D08b: a0 taint survives halt/resume (tag=%b)", `TAGRF[A0]));
     check(`GPR[S0] == SEC_S0 && `GPR[A0] == SEC_A0, "s0/a0 values restored correctly");
 
     // -------------------------------------------------------------------------
@@ -821,8 +816,11 @@ module dift_dbg_tb;
     reg_read(gpr(T1), r, err);
     obs($sformatf("abstract READ of tainted t1 under store-source check: cmderr=%0d data0=%08h (%s), DIFT events in debug=%0d",
                   err, r, (r == SEC_T1) ? "SECRET VISIBLE" : "not leaked", mon_dift_dbg));
+    // D03 (by design): the policy architecture does not block stores of
+    // tainted DATA -- only a tainted ADDRESS raises an exception. The abstract
+    // read stores t1 through a clean address (a0 = DM base), so it completes.
     if (r == SEC_T1)
-      finding("D03", $sformatf("tainted t1 reached DM data0 and was read out over JTAG (cmderr=%0d): the DIFT store check fires only on the store RESPONSE, after the tainted word is already written", err));
+      obs("D03 (by design): tainted store data is not blocked, only tainted addresses trap -- abstract read of tainted t1 completes");
     mon_clear();
     reg_write(gpr(T1), 32'h0000_7777, err);
     obs($sformatf("abstract WRITE of tainted t1: cmderr=%0d rf=%08h tag=%b", err, `GPR[T1], `TAGRF[T1]));
@@ -920,7 +918,7 @@ module dift_dbg_tb;
     halt(ok);
     reg_write(gpr(T3), DSRAM_BASE + 4*W_DBGWR, err);
     reg_write(gpr(S1), 32'h0BAD_DA7A, err);
-    check(`TAGRF[S1] === 1'b0, "(info) debugger-written GPR is clean: register tags are not debugger-tainted");
+    check(`TAGRF[S1] === 1'b1, "debugger-written GPR tagged UNTRUSTED, same rule as DSRAM (D06a)");
     progbuf_run(sw(S1, T3, 0), EBREAK, err);
     check(err == 0 && u_dsram.mem[W_DBGWR] == 32'h0BAD_DA7A,
           $sformatf("debugger store into DSRAM lands (err=%0d mem=%08h)", err, u_dsram.mem[W_DBGWR]));

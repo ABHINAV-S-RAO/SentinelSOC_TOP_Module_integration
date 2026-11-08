@@ -4,14 +4,27 @@
 # Linked at the ISRAM entry 0x0001_0044 (image = 17-word header + this code),
 # with a 256-byte aligned vector table (Ibex mtvec is vectored-only),
 # signed with software/tools/sign_image.py and booted by software/boot/bootrom.S.
-# Exercises, in order, printing progress over UART:
+#
+# Privilege model (docs/USER_MODE_AND_DIFT_CHANGES.md):
+#   Startup code runs in MACHINE mode, exactly once:
+#     mtvec -> clear DSRAM -> park the machine timer -> DIFT policy (TPR, TCR:
+#     written ONCE, here) -> interrupt enables (mie) -> mret into USER mode.
+#   The application runs in USER mode. TCR/TPR (and every other machine CSR)
+#   are out of its reach: a write is an illegal instruction. The only switches
+#   back to Machine mode are traps -- interrupts and exceptions -- and the trap
+#   handler returns to User mode with mret.
+#
+# The User-mode application exercises, in order, printing progress over UART:
 #   1. UART output from verified code
-#   2. SPI #2 (APB 0x1050_2000): transmit one byte 0xA5 on CS0
-#   3. CLINT machine-timer interrupt  (mtimecmp -> irq_timer -> mcause 7)
-#   4. PLIC external interrupt from the APB timer compare (source 5 -> mcause 11,
+#   2. proof of User mode: csrw tcr, zero must trap (illegal instruction,
+#      mcause 2); the handler skips it once and records it in DSRAM[3]
+#   2b. peripheral input is tainted: a UART register value stored to DSRAM
+#      carries DIFT tag 1, a constant stored next to it tag 0
+#   3. SPI #2 (APB 0x1050_2000): transmit one byte 0xA5 on CS0
+#   4. CLINT machine-timer interrupt  (mtimecmp -> irq_timer -> mcause 7)
+#   5. PLIC external interrupt from the APB timer compare (source 5 -> mcause 11,
 #      claim/complete)
-#   5. writes TEST_PASS (0xB007B007) to DSRAM[0] and idles
-# Startup: mtvec first, then the whole DSRAM data area is cleared.
+#   6. writes TEST_PASS (0xB007B007) to DSRAM[0] and idles
 # Any unexpected trap writes 0xDEAD0000|mcause to DSRAM[0] and halts.
 # =============================================================================
 
@@ -28,10 +41,27 @@
     .equ PLIC_CC0,     0x0C200004
     .equ IRQ_TIMER,    5
 
-    .equ DSRAM_BASE,   0x00020000      # [0] result  [4] mtimer count  [8] last PLIC id
+    # DSRAM byte offsets: [0] result  [4] mtimer count  [8] last PLIC id
+    #   [12] U-mode check  [16] UART data (tainted)  [20] constant (clean)
+    .equ DSRAM_BASE,   0x00020000
     .equ STACK_TOP,    0x00021000
     .equ TEST_PASS,    0xB007B007
     .equ TEST_FAIL,    0xDEAD0000
+
+    # DIFT policy, written once by the Machine-mode startup code.
+    #   TPR: every instruction class ORs its source tags into the result,
+    #        loads propagate the memory tag (bit 15).
+    #   TCR: trap if the PC is tainted (bit 0) or if a jump target register
+    #        is tainted (bit 1). Bit 6 (LOADSTORE_CHECK_DA) is NOT set: in this
+    #        RTL it also makes the load-store unit trap on every load that
+    #        returns a tainted word -- i.e. on every peripheral read, since
+    #        peripheral input is tainted (docs/USER_MODE_AND_DIFT_CHANGES.md).
+    .equ DIFT_TPR,     0x0000AAAA
+    .equ DIFT_TCR,     0x00000003
+
+    # mstatus.MPP (bits 12:11) and the machine interrupt enables
+    .equ MSTATUS_MPP,  0x1800
+    .equ MIE_MTIE_MEIE, 0x880
 
     .text
 _start:
@@ -46,12 +76,14 @@ vector_table:
     j    trap_handler
     .endr
 
+# -----------------------------------------------------------------------------
+# Machine-mode startup (runs once, right after the hardware handoff)
+# -----------------------------------------------------------------------------
 main:
-    # Firmware rules (docs/SOC_MODES_AND_SECURITY.md): mtvec FIRST -- it resets
-    # to the BootROM, which is no longer executable after the handoff -- then
-    # clear the DSRAM data area so nothing left by a recovery session (or a
-    # previous boot) is trusted. Clearing with clean registers also clears the
-    # DIFT tags of every word.
+    # mtvec FIRST -- it resets to the BootROM, which is no longer executable
+    # after the handoff -- then clear the DSRAM data area so nothing left by a
+    # recovery session (or a previous boot) is trusted. Clearing with clean
+    # registers also clears the DIFT tags of every word.
     la   t0, vector_table
     ori  t0, t0, 1                    # MODE=vectored (Ibex ignores/forces it anyway)
     csrw mtvec, t0
@@ -62,12 +94,64 @@ clear_dsram:
     addi t0, t0, 4
     bltu t0, t1, clear_dsram
     li   sp, STACK_TOP
+
+    # Park the machine timer (mtimecmp = all ones) before enabling its
+    # interrupt: M-level interrupts are always taken while in User mode.
+    li   t0, CLINT_MTIMECMP_HI
+    li   t1, -1
+    sw   t1, 0(t0)
+    li   t0, CLINT_MTIMECMP_LO
+    sw   t1, 0(t0)
+
+    # DIFT policy: the one and only write (Machine mode only)
+    li   t0, DIFT_TPR
+    csrw tpr, t0
+    li   t0, DIFT_TCR
+    csrw tcr, t0
+
+    # Interrupt enables. mstatus.MIE stays 0: Machine mode itself is never
+    # interrupted; in User mode M-level interrupts are always enabled.
+    li   t0, MIE_MTIE_MEIE
+    csrw mie, t0
+
+    # Drop to User mode: mstatus.MPP = U (00), mepc = user_main, mret
+    li   t0, MSTATUS_MPP
+    csrc mstatus, t0
+    la   t0, user_main
+    csrw mepc, t0
+    mret
+
+# -----------------------------------------------------------------------------
+# User-mode application
+# -----------------------------------------------------------------------------
+user_main:
     li   s0, UART_BASE
     li   s1, DSRAM_BASE
     la   a0, msg_hello
     jal  ra, puts
 
-    # ---- 1. SPI #2: send 0xA5 --------------------------------------------------
+    # ---- 1. User mode really is User mode -------------------------------------
+    li   t0, 1
+    sw   t0, 12(s1)                   # DSRAM[3] = 1: one illegal trap expected
+    csrw tcr, zero                    # Machine-only CSR: traps, the handler skips it
+    lw   t1, 12(s1)
+    li   t2, 2
+    bne  t1, t2, fail_code            # trap not seen -> not in User mode
+    la   a0, msg_umode
+    jal  ra, puts
+
+    # ---- 1b. Peripheral input is tainted ----------------------------------------
+    # Loads from the APB peripheral window return DIFT tag 1; with this TPR
+    # (loads OR in the memory tag) the register is tainted and the store
+    # carries the taint into DSRAM. A constant stored next to it stays clean.
+    lw   t1, UART_LSR(s0)             # data from a peripheral -> tag 1
+    sw   t1, 16(s1)                   # DSRAM[4] inherits the taint
+    li   t1, 0x5A
+    sw   t1, 20(s1)                   # DSRAM[5] clean
+    la   a0, msg_taint
+    jal  ra, puts
+
+    # ---- 2. SPI #2: send 0xA5 --------------------------------------------------
     li   t0, SPI2_BASE
     sw   zero, 0x04(t0)               # CLKDIV
     sw   zero, 0x10(t0)               # clear LEN first
@@ -87,24 +171,21 @@ spi_wait:
     la   a0, msg_spi
     jal  ra, puts
 
-    # ---- 2. CLINT machine timer -----------------------------------------------
+    # ---- 3. CLINT machine timer (MTIE already enabled by the startup code) ----
     li   t0, CLINT_MTIME_LO
     lw   t1, 0(t0)
     addi t1, t1, 500
     li   t0, CLINT_MTIMECMP_LO
-    sw   t1, 0(t0)
+    sw   t1, 0(t0)                    # HI is still all ones: not armed yet
     li   t0, CLINT_MTIMECMP_HI
-    sw   zero, 0(t0)                  # mtime < 2^32 this early in simulation
-    li   t0, 0x80
-    csrs mie, t0                      # MTIE
-    csrsi mstatus, 8                  # MIE
+    sw   zero, 0(t0)                  # armed (mtime < 2^32 this early in simulation)
 mtimer_wait:
     lw   t1, 4(s1)
     beqz t1, mtimer_wait
     la   a0, msg_mtimer
     jal  ra, puts
 
-    # ---- 3. PLIC external interrupt from the APB timer ------------------------
+    # ---- 4. PLIC external interrupt from the APB timer (MEIE already on) ------
     li   t0, PLIC_PRIO5
     li   t1, 1
     sw   t1, 0(t0)
@@ -113,8 +194,6 @@ mtimer_wait:
     sw   t1, 0(t0)
     li   t0, PLIC_THRESH0
     sw   zero, 0(t0)
-    li   t0, 0x800
-    csrs mie, t0                      # MEIE
     li   t0, TIMER_BASE
     sw   zero, 0(t0)                  # TIMER = 0
     li   t1, 200
@@ -135,7 +214,7 @@ plic_wait:
     la   a0, msg_pass
     jal  ra, puts
 idle:
-    wfi
+    wfi                               # legal in User mode (mstatus.TW = 0)
     j    idle
 
 fail_code:
@@ -147,7 +226,9 @@ fail_code:
     j    idle
 
 # -----------------------------------------------------------------------------
-# Trap handler: machine timer and PLIC external interrupts; anything else fails
+# Trap handler (Machine mode): machine timer and PLIC external interrupts, the
+# one expected illegal instruction from the User-mode check; anything else
+# fails. mret returns to the interrupted mode (User).
 # -----------------------------------------------------------------------------
     .align 2
 trap_handler:
@@ -164,7 +245,7 @@ trap_handler:
     beq  t0, t1, irq_mtimer
     li   t1, 11
     beq  t0, t1, irq_external
-    j    trap_exception
+    j    trap_fatal
 irq_mtimer:
     li   t0, CLINT_MTIMECMP_HI
     li   t1, -1
@@ -188,10 +269,24 @@ trap_return:
     addi sp, sp, 16
     mret
 trap_exception:
+    # The User-mode check expects exactly one illegal instruction (mcause 2)
+    # while DSRAM[3] == 1: record it (DSRAM[3] = 2) and skip the instruction.
+    csrr t1, mcause
+    li   t0, 2
+    bne  t1, t0, trap_fatal
+    lw   t0, 12(s1)
+    li   t2, 1
+    bne  t0, t2, trap_fatal
+    li   t0, 2
+    sw   t0, 12(s1)
+    csrr t0, mepc
+    addi t0, t0, 4
+    csrw mepc, t0
+    j    trap_return
+trap_fatal:
     csrr t1, mcause
     li   t0, TEST_FAIL
     or   t0, t0, t1
-    li   s1, DSRAM_BASE
     sw   t0, 0(s1)
     j    idle
 
@@ -210,6 +305,8 @@ puts_done:
     ret
 
 msg_hello:  .asciz "[APP] hello from verified firmware in ISRAM\r\n"
+msg_umode:  .asciz "[APP] running in User mode: TCR write trapped\r\n"
+msg_taint:  .asciz "[APP] UART data stored to DSRAM (tainted by hardware)\r\n"
 msg_spi:    .asciz "[APP] SPI2 byte sent\r\n"
 msg_mtimer: .asciz "[APP] CLINT timer interrupt OK\r\n"
 msg_plic:   .asciz "[APP] PLIC external interrupt OK (APB timer, source 5)\r\n"

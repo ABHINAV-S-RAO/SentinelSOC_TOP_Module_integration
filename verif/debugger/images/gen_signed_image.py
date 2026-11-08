@@ -22,7 +22,9 @@ Outputs (next to this script):
     recovery_signed.mem  ISRAM words as the core sees them (little-endian)
     dift_fw_signed.mem   signed DIFT test firmware for secure_boot_dbg_tb (it
                          boots through the real flow: TB bootrom -> hardware
-                         verification -> jump to entry -> hardware boot_done)
+                         verification -> jump to entry -> hardware boot_done;
+                         Machine-mode startup writes TCR/TPR once, then the
+                         firmware runs in User mode)
     otp_pubkey.mem       8 public-key words in rtl/crypto pubkey.mem format
                          (otp_mem[32*i +: 32] = word i)
 """
@@ -48,6 +50,8 @@ def sw(rs2, rs1, imm):             return s_type(imm, rs2, rs1, 2)
 def lw(rd, rs1, imm):               return i_type(imm, rs1, 2, rd, 0x03)
 def csrw(csr, rs1):                return i_type(csr, rs1, 1, 0, 0x73)
 def csrr(rd, csr):                 return i_type(csr, 0, 2, rd, 0x73)
+def csrc(csr, rs1):                return i_type(csr, rs1, 3, 0, 0x73)
+MRET = 0x30200073
 def jal(rd, off):
     o = off & 0x1FFFFF
     return (((o >> 20) & 1) << 31) | (((o >> 1) & 0x3FF) << 21) | (((o >> 11) & 1) << 20) | \
@@ -91,15 +95,17 @@ write_image("recovery_signed.mem", code_words, "signed recovery image")
 #   0x10044  j main                      <- ENTRY
 #   0x10048  nop padding
 #   0x10100  vector table (256-aligned, Ibex mtvec is vectored) -> trap
-#   0x10180  main: mtvec FIRST (it resets to the BootROM, which is not
-#            executable after the handoff), TPR from config, load the four
-#            scenario values (taint propagates from the shadow tag RAM), TCR
-#            last, then the heartbeat loop at 0x101B4/0x101B8/0x101BC
-#   0x101C0  trap: record mcause, count, park
+#   0x10180  Machine-mode startup: mtvec FIRST (it resets to the BootROM,
+#            which is not executable after the handoff), TPR from config, load
+#            the four scenario values (taint propagates from the shadow tag RAM),
+#            TCR last -- the one and only policy write -- then mstatus.MPP = U,
+#            mepc = 0x101D0, mret
+#   0x101D0  User-mode heartbeat loop at 0x101D0/0x101D4/0x101D8
+#   0x101DC  trap (Machine mode): record mcause, count, park
 W_TPR, W_TCR, W_S0, W_A0, W_T1, W_S1, W_MCAUSE, W_TRAPCNT = 4, 5, 8, 9, 10, 11, 13, 14
-CSR_MTVEC, CSR_MCAUSE, CSR_TCR, CSR_TPR = 0x305, 0x342, 0x7C2, 0x7C3
+CSR_MSTATUS, CSR_MTVEC, CSR_MEPC, CSR_MCAUSE, CSR_TCR, CSR_TPR = 0x300, 0x305, 0x341, 0x342, 0x7C2, 0x7C3
 T2, T3, T4, T5, S0, S1, A0 = 7, 28, 29, 30, 8, 9, 10
-ENTRY, VEC, MAIN, TRAP = 0x10044, 0x10100, 0x10180, 0x101C0
+ENTRY, VEC, MAIN, USER, TRAP = 0x10044, 0x10100, 0x10180, 0x101D0, 0x101DC
 fw = {}
 fw[ENTRY] = jal(0, MAIN - ENTRY)
 for a in range(ENTRY + 4, VEC, 4):
@@ -119,13 +125,21 @@ main = [
     lw  (S1, T0, 4 * W_S1),              # s1 <- clean  (tag = tag_mem[11])
     lw  (T2, T0, 4 * W_TCR),
     csrw(CSR_TCR, T2),                   # TCR last: checks armed now
+    lui (T3, 0x2),
+    addi(T3, T3, -0x800),                # t3 = 0x1800 = mstatus.MPP
+    csrc(CSR_MSTATUS, T3),               # MPP = User
+    lui (T3, 0x10),
+    addi(T3, T3, USER - 0x10000),        # mepc = user loop
+    csrw(CSR_MEPC, T3),
     addi(A1, 0, 0),
-    addi(A1, A1, 1),                     # 0x101B4 loop: heartbeat++
-    sw  (A1, T0, 4 * W_HB),              # 0x101B8
-    jal (0, -8),                         # 0x101BC
+    MRET,                                # -> User mode
+    addi(A1, A1, 1),                     # 0x101D0 loop (User mode): heartbeat++
+    sw  (A1, T0, 4 * W_HB),              # 0x101D4
+    jal (0, -8),                         # 0x101D8
 ]
 for i, w in enumerate(main):
     fw[MAIN + 4 * i] = w
+assert MAIN + 4 * main.index(MRET) + 4 == USER
 assert MAIN + 4 * len(main) == TRAP
 trap = [
     lui (T3, 0x20),

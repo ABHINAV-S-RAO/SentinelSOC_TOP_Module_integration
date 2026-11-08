@@ -476,6 +476,13 @@ module ibex_core import ibex_pkg::*; #(
   logic        rf_tag_we_load;       // Enable writing rf_we_tag_load to tag RF
   logic        ex_exception;         // EX-stage taint violation from ibex_dift_logic
   logic        pc_exception;         // PC tag violation (new add)
+
+  // Debug scratch CSR tags (finding D08): dscratch0/1 carry the tag of the
+  // value they hold, so s0/a0 -- which the debug ROM parks there -- keep
+  // their taint across halt/resume.
+  logic        dscratch0_tag_q, dscratch1_tag_q;
+  logic        csr_is_dscratch0, csr_is_dscratch1;
+  logic        regfile_wdata_tag_dbg; // EX result tag, or the dscratch tag for a dscratch read
 `endif
 
   //////////////////////
@@ -565,6 +572,35 @@ module ibex_core import ibex_pkg::*; #(
   assign unused_dift_tmu = rf_tag_we_tmu ^ is_store_tmu ^ memory_set_tmu ^ is_store_post_tmu;
   assign pc_exception = instr_valid_id & dift_pc_check & pc_id_tag; //PC tag violation : new add
   assign dift_exception_o = (load_exception | lsu_tag_err | ex_exception | pc_exception) & dift_en_i;
+
+  // 6. Debug scratch CSR tags (finding D08)
+  //    The debug ROM parks s0/a0 in dscratch0/1 on every debug entry
+  //    ("csrw dscratchN, reg") and restores them before running a command and
+  //    on resume ("csrr reg, dscratchN"). The CSRs used to keep only the value,
+  //    so a halt/resume silently cleared the taint of s0/a0. Each scratch CSR
+  //    now has a tag bit: a write stores the tag of its source operand, a read
+  //    returns the stored tag as the destination tag. The same path carries the
+  //    "debugger data is untrusted" tag (D06a) into a0 when the debugger writes
+  //    a0 (riscv-dbg routes that write through dscratch1).
+  assign csr_is_dscratch0 = csr_access && (csr_addr == CSR_DSCRATCH0);
+  assign csr_is_dscratch1 = csr_access && (csr_addr == CSR_DSCRATCH1);
+
+  always_ff @(posedge clk_i or negedge rst_ni) begin
+    if (!rst_ni) begin
+      dscratch0_tag_q <= 1'b0;
+      dscratch1_tag_q <= 1'b0;
+    end else if (csr_op_en && !illegal_csr_insn_id && (csr_op != CSR_OP_READ)) begin
+      // csrw replaces the value; csrs/csrc merge into it, so keep any old taint
+      if (csr_is_dscratch0)
+        dscratch0_tag_q <= (csr_op == CSR_OP_WRITE) ? alu_op_a_tag_ex : (dscratch0_tag_q | alu_op_a_tag_ex);
+      if (csr_is_dscratch1)
+        dscratch1_tag_q <= (csr_op == CSR_OP_WRITE) ? alu_op_a_tag_ex : (dscratch1_tag_q | alu_op_a_tag_ex);
+    end
+  end
+
+  // A dscratch read returns the old value (and tag) even when it also writes
+  assign regfile_wdata_tag_dbg = csr_is_dscratch0 ? dscratch0_tag_q :
+                                 csr_is_dscratch1 ? dscratch1_tag_q : regfile_wdata_tag;
 `endif
 
   //////////////
@@ -1082,7 +1118,7 @@ module ibex_core import ibex_pkg::*; #(
 `ifdef DIFT
     ,
     // From EX block: ALU/mult result tag
-    .rf_wdata_tag_id_i     (regfile_wdata_tag),   // EX result tag
+    .rf_wdata_tag_id_i     (regfile_wdata_tag_dbg), // EX result tag (dscratch tag on a dscratch read)
     .rf_we_tag_id_i        (rf_we_tag_ex_out),    // EX write-enable tag
     // From LSU: loaded data tag
     .rf_wdata_tag_lsu_i    (rf_we_tag_load),       // loaded-word tag

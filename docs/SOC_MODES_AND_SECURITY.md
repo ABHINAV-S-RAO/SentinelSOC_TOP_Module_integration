@@ -19,8 +19,8 @@
 | D4 | ISRAM write lock | **ISRAM locks the moment VERIFY start is accepted,** until system reset |
 | D5 | BootROM execution | BootROM code can run **only during normal boot**: not after `boot_done`, and never in recovery |
 | D6 | `dift_en_i` pin | **Removed.** DIFT is always on inside the chip. |
-| D7 | Firmware privilege | Firmware runs in **Machine mode**. The bootrom hands over with a plain jump (no `mret`, no User mode). |
-| D8 | DIFT policy (TCR/TPR) | **Set by the firmware itself,** in M-mode. No signed policy, no lock. The debugger (normal or recovery) can never write them. |
+| D7 | Firmware privilege | The bootrom hands over with a plain jump, so the firmware's **startup code runs in Machine mode**. It writes the DIFT policy once, sets up traps and interrupts, then **drops to User mode with `mret`**. The application runs in User mode; the only switches back to Machine mode are traps (interrupts and exceptions). *(Updated 2026-10-25, see `docs/USER_MODE_AND_DIFT_CHANGES.md`.)* |
+| D8 | DIFT policy (TCR/TPR) | **Written once by the firmware's Machine-mode startup code.** After the switch to User mode, TCR/TPR are out of reach: a User-mode write is an illegal instruction. No signed policy, no hardware lock. The debugger (normal or recovery) can never write them. |
 | D9 | PMP | Stays off |
 | D10 | Debug after boot | Allowed, with today's write restrictions |
 | D11 | Strap pin | Kept: the manual way into recovery |
@@ -43,17 +43,24 @@ There are two independent layers.
 
 ### 2.1 CPU mode (inside Ibex)
 
-| | **Machine (M)** | **Debug (D)** |
-|---|---|---|
-| Who runs here | Bootrom and all firmware | The JTAG debugger (debug ROM + program buffer) |
-| CSRs | All, including TCR/TPR | All **except TCR/TPR** (reads 0, writes dropped) |
-| Interrupts | Taken if enabled | Ignored |
-| Exceptions go to | `mtvec` handler | One fixed entry in the debug ROM (`0x1A11_0810`). `mepc`/`mcause` are not touched; the debugger sees "exception" (`cmderr = 3`). |
-| Instructions from | Wherever the PC points | Debug ROM in the Debug Module |
-| DIFT | Normal tag tracking | Every store to DSRAM is tagged 1 (untrusted) |
-| Boot watchdog | Counts until `boot_done` | Paused |
+| | **Machine (M)** | **User (U)** | **Debug (D)** |
+|---|---|---|---|
+| Who runs here | Bootrom, firmware startup code, trap handlers | The firmware application | The JTAG debugger (debug ROM + program buffer) |
+| CSRs | All, including TCR/TPR | Machine CSRs (incl. TCR/TPR, `mtvec`, `mie`, `mstatus`) are illegal instructions | All **except TCR/TPR** (reads 0, writes dropped) |
+| `mret` / `wfi` | ✓ / ✓ | ✗ (illegal) / ✓ (`mstatus.TW` = 0) | — |
+| Interrupts | Taken only if `mstatus.MIE` = 1 (our firmware keeps it 0) | **Always taken** (M-level interrupts, gated by `mie` only) and switch to Machine mode | Ignored |
+| Exceptions go to | `mtvec` handler | `mtvec` handler, in Machine mode | One fixed entry in the debug ROM (`0x1A11_0810`). `mepc`/`mcause` are not touched; the debugger sees "exception" (`cmderr = 3`). |
+| Instructions from | Wherever the PC points | Wherever the PC points | Debug ROM in the Debug Module |
+| Memory | Decided by the SoC flags (no PMP) | **Same as Machine mode** (no PMP, D9) | Decided by the SoC flags plus debug rules |
+| DIFT | Normal tag tracking | Normal tag tracking | Every store to DSRAM is tagged 1, and every value the debugger writes into a register is tagged 1 (untrusted) |
+| Boot watchdog | Counts until `boot_done` | (after `boot_done`) | Paused |
 
-User mode exists in Ibex but is not used (D7). Without PMP (D9), it would not restrict memory anyway.
+Switching between them:
+- **M → U:** the startup code sets `mstatus.MPP` = U, `mepc` = the application, and runs `mret`. This happens once.
+- **U → M:** any trap: an interrupt (timer, PLIC) or an exception (illegal instruction, fault, `ecall`). The handler returns with `mret`, back to User mode.
+- **M/U → D and back:** halt request / `dret`, as before; `dcsr.prv` records the mode the core was halted in.
+
+Without PMP (D9), User mode does not restrict memory. Its job here is to keep the application away from the machine CSRs, above all the DIFT policy.
 
 ### 2.2 SoC flags (our hardware)
 
@@ -74,7 +81,7 @@ User mode exists in Ibex but is not used (D7). Without PMP (D9), it would not re
 | ① | Bootrom running | M | `boot_done` = 0 |
 | ② | Debugger halts the chip during boot | D | `boot_done` = 0 |
 | ③ | Recovery session | D | recovery = 1, `boot_done` = 0 |
-| ④ | Firmware running | M | `boot_done` = 1 |
+| ④ | Firmware running | M startup → **U** application (M again only inside trap handlers) | `boot_done` = 1 |
 | ⑤ | Debugger halts the running firmware | D | `boot_done` = 1 |
 
 ```
@@ -95,7 +102,7 @@ User mode exists in Ibex but is not used (D7). Without PMP (D9), it would not re
            first verified fetch at ENTRY  →  HARDWARE sets boot_done = 1
                               │              (watchdog stops)
                               ▼
-                       ④ FIRMWARE (M)  ◀──resume──┐
+              ④ FIRMWARE: M startup (DIFT policy) → mret → U app  ◀──resume──┐
                               │                    │
                               └──JTAG halt──▶ ⑤ DEBUG AFTER BOOT
 
@@ -121,7 +128,7 @@ User mode exists in Ibex but is not used (D7). Without PMP (D9), it would not re
 | **CTRL** `0x0003_0000` | R/W, **CTRL1 ignored (new)** | R | R | ✗ | R |
 | **VERIFY** `0x0005_0000` | R/W | R | R + W (start) | ✗ | R |
 | **CLINT, PLIC, UART, QSPI, SPI2, timer, GPIO** | R/W | R/W | R/W | R/W | R/W |
-| **TCR/TPR** (DIFT CSRs) | R/W | ✗ | ✗ | R/W | ✗ |
+| **TCR/TPR** (DIFT CSRs) | R/W | ✗ | ✗ | R/W in the M-mode startup code only; ✗ from User mode **(new)** | ✗ |
 
 ---
 
@@ -129,7 +136,9 @@ User mode exists in Ibex but is not used (D7). Without PMP (D9), it would not re
 
 | Who | Read | Write |
 |---|---|---|
-| Firmware (M-mode, normal execution) | ✓ | ✓ any time |
+| Firmware startup code (M-mode) | ✓ | ✓ (written once, before `mret`) |
+| Firmware application (User mode) | ✗ (illegal instruction) | ✗ (illegal instruction) |
+| Firmware trap handlers (M-mode) | ✓ | ✓ technically; our handlers never do |
 | Bootrom (M-mode) | ✓ | ✓ technically, but it contains no such instruction |
 | Debugger, normal debug | ✗ (reads 0) | ✗ (dropped) |
 | Debugger, **recovery** | ✗ (reads 0) | ✗ (dropped). Recovery does **not** relax this. |
@@ -141,16 +150,24 @@ User mode exists in Ibex but is not used (D7). Without PMP (D9), it would not re
 ```asm
     la   t0, vector_table          # firmware startup (M-mode)
     csrw mtvec, t0
-    li   t0, TCR_POLICY            # what to CHECK   (bit map: ibex_pkg.sv "TCR")
-    csrw 0x7C2, t0
     li   t0, TPR_POLICY            # how taint SPREADS (bit map: ibex_pkg.sv "TPR")
-    csrw 0x7C3, t0
+    csrw tpr, t0
+    li   t0, TCR_POLICY            # what to CHECK   (bit map: ibex_pkg.sv "TCR")
+    csrw tcr, t0
+    li   t0, 0x880                 # mie: MTIE | MEIE
+    csrw mie, t0
+    li   t0, 0x1800                # mstatus.MPP = User
+    csrc mstatus, t0
+    la   t0, app_main
+    csrw mepc, t0
+    mret                           # -> User mode; TCR/TPR now out of reach
 ```
 
-**Accepted risk (D8):** two things can rewrite the policy:
+**Remaining risk (D8):**
 
-- code that takes over the firmware at runtime;
-- a debugger that halts the firmware and resumes it at its own `csrw` instruction with a chosen value.
+- Code that takes over the **User-mode** application can no longer rewrite the policy: the write traps.
+- Code that takes over a **Machine-mode trap handler** could still rewrite it. Keep the handlers small.
+- A **debugger** can still halt the firmware, set `dcsr.prv` = M and `dpc` to the startup code's own `csrw tcr` instruction, and resume with a value of its choice. This is part of the debug-lifecycle topic (L7).
 
 ---
 

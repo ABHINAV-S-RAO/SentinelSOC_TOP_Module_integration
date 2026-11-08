@@ -358,19 +358,51 @@ module basic_soc_top #(
   logic tag_mem [DSRAM_SIZE_WORDS];
   logic [TAG_AW-1:0] tag_rd_addr_q;
   logic              tag_in_dsram, tag_rd_in_dsram_q;
+  logic              tag_in_dbgdata, tag_rd_dbgdata_q;
+  logic              tag_in_periph, tag_rd_periph_q;
 
   // Only DSRAM is tagged. Every other data address (debug module, ISRAM,
   // peripherals) used to alias onto DSRAM tags through addr[11:2]; those
   // accesses now read tag 0 and never write the tag RAM.
   assign tag_in_dsram = (tag_addr[29:TAG_AW] == DSRAM_BASE_ADDR[31:TAG_AW+2]);
 
+  // Debugger data is untrusted (finding D06a): the debug module's abstract
+  // data registers (data0/data1, DmBaseAddress + dm::DataAddr) are where every
+  // value the debugger writes into a register comes from -- the abstract
+  // command / program buffer loads it from there in debug mode. Such a load
+  // returns tag 1, so the destination register is tagged like any other
+  // untrusted memory word (propagation per TPR, as for DSRAM). This mirrors
+  // debugger stores into DSRAM, which are tagged 1 below.
+  localparam logic [31:0] DBG_DATA_ADDR = DBG_BASE_ADDR + 32'(dm::DataAddr);
+  localparam logic [31:0] DBG_DATA_END  = DBG_DATA_ADDR + 4 * 32'(dm::DataCount);
+  assign tag_in_dbgdata = core_debug_mode &&
+                          ({tag_addr, 2'b00} >= DBG_DATA_ADDR) && ({tag_addr, 2'b00} < DBG_DATA_END);
+
+  // External input is untrusted: every load from the APB peripheral window
+  // (UART, QSPI, SPI2, timer, GPIO: 0x1000_0000-0x1FFF_FFFF, minus the debug
+  // module at 0x1A11_xxxx) returns tag 1 -- the label the original DIFT top
+  // (soc_top.sv) applied to all non-DSRAM loads. Unconditional on purpose:
+  // the label only says where the data came from; TPR decides whether it
+  // propagates into the register (bits 15/14, load mode) and TCR whether it
+  // traps. With TPR = 0 (reset, bootrom) a load leaves register tags alone.
+  // ISRAM, BootROM, CTRL, VERIFY, CLINT and PLIC stay clean (on-chip, trusted).
+  localparam logic [31:0] PERIPH_BASE = 32'h1000_0000;   // soc_addr_decode APB_BASE
+  localparam logic [31:0] PERIPH_MASK = 32'hF000_0000;   // soc_addr_decode APB_MASK
+  localparam logic [31:0] DBG_MASK_TAG = 32'hFFFF_0000;  // soc_addr_decode DBG_MASK
+  assign tag_in_periph = (({tag_addr, 2'b00} & PERIPH_MASK) == PERIPH_BASE) &&
+                         (({tag_addr, 2'b00} & DBG_MASK_TAG) != DBG_BASE_ADDR);
+
   always_ff @(posedge clk_i or negedge sys_rst_n) begin
     if (!sys_rst_n) begin
       tag_rd_addr_q     <= '0;
       tag_rd_in_dsram_q <= 1'b0;
+      tag_rd_dbgdata_q  <= 1'b0;
+      tag_rd_periph_q   <= 1'b0;
     end else if (tag_req) begin
       tag_rd_addr_q     <= tag_addr[TAG_AW-1:0];
       tag_rd_in_dsram_q <= tag_in_dsram;
+      tag_rd_dbgdata_q  <= tag_in_dbgdata;
+      tag_rd_periph_q   <= tag_in_periph;
     end
   end
 
@@ -387,7 +419,9 @@ module basic_soc_top #(
       tag_mem[tag_addr[TAG_AW-1:0]] <= tag_wdata | core_debug_mode;
     end
   end
-  assign tag_rdata = tag_rd_in_dsram_q ? tag_mem[tag_rd_addr_q] : 1'b0;
+  assign tag_rdata = tag_rd_dbgdata_q  ? 1'b1 :                     // debugger data
+                     tag_rd_periph_q   ? 1'b1 :                     // peripheral input
+                     tag_rd_in_dsram_q ? tag_mem[tag_rd_addr_q] : 1'b0;
 `else
   assign tag_rdata = 1'b0;
 `endif

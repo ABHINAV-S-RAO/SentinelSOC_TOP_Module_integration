@@ -8,7 +8,10 @@
 //     -> verified: jumps to the firmware entry; HARDWARE sets boot_done on
 //        that first verified fetch (docs/SOC_MODES_AND_SECURITY.md)
 //   Firmware (software/app/app_demo.S, signed into app.flash.hex)
-//     -> UART, SPI #2 byte, CLINT timer IRQ, PLIC external IRQ, PASS signature
+//     -> Machine-mode startup: mtvec, clear DSRAM, DIFT policy (TCR/TPR, written
+//        once), interrupt enables, mret into User mode
+//     -> User mode: UART, a TCR write that must trap, SPI #2 byte, CLINT timer
+//        IRQ, PLIC external IRQ, PASS signature
 // The only model-level shortcut: the TEST-ONLY public key is forced into the
 // OTP model (on silicon it is fused at manufacturing).
 //
@@ -20,6 +23,14 @@
 //     right behind ENTRY is allowed: single-entry rule)
 //   - no BootROM fetch reaches the ROM after the handoff
 //   - power-on to handoff fits the boot watchdog (BOOT_WDT_CYCLES default)
+// and the privilege model:
+//   - the firmware drops to User mode after the handoff, with the DIFT policy
+//     already written; TCR/TPR never change while in User mode
+//   - a User-mode TCR write traps (illegal instruction) and is skipped
+//   - interrupts return to User mode; the app ends in User mode
+// and DIFT labelling:
+//   - data loaded from a peripheral (UART) and stored to DSRAM carries tag 1,
+//     a constant stored next to it tag 0; no DIFT violation fires
 //
 // +TRACE    bounded bring-up trace (fetches, data bus, APB, traps, FSM)
 // +TAMPER   flips one bit of the firmware in flash: the ROM must report the
@@ -310,6 +321,33 @@ module full_soc_tb;
   end
 
   // ---------------------------------------------------------------------------
+  // Privilege monitors: the firmware's Machine-mode startup writes the DIFT
+  // policy once and drops to User mode; TCR/TPR must never change after that.
+  // ---------------------------------------------------------------------------
+  localparam logic [31:0] DIFT_TPR = 32'h0000_AAAA;   // app_demo.S DIFT_TPR
+  localparam logic [31:0] DIFT_TCR = 32'h0000_0003;   // app_demo.S DIFT_TCR
+  longint      cyc_umode = -1;           // first cycle running in User mode
+  logic [31:0] tcr_at_umode, tpr_at_umode;
+  int          n_policy_change_u = 0;    // TCR/TPR changes seen while in User mode
+  logic [31:0] tcr_prev = '0, tpr_prev = '0;
+  int          n_dift_exc = 0;           // DIFT violations outside debug mode
+
+  always @(posedge clk_i) if (rst_ni) begin
+    if (`TB_CORE.dift_exception_o === 1'b1 && !u_dut.core_debug_mode) n_dift_exc++;
+    if (`TB_CORE.priv_mode_id == ibex_pkg::PRIV_LVL_U && !u_dut.core_debug_mode) begin
+      if (cyc_umode < 0) begin
+        cyc_umode    = cyc;
+        tcr_at_umode = `TB_CORE.cs_registers_i.tcr_q;
+        tpr_at_umode = `TB_CORE.cs_registers_i.tpr_q;
+      end else if (`TB_CORE.cs_registers_i.tcr_q !== tcr_prev || `TB_CORE.cs_registers_i.tpr_q !== tpr_prev) begin
+        n_policy_change_u++;
+      end
+    end
+    tcr_prev <= `TB_CORE.cs_registers_i.tcr_q;
+    tpr_prev <= `TB_CORE.cs_registers_i.tpr_q;
+  end
+
+  // ---------------------------------------------------------------------------
   // Test sequence
   // ---------------------------------------------------------------------------
   initial begin
@@ -366,6 +404,25 @@ module full_soc_tb;
             $sformatf("power-on to handoff = %0d cycles < BOOT_WDT_CYCLES %0d (%0d%%)%s",
                       cyc_bd, wdt, cyc_bd * 100 / wdt, bigimage ? " [8 KB image]" : " [demo image]"));
       check(has("[APP] hello from verified firmware in ISRAM"), "firmware running from ISRAM");
+      check(cyc_umode > cyc_bd && cyc_bd > 0,
+            $sformatf("firmware startup dropped to User mode after the handoff (cycle %0d)", cyc_umode));
+      check(tcr_at_umode == DIFT_TCR && tpr_at_umode == DIFT_TPR,
+            $sformatf("DIFT policy written once in Machine mode before the switch (TCR=%08h TPR=%08h)",
+                      tcr_at_umode, tpr_at_umode));
+      check(has("[APP] running in User mode: TCR write trapped") && u_dsram.mem[3] == 2,
+            $sformatf("User-mode write to TCR -> illegal-instruction trap, skipped by the handler (DSRAM[3]=%0d)",
+                      u_dsram.mem[3]));
+      check(n_policy_change_u == 0 && `TB_CORE.cs_registers_i.tcr_q == DIFT_TCR &&
+            `TB_CORE.cs_registers_i.tpr_q == DIFT_TPR,
+            $sformatf("TCR/TPR never changed while in User mode (%0d change(s))", n_policy_change_u));
+      check(`TB_CORE.priv_mode_id == ibex_pkg::PRIV_LVL_U,
+            "application still in User mode at the end (interrupts returned to User mode)");
+      check(has("[APP] UART data stored to DSRAM (tainted by hardware)") &&
+            u_dut.tag_mem[4] === 1'b1 && u_dut.tag_mem[5] === 1'b0,
+            $sformatf("peripheral input tainted by hardware: UART word in DSRAM tag=%b, constant next to it tag=%b",
+                      u_dut.tag_mem[4], u_dut.tag_mem[5]));
+      check(n_dift_exc == 0,
+            $sformatf("no DIFT violation with the policy armed: tainted UART data never used as an address/jump (%0d)", n_dift_exc));
       check(spi2_bytes.size() == 1 && spi2_bytes[0] == 8'hA5,
             $sformatf("SPI #2 transmitted 0xA5 (%0d byte(s))", spi2_bytes.size()));
       check(has("[APP] CLINT timer interrupt OK") && u_dsram.mem[1] == 1,

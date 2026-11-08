@@ -816,11 +816,12 @@ module dift_dbg_tb;
     reg_read(gpr(T1), r, err);
     obs($sformatf("abstract READ of tainted t1 under store-source check: cmderr=%0d data0=%08h (%s), DIFT events in debug=%0d",
                   err, r, (r == SEC_T1) ? "SECRET VISIBLE" : "not leaked", mon_dift_dbg));
-    // D03 (by design): the policy architecture does not block stores of
-    // tainted DATA -- only a tainted ADDRESS raises an exception. The abstract
-    // read stores t1 through a clean address (a0 = DM base), so it completes.
-    if (r == SEC_T1)
-      obs("D03 (by design): tainted store data is not blocked, only tainted addresses trap -- abstract read of tainted t1 completes");
+    // D03: the abstract read is a store of t1 into the DM data window. TCR
+    // bit 7 (store-data check) is set in TCR_FULL, so the store is refused
+    // in EX before it reaches the bus: cmderr=exception, secret not copied.
+    // (Without bit 7 in the policy the read completes -- policy choice.)
+    check(err == 3'd3 && r != SEC_T1,
+          $sformatf("D03: store-data check (TCR bit 7) blocks the abstract read of tainted t1 (err=%0d data0=%08h)", err, r));
     mon_clear();
     reg_write(gpr(T1), 32'h0000_7777, err);
     obs($sformatf("abstract WRITE of tainted t1: cmderr=%0d rf=%08h tag=%b", err, `GPR[T1], `TAGRF[T1]));

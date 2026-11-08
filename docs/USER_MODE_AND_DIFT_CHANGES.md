@@ -9,7 +9,7 @@
 
 ---
 
-## 1. Summary
+## 1. Summarya
 
 | # | Change | Kind | Files |
 |---|---|---|---|
@@ -196,6 +196,8 @@ assign tag_rdata = tag_rd_dbgdata_q  ? 1'b1 :                  // debugger data 
 - **Checked by `full_soc_tb`:** the UART word in DSRAM has tag 1, the constant next to it tag 0, and no DIFT violation fires.
 
 ### 5.1 Finding for the DIFT team: TCR bit 6 also checks loaded data
+
+> **Resolved (2026-11-08):** bit 6 now checks only the store address; loaded data is checked by bit 7/8. See `DIFT_FINAL_CHANGES.md`, change C3.
 `LOADSTORE_CHECK_DA` (TCR bit 6) is named "check load/store address", but it's wired to **two** checks:
 
 | Where | What it checks |
@@ -210,6 +212,8 @@ No RTL change was made (the policy architecture stays as it is). To decide: shou
 ---
 
 ## 6. F3: D03, by design
+
+> **Superseded (2026-11-08):** TCR bit 7 (store-data check) now works, so under a policy with bit 7 the abstract read of a tainted register is refused. Both debugger TBs check this. See `DIFT_FINAL_CHANGES.md`, change C3.
 
 The test shows that a tainted register can be stored (here into the debugger's `data0`) without an exception. **That matches the existing policy architecture:** tainted store **data** isn't blocked; only a tainted **address** raises an exception. No RTL change. Both debugger TBs now print it as `[OBS] D03 (by design)` instead of a finding.
 

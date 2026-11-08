@@ -435,7 +435,7 @@ It takes seconds.
 > |---|---|---|
 > | D06a | **Closed** | Option (b): DM data-window loads in debug mode return tag 1 (`basic_soc_top.sv`) |
 > | D08a/b | **Closed** | Option (b): `dscratch0/1` carry a tag bit (`ibex_core.sv`) |
-> | D03 | **By design, not a bug** | The policy architecture does not block tainted store *data*; only a tainted *address* traps. The TBs now print it as `[OBS]`. |
+> | D03 | **Closed by policy (bit 7)** | TCR bit 7 now checks store data in EX, before the bus. Under a policy with bit 7, the abstract read of a tainted register is refused (`cmderr`=3); both TBs check it. See `DIFT_FINAL_CHANGES.md` C3. |
 > | D12 | **Closed** | The `dift_en_i` pin was removed; DIFT is always on |
 >
 > The testbenches now **check** D06a and D08 (a regression is a `[FAIL]`), so

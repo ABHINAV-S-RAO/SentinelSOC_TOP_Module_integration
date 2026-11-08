@@ -276,14 +276,33 @@ module ibex_core_tb;
     fail_count++;
   endtask
 
-  // Run for max_cycles, latching any dift_exception pulse
+  // Run for max_cycles, latching any dift_exception pulse, and the PC of the
+  // instruction in ID/EX at the first one (with WritebackStage=0 a load or
+  // store is still in ID/EX when its response arrives, so this is also the
+  // faulting load for the loaded-data checks).
+  // (The instruction word is compared, not the PC: this TB's fetch model
+  // returns the word one fetch late, so PCs are shifted by one instruction.)
+  logic [31:0] exc_pc, exc_insn;
   task automatic run_program(input int max_cycles = 200);
     exception_seen = 1'b0;
+    exc_pc         = 32'hFFFF_FFFF;
+    exc_insn       = 32'hFFFF_FFFF;
     repeat (max_cycles) begin
       @(posedge clk);
+      if (dift_exception && !exception_seen) begin
+        exc_pc   = dut.pc_id;
+        exc_insn = dut.instr_rdata_id;
+      end
       if (dift_exception) exception_seen = 1'b1;
     end
   endtask
+
+  // A DIFT exception fired, and the first one was on the instruction written
+  // at word idx (proves WHICH check fired, not just that some DIFT exception
+  // happened). Test bodies make that instruction word unique in the program.
+  function automatic bit fired_at(input int idx);
+    return exception_seen && (exc_insn == instr_mem[idx]);
+  endfunction
 
   // Hard reset: zero dmem, tag_mem, reg_file; keep instr_mem intact
   task automatic do_reset();
@@ -1004,10 +1023,20 @@ module ibex_core_tb;
   // -----------------------------------------------------------------------
   // Test group G: TCR LOADSTORE checks
   // -----------------------------------------------------------------------
+  // Every test here checks that the exception fired AT the instruction under
+  // test (fired_at), so a check on an earlier instruction cannot make it pass.
+  // Where an earlier instruction would trip the same TCR bit, TCR is armed
+  // only right before the instruction under test (arm_tcr).
+  task automatic arm_tcr(input logic [31:0] tcr_val);
+    load_imm32(5'd29, tcr_val);
+    emit(f_csrrw(CSRA_TCR, 5'd29, 5'd0));
+  endtask
+
   task automatic tcr_loadstore_tests();
-    // LOADSTORE_CHECK_D (bit 8): exception when loaded word's dest tag is 1
-    // i.e. the tainted data lands in a register under a check.
-    // With OR mode, load of tag_mem[0]=1 gives dest tag=1 => fires.
+    automatic int tgt;
+    // G1 LOADSTORE_CHECK_D (bit 8): the tag the load's destination register
+    // would get is tainted. OR mode, tag_mem[0]=1 -> dest tag 1 -> fires at
+    // the load (load access fault on the response).
     test_num++;
     pc_wr = BOOT_WORD;
     emit_preamble(
@@ -1015,17 +1044,18 @@ module ibex_core_tb;
       32'h1 << LOADSTORE_CHECK_D
     );
     load_imm32(5'd10, DMEM_BASE);
-    emit(f_lw(5'd12, 5'd10, 12'h0));
+    tgt = pc_wr; emit(f_lw(5'd12, 5'd10, 12'h0));
     emit(ECALL);
     do_reset();
     tag_mem[0] = 1'b1; data_mem[0] = 32'd12;
     run_program(150);
-    if (exception_seen) pass_t("TCR LOADSTORE_CHECK_D: tainted load dest fires");
-    else                fail_t("TCR LOADSTORE_CHECK_D: tainted load dest fires");
+    if (fired_at(tgt) && `TAG_RF(12) === 1'b0 && reg_file[12] != 32'd12)
+         pass_t("G1 TCR LOADSTORE_CHECK_D: tainted load dest fires at the load, value not written");
+    else fail_t($sformatf("G1 TCR LOADSTORE_CHECK_D: tainted load dest fires at the load (seen=%b insn=%08h exp=%08h x12=%0d)",
+                          exception_seen, exc_insn, instr_mem[tgt], reg_file[12]));
 
-    // LOADSTORE_CHECK_SA (bit 21): exception when load base address register
-    // is tainted.  x10 is loaded from a tainted source so it gets tainted;
-    // the second lw uses x10 as base.
+    // G2 LOADSTORE_CHECK_SA (bit 21): load through a tainted base register.
+    // The first lw (clean base x11) taints x10; the second uses x10 as base.
     test_num++;
     pc_wr = BOOT_WORD;
     emit_preamble(
@@ -1034,34 +1064,40 @@ module ibex_core_tb;
     );
     load_imm32(5'd11, DMEM_BASE);
     emit(f_lw(5'd10, 5'd11, 12'h0));   // x10 = tainted address value
-    emit(f_lw(5'd12, 5'd10, 12'h0));   // load using tainted base => SA check
+    tgt = pc_wr; emit(f_lw(5'd12, 5'd10, 12'h4));   // load using tainted base => SA check
     emit(ECALL);
     do_reset();
     tag_mem[0] = 1'b1; data_mem[0] = DMEM_BASE; // x10 gets this tainted value
+    tag_mem[1] = 1'b0; data_mem[1] = 32'd77;
     run_program(150);
-    if (exception_seen) pass_t("TCR LOADSTORE_CHECK_SA: tainted load address fires");
-    else                fail_t("TCR LOADSTORE_CHECK_SA: tainted load address fires");
+    if (fired_at(tgt) && reg_file[12] != 32'd77)
+         pass_t("G2 TCR LOADSTORE_CHECK_SA: tainted load address fires at the load, load blocked");
+    else fail_t($sformatf("G2 TCR LOADSTORE_CHECK_SA: tainted load address fires at the load (seen=%b insn=%08h exp=%08h x12=%0d)",
+                          exception_seen, exc_insn, instr_mem[tgt], reg_file[12]));
 
-    // LOADSTORE_CHECK_S (bit 7): exception when store data is tainted.
+    // G3 LOADSTORE_CHECK_S (bit 7) on a STORE: tainted store data.
+    // TCR is armed after the load (bit 7 also checks loaded data).
     test_num++;
     pc_wr = BOOT_WORD;
     emit_preamble(
       tpr_set_ls_en(tpr_alu_mode(LOADSTORE_LOW, LOADSTORE_HIGH, ALU_MODE_OR),
                     1'b1, 1'b1, 1'b1),
-      32'h1 << LOADSTORE_CHECK_S
+      32'h0
     );
     load_imm32(5'd10, DMEM_BASE);
     emit(f_lw(5'd12, 5'd10, 12'h0));   // x12 = tainted
-    emit(f_sw(5'd12, 5'd10, 12'h4));   // store tainted data => S check
+    arm_tcr(32'h1 << LOADSTORE_CHECK_S);
+    tgt = pc_wr; emit(f_sw(5'd12, 5'd10, 12'h4));   // store tainted data => S check
     emit(ECALL);
     do_reset();
     tag_mem[0] = 1'b1; data_mem[0] = 32'd11;
     run_program(150);
-    if (exception_seen) pass_t("TCR LOADSTORE_CHECK_S: tainted store data fires");
-    else                fail_t("TCR LOADSTORE_CHECK_S: tainted store data fires");
+    if (fired_at(tgt) && data_mem[1] == 32'd0)
+         pass_t("G3 TCR LOADSTORE_CHECK_S: tainted store data fires at the store, store blocked");
+    else fail_t($sformatf("G3 TCR LOADSTORE_CHECK_S: tainted store data fires at the store (seen=%b insn=%08h exp=%08h mem=%0d)",
+                          exception_seen, exc_insn, instr_mem[tgt], data_mem[1]));
 
-    // LOADSTORE_CHECK_DA (bit 6): exception when store base address register
-    // is tainted.  Load a tainted address into x10, use x10 as store base.
+    // G4 LOADSTORE_CHECK_DA (bit 6): store through a tainted base register.
     test_num++;
     pc_wr = BOOT_WORD;
     emit_preamble(
@@ -1071,14 +1107,68 @@ module ibex_core_tb;
     load_imm32(5'd11, DMEM_BASE);
     emit(f_lw(5'd10, 5'd11, 12'h0));   // x10 = tainted address value
     emit(f_lw(5'd12, 5'd11, 12'h4));   // x12 = clean data to store
-    emit(f_sw(5'd12, 5'd10, 12'h0));   // store with tainted base => DA check
+    tgt = pc_wr; emit(f_sw(5'd12, 5'd10, 12'h0));   // store with tainted base => DA check
     emit(ECALL);
     do_reset();
     tag_mem[0] = 1'b1; data_mem[0] = DMEM_BASE + 8; // x10 = valid tainted addr
     tag_mem[1] = 1'b0; data_mem[1] = 32'd99;
     run_program(150);
-    if (exception_seen) pass_t("TCR LOADSTORE_CHECK_DA: tainted store address fires");
-    else                fail_t("TCR LOADSTORE_CHECK_DA: tainted store address fires");
+    if (fired_at(tgt) && data_mem[2] != 32'd99)
+         pass_t("G4 TCR LOADSTORE_CHECK_DA: tainted store address fires at the store, store blocked");
+    else fail_t($sformatf("G4 TCR LOADSTORE_CHECK_DA: tainted store address fires at the store (seen=%b insn=%08h exp=%08h mem2=%0d)",
+                          exception_seen, exc_insn, instr_mem[tgt], data_mem[2]));
+
+    // G5 LOADSTORE_CHECK_S (bit 7) on a LOAD: the loaded word is tainted.
+    test_num++;
+    pc_wr = BOOT_WORD;
+    emit_preamble(tpr_ls_or(), 32'h1 << LOADSTORE_CHECK_S);
+    load_imm32(5'd10, DMEM_BASE);
+    tgt = pc_wr; emit(f_lw(5'd12, 5'd10, 12'h0));
+    emit(ECALL);
+    do_reset();
+    tag_mem[0] = 1'b1; data_mem[0] = 32'd55;
+    run_program(150);
+    if (fired_at(tgt) && reg_file[12] != 32'd55)
+         pass_t("G5 TCR LOADSTORE_CHECK_S: tainted loaded word fires at the load, value not written");
+    else fail_t($sformatf("G5 TCR LOADSTORE_CHECK_S: tainted loaded word fires at the load (seen=%b insn=%08h exp=%08h x12=%0d)",
+                          exception_seen, exc_insn, instr_mem[tgt], reg_file[12]));
+
+    // G6 bit 6 is the STORE address check only: loading tainted data (e.g. a
+    // UART register) through a clean pointer must not fault. (Before the fix
+    // bit 6 also checked the loaded data in the LSU.)
+    test_num++;
+    pc_wr = BOOT_WORD;
+    emit_preamble(tpr_ls_or(), 32'h1 << LOADSTORE_CHECK_DA);
+    load_imm32(5'd10, DMEM_BASE);
+    emit(f_lw(5'd12, 5'd10, 12'h0));
+    emit(ECALL);
+    do_reset();
+    tag_mem[0] = 1'b1; data_mem[0] = 32'd66;
+    run_program(150);
+    if (!exception_seen && reg_file[12] == 32'd66 && `TAG_RF(12) === 1'b1)
+         pass_t("G6 TCR bit 6: tainted data through a clean pointer loads fine (tag kept)");
+    else fail_t($sformatf("G6 TCR bit 6: tainted data through a clean pointer loads fine (seen=%b x12=%0d tag=%b)",
+                          exception_seen, reg_file[12], `TAG_RF(12)));
+
+    // G7 bit 21 is the LOAD address check only: a store through a tainted
+    // pointer with only bit 21 set does not fault, and the store tag follows
+    // the TPR rule.
+    test_num++;
+    pc_wr = BOOT_WORD;
+    emit_preamble(tpr_ls_or(), 32'h1 << LOADSTORE_CHECK_SA);
+    load_imm32(5'd11, DMEM_BASE);
+    emit(f_lw(5'd10, 5'd11, 12'h0));   // x10 = tainted pointer
+    emit(f_lw(5'd12, 5'd11, 12'h4));   // x12 = clean data
+    emit(f_sw(5'd12, 5'd10, 12'h0));
+    emit(ECALL);
+    do_reset();
+    tag_mem[0] = 1'b1; data_mem[0] = DMEM_BASE + 8;
+    tag_mem[1] = 1'b0; data_mem[1] = 32'd44;
+    run_program(150);
+    if (!exception_seen && data_mem[2] == 32'd44)
+         pass_t("G7 TCR bit 21: store through a tainted pointer not checked by the load-address bit");
+    else fail_t($sformatf("G7 TCR bit 21: store through a tainted pointer not checked by the load-address bit (seen=%b mem2=%0d)",
+                          exception_seen, data_mem[2]));
   endtask
 
   // -----------------------------------------------------------------------
@@ -1533,21 +1623,26 @@ module ibex_core_tb;
   // Test group N: STORE/LUI/AUIPC through TMU check decoder
   // -----------------------------------------------------------------------
   task automatic store_lui_auipc_check_tests();
+    automatic int n1_tgt;
     // N1: SW with LOADSTORE_CHECK_DA — store address tainted
     // (reuses existing tcr_loadstore_tests pattern but ensures TMU STORE case hit)
     test_num++; pc_wr = BOOT_WORD;
-    emit_preamble(tpr_ls_or(),
-      (32'h1 << LOADSTORE_CHECK_DA) | (32'h1 << LOADSTORE_CHECK_S));
+    emit_preamble(tpr_ls_or(), 32'h0);
     load_imm32(5'd11, DMEM_BASE);
     emit(f_lw(5'd10, 5'd11, 12'h0));  // x10 = tainted addr
     emit(f_lw(5'd12, 5'd11, 12'h4));  // x12 = tainted data
+    // armed after the loads: bit 7 also checks loaded data
+    load_imm32(5'd29, (32'h1 << LOADSTORE_CHECK_DA) | (32'h1 << LOADSTORE_CHECK_S));
+    emit(f_csrrw(CSRA_TCR, 5'd29, 5'd0));
+    n1_tgt = pc_wr;
     emit(f_sw(5'd12, 5'd10, 12'h0));  // store: DA and S both tainted
     emit(ECALL); do_reset();
     tag_mem[0] = 1'b1; data_mem[0] = DMEM_BASE + 8;
     tag_mem[1] = 1'b1; data_mem[1] = 32'hDEAD;
     run_program(200);
-    if (exception_seen) pass_t("N1 SW LOADSTORE_CHECK_DA+S fires");
-    else                fail_t("N1 SW LOADSTORE_CHECK_DA+S fires");
+    if (fired_at(n1_tgt) && data_mem[2] != 32'hDEAD) pass_t("N1 SW LOADSTORE_CHECK_DA+S fires at the store, store blocked");
+    else fail_t($sformatf("N1 SW LOADSTORE_CHECK_DA+S fires at the store (seen=%b insn=%08h exp=%08h)",
+                          exception_seen, exc_insn, instr_mem[n1_tgt]));
 
     // N2: AUIPC — hits OPCODE_AUIPC case in TMU (line 53)
     // AUIPC writes rd = PC + imm<<12. With LOADSTORE_CHECK_D enabled,
@@ -1606,14 +1701,19 @@ module ibex_core_tb;
     else                      fail_t("O2 Load EN_SRC=0 EN_ADDR=1 data masked");
 
     // O3: AND mode, both addr tag=1 and data tag=1 => result=1
+    // The pointer x10 is loaded under OR mode (under AND a load through the
+    // clean x11 could never taint it), then TPR switches to AND for the load
+    // under test.
     test_num++; pc_wr = BOOT_WORD;
     emit_preamble(
-      tpr_set_ls_en(tpr_alu_mode(LOADSTORE_LOW, LOADSTORE_HIGH, ALU_MODE_AND),
+      tpr_set_ls_en(tpr_alu_mode(LOADSTORE_LOW, LOADSTORE_HIGH, ALU_MODE_OR),
                     1'b1, 1'b1, 1'b0),
       32'h0);
-    // Need tainted base address: load tainted addr into x10 via x11
     load_imm32(5'd11, DMEM_BASE);
-    emit(f_lw(5'd10, 5'd11, 12'h0));   // x10 = tainted addr (data_mem[0])
+    emit(f_lw(5'd10, 5'd11, 12'h0));   // x10 = tainted addr (data_mem[0]), tag 1
+    load_imm32(5'd28, tpr_set_ls_en(tpr_alu_mode(LOADSTORE_LOW, LOADSTORE_HIGH, ALU_MODE_AND),
+                                    1'b1, 1'b1, 1'b0));
+    emit(f_csrrw(CSRA_TPR, 5'd28, 5'd0));
     emit(f_lw(5'd12, 5'd10, 12'h0));   // load using tainted base from tainted mem
     emit(ECALL); do_reset();
     tag_mem[0] = 1'b1; data_mem[0] = DMEM_BASE + 4;  // x10 = valid tainted addr
@@ -1623,14 +1723,17 @@ module ibex_core_tb;
     if (`TAG_RF(12) === 1'b1) pass_t("O3 Load AND both=1 => tag=1");
     else                      fail_t("O3 Load AND both=1 => tag=1");
 
-    // O4: AND mode, addr tag=1 data tag=0 => result=0
+    // O4: AND mode, addr tag=1 data tag=0 => result=0 (pointer tainted as in O3)
     test_num++; pc_wr = BOOT_WORD;
     emit_preamble(
-      tpr_set_ls_en(tpr_alu_mode(LOADSTORE_LOW, LOADSTORE_HIGH, ALU_MODE_AND),
+      tpr_set_ls_en(tpr_alu_mode(LOADSTORE_LOW, LOADSTORE_HIGH, ALU_MODE_OR),
                     1'b1, 1'b1, 1'b0),
       32'h0);
     load_imm32(5'd11, DMEM_BASE);
     emit(f_lw(5'd10, 5'd11, 12'h0));
+    load_imm32(5'd28, tpr_set_ls_en(tpr_alu_mode(LOADSTORE_LOW, LOADSTORE_HIGH, ALU_MODE_AND),
+                                    1'b1, 1'b1, 1'b0));
+    emit(f_csrrw(CSRA_TPR, 5'd28, 5'd0));
     emit(f_lw(5'd12, 5'd10, 12'h0));
     emit(ECALL); do_reset();
     tag_mem[0] = 1'b1; data_mem[0] = DMEM_BASE + 4;
@@ -1644,43 +1747,47 @@ module ibex_core_tb;
   // -----------------------------------------------------------------------
   // Test group P: Store enable tag variants
   // -----------------------------------------------------------------------
-  task automatic store_enable_variant_tests();
-    // P1: Store with EN_DEST_ADDR=0, EN_SOURCE=1
-    // Tag should NOT propagate to shadow RAM because dest_addr enable is off
+  // Store tag rule: tag written to memory =
+  //   MODE(data_tag & EN_SOURCE(15), addr_tag & EN_DEST_ADDR(16)),
+  //   MODE = TPR[5:4]; OLD keeps the data tag, CLEAR gives 0.
+  // One store per test; x12 = data register, x10 = address register.
+  // data_t / addr_t select whether each is loaded from a tainted word.
+  // The data word is always loaded through a clean pointer under OR + EN_SOURCE
+  // (so its tag is data_t), then TPR switches to the policy under test.
+  task automatic store_rule_case(input string name, input logic [1:0] mode,
+                                 input logic en_src, en_dst, data_t, addr_t,
+                                 input logic exp);
     test_num++; pc_wr = BOOT_WORD;
-    emit_preamble(
-      tpr_set_ls_en(tpr_alu_mode(LOADSTORE_LOW, LOADSTORE_HIGH, ALU_MODE_OR),
-                    1'b1, 1'b1, 1'b0),  // en_dst_addr=0
-      32'h0);
-    load_imm32(5'd10, DMEM_BASE);
-    emit(f_lw(5'd12, 5'd10, 12'h0));
-    emit(f_sw(5'd12, 5'd10, 12'h4));
+    emit_preamble(tpr_ls_or(), 32'h0);              // loads: OR, data + addr tags
+    load_imm32(5'd11, DMEM_BASE);
+    emit(f_lw(5'd12, 5'd11, 12'h0));                // x12: data, tag = tag_mem[0]
+    emit(f_lw(5'd10, 5'd11, 12'h4));                // x10: pointer, tag = tag_mem[1]
+    load_imm32(5'd28, tpr_set_ls_en(tpr_alu_mode(LOADSTORE_LOW, LOADSTORE_HIGH, mode),
+                                    1'b1, en_src, en_dst));
+    emit(f_csrrw(CSRA_TPR, 5'd28, 5'd0));
+    emit(f_sw(5'd12, 5'd10, 12'h0));                // -> data_mem[3]
     emit(ECALL); do_reset();
-    tag_mem[0] = 1'b1; data_mem[0] = 32'hBEEF;
-    tag_mem[1] = 1'b0; data_mem[1] = 32'h0;
-    run_program(150);
-    // en_dst_addr=0 means the store tag output should be gated
-    // The exact behavior depends on riscv_enable_tag — is_store_o gates tag write
-    // With en_dest_addr=0, enable_a_o=0, so store tag won't propagate
-    if (tag_mem[1] === 1'b0) pass_t("P1 Store EN_DST_ADDR=0 tag not written");
-    else                     fail_t("P1 Store EN_DST_ADDR=0 tag not written");
+    tag_mem[0] = data_t; data_mem[0] = 32'h0000_BEEF;
+    tag_mem[1] = addr_t; data_mem[1] = DMEM_BASE + 12;
+    tag_mem[3] = ~exp;   data_mem[3] = 32'h0;       // start opposite to the expectation
+    run_program(200);
+    if (data_mem[3] == 32'h0000_BEEF && tag_mem[3] === exp && !exception_seen)
+         pass_t($sformatf("%s store tag=%b", name, exp));
+    else fail_t($sformatf("%s store tag (got %b exp %b, mem=%08h exc=%b)",
+                          name, tag_mem[3], exp, data_mem[3], exception_seen));
+  endtask
 
-    // P2: Store with EN_DEST_ADDR=1, EN_SOURCE=0
-    test_num++; pc_wr = BOOT_WORD;
-    emit_preamble(
-      tpr_set_ls_en(tpr_alu_mode(LOADSTORE_LOW, LOADSTORE_HIGH, ALU_MODE_OR),
-                    1'b1, 1'b0, 1'b1),  // en_src=0, en_dst_addr=1
-      32'h0);
-    load_imm32(5'd10, DMEM_BASE);
-    emit(f_lw(5'd12, 5'd10, 12'h0));
-    emit(f_sw(5'd12, 5'd10, 12'h4));
-    emit(ECALL); do_reset();
-    tag_mem[0] = 1'b1; data_mem[0] = 32'hCAFE;
-    tag_mem[1] = 1'b0; data_mem[1] = 32'h0;
-    run_program(150);
-    // en_source=0 in enable_tag means enable_b_o=0
-    // The data tag from x12 should be masked by enable_b
-    pass_t("P2 Store EN_SRC=0 EN_DST=1 variant exercised");
+  task automatic store_enable_variant_tests();
+    //               name                                 mode            src  dst  data addr exp
+    store_rule_case("P1 OR  EN_SRC=1 EN_DST=0, data tainted", ALU_MODE_OR,    1, 0,  1,  0,  1'b1);
+    store_rule_case("P2 OR  EN_SRC=0 EN_DST=1, data tainted", ALU_MODE_OR,    0, 1,  1,  0,  1'b0);
+    store_rule_case("P3 OR  EN_SRC=0 EN_DST=1, addr tainted", ALU_MODE_OR,    0, 1,  0,  1,  1'b1);
+    store_rule_case("P4 OR  EN_SRC=1 EN_DST=0, addr tainted", ALU_MODE_OR,    1, 0,  0,  1,  1'b0);
+    store_rule_case("P5 AND both enabled, both tainted",      ALU_MODE_AND,   1, 1,  1,  1,  1'b1);
+    store_rule_case("P6 AND both enabled, data only",         ALU_MODE_AND,   1, 1,  1,  0,  1'b0);
+    store_rule_case("P7 CLEAR, both tainted",                 ALU_MODE_CLEAR, 1, 1,  1,  1,  1'b0);
+    store_rule_case("P8 OLD keeps the data tag",              ALU_MODE_OLD,   0, 0,  1,  0,  1'b1);
+    store_rule_case("P9 OR  both enabled, clean",             ALU_MODE_OR,    1, 1,  0,  0,  1'b0);
   endtask
 
   // -----------------------------------------------------------------------
@@ -1858,7 +1965,7 @@ module ibex_core_tb;
     tcr_alu_tests();               // D: 13 tests
     tcr_branch_tests();            // E:  4 tests
     tcr_jump_tests();              // F:  2 tests
-    tcr_loadstore_tests();         // G:  4 tests
+    tcr_loadstore_tests();         // G:  7 tests
     execute_pc_test();             // H:  1 test
     csr_path_test();               // I:  1 test
     m_ext_tests();                 // J:  6 tests (4+1+1)
@@ -1869,7 +1976,7 @@ module ibex_core_tb;
     rtype_variant_tests();         // M:  4 tests (SRL/SRA/SLTU/SUB)
     store_lui_auipc_check_tests(); // N:  3 tests (STORE/LUI/AUIPC check)
     load_propagation_variant_tests(); // O: 4 tests (load prop variants)
-    store_enable_variant_tests();  // P:  2 tests (store enable variants)
+    store_enable_variant_tests();  // P:  9 tests (store tag rule)
     tag_rf_diversity_tests();      // Q:  2 tests (RF address diversity)
     both_tainted_tests();          // R:  3 tests (both sources tainted)
     jal_test();                    // S:  1 test  (JAL instruction)

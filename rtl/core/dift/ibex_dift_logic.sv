@@ -43,12 +43,16 @@ module ibex_dift_logic import ibex_pkg::*; (
       //result_tag_o = result_tag_o | instr_tag_i;
     //end
 
-    // Check logic: exception if policy bit set AND tag is present
-    // Loads bypass this — their check is done by riscv_load_check at core level
+    // Check logic: exception if policy bit set AND tag is present.
+    // Loads: only the address check (operand A = base register rs1, bit 21)
+    // is done here; the loaded-data checks are done by riscv_load_check on
+    // the response, because the data tag is not known yet.
     if (~is_load_i) begin
       exception_o = (operand_a_tag_i & check_s1_i) ||
                     (operand_b_tag_i & check_s2_i) ||
                     (result_tag_o    & check_d_i);
+    end else begin
+      exception_o = operand_a_tag_i & check_s1_i;
     end
   end
 /*

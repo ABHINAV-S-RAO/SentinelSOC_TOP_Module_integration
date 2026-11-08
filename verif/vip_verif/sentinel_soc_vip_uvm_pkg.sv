@@ -73,7 +73,29 @@ package sentinel_soc_vip_uvm_pkg;
     endfunction
 
     function void build_phase(uvm_phase phase);
+      JtagControllerDeviceAgentConfig jtag_ctrl_default_cfg;
+      JtagTargetDeviceAgentConfig     jtag_tgt_default_cfg;
       super.build_phase(phase);
+
+      // Default JTAG VIP settings for every test. The JTAG controller BFM is
+      // always present in the top, and its bound assertion checker fetches
+      // this config at start of simulation -- without it, every non-JTAG test
+      // dies with "FAILED TO GET CONFIG". sentinel_soc_vip_jtag_test sets its
+      // own config after this (later set wins).
+      jtag_ctrl_default_cfg = JtagControllerDeviceAgentConfig::type_id::create("jtagControllerDeviceAgentConfig");
+      jtag_ctrl_default_cfg.is_active             = UVM_PASSIVE;
+      jtag_ctrl_default_cfg.hasCoverage           = 0;
+      jtag_ctrl_default_cfg.jtagInstructionWidth  = instructionWidth5Bit;
+      jtag_ctrl_default_cfg.jtagTestVectorWidth   = testVectorWidth32Bit;
+      jtag_ctrl_default_cfg.jtagInstructionOpcode = userDefinedRegister;
+      jtag_tgt_default_cfg = JtagTargetDeviceAgentConfig::type_id::create("jtagTargetDeviceAgentConfig");
+      jtag_tgt_default_cfg.is_active             = UVM_PASSIVE;
+      jtag_tgt_default_cfg.hasCoverage           = 0;
+      jtag_tgt_default_cfg.jtagInstructionWidth  = instructionWidth5Bit;
+      jtag_tgt_default_cfg.jtagTestVectorWidth   = testVectorWidth32Bit;
+      jtag_tgt_default_cfg.jtagInstructionOpcode = userDefinedRegister;
+      uvm_config_db#(JtagControllerDeviceAgentConfig)::set(null, "*", "jtagControllerDeviceAgentConfig", jtag_ctrl_default_cfg);
+      uvm_config_db#(JtagTargetDeviceAgentConfig)::set(null, "*", "jtagTargetDeviceAgentConfig", jtag_tgt_default_cfg);
 
       // Get Interfaces
       if (!uvm_config_db#(virtual UartIf)::get(this, "", "vif_uart", vif_uart)) begin

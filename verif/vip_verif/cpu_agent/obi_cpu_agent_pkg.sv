@@ -82,9 +82,13 @@ package obi_cpu_agent_pkg;
         // updates happen at the same posedge the driver would be
         // checking.  Negedge sampling guarantees all NBA effects have
         // settled and the combinational outputs are stable.
+        // The first check is at THIS negedge (the one req was dropped on):
+        // a slave may answer in the cycle right after gnt (final_soc_top's
+        // APB path does), and that one-cycle rvalid pulse would be missed
+        // if the first look were a full cycle later.
         begin : rvalid_wait
           int unsigned t = 0;
-          do begin
+          while (vif.rvalid !== 1'b1) begin
             @(negedge vif.clk_i);
             t++;
 `ifdef DEBUG_BUS_TRACE
@@ -102,7 +106,7 @@ package obi_cpu_agent_pkg;
               $display("[OBI_DRV] FATAL: rvalid never came for addr=0x%08h after %0d cycles", req.addr, t);
               `uvm_fatal("OBI_DRV", "rvalid TIMEOUT - check APB bridge / address decode")
             end
-          end while (vif.rvalid !== 1'b1);
+          end
         end
 
         `uvm_info("OBI_DRV", "Got rvalid==1, finishing item", UVM_LOW)

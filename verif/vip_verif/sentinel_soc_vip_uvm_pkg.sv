@@ -1115,4 +1115,9 @@ endclass
     endtask
   endclass
 
+  // ---------------------------------------------------------------------------
+  // Checklist tests (one file each, verif/vip_verif/tests/)
+  // ---------------------------------------------------------------------------
+  `include "soc_memmap_test.sv"
+
 endpackage

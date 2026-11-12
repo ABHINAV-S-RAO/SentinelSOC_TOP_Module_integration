@@ -8,12 +8,14 @@ package obi_cpu_agent_pkg;
     rand logic [31:0] data;
     rand logic        we;
     rand logic [3:0]  be;
+    logic             err;   // response: bus error (filled in by the driver)
 
     `uvm_object_utils_begin(obi_seq_item)
       `uvm_field_int(addr, UVM_ALL_ON)
       `uvm_field_int(data, UVM_ALL_ON)
       `uvm_field_int(we, UVM_ALL_ON)
       `uvm_field_int(be, UVM_ALL_ON)
+      `uvm_field_int(err, UVM_ALL_ON | UVM_NOCOMPARE)
     `uvm_object_utils_end
 
     function new(string name = "obi_seq_item");
@@ -111,6 +113,7 @@ package obi_cpu_agent_pkg;
 
         `uvm_info("OBI_DRV", "Got rvalid==1, finishing item", UVM_LOW)
         if (!req.we) req.data = vif.rdata;
+        req.err = vif.err;
         seq_item_port.item_done();
       end
     endtask

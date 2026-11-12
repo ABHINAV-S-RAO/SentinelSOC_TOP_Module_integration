@@ -229,6 +229,7 @@ verif/vip/jtag_avip/src/hdlTop/jtagTargetDeviceAgentBfm/JtagTargetDeviceAssertio
 # New Dedicated VIP Testbench
 # -----------------------------------------------------------------------------
 +incdir+verif/vip_verif/gpio_vip
++incdir+verif/vip_verif/tests
 verif/vip_verif/cpu_agent/obi_if.sv
 verif/vip_verif/cpu_agent/obi_cpu_agent_pkg.sv
 

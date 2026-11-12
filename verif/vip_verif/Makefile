@@ -14,7 +14,7 @@ XRUN_OPTS = -uvm -access +rw +define+NO_CORE -top sentinel_soc_vip_uvm_top -time
 # The Master File List (You can edit this .f file to add/remove VIPs to save memory)
 FILE_LIST = verif/vip_verif/sentinel_soc_vip_files.f
 
-.PHONY: all clean test_reg test_uart test_spi test_qspi test_gpio test_jtag test_timer
+.PHONY: all clean test_reg test_uart test_spi test_qspi test_gpio test_jtag test_timer test_memmap
 
 all: test_reg
 
@@ -49,6 +49,10 @@ test_jtag:
 # Timer Interrupt Test (Uses Timer IRQ IF)
 test_timer:
 	cd ../.. && $(XRUN) -f $(FILE_LIST) $(XRUN_OPTS) +UVM_TESTNAME=sentinel_soc_vip_timer_test
+
+# Memory-map decode test (checklist 6.7)
+test_memmap:
+	cd ../.. && $(XRUN) -f $(FILE_LIST) $(XRUN_OPTS) +UVM_TESTNAME=sentinel_soc_vip_memmap_test
 
 # -----------------------------------------------------------------------------
 # Cleanup

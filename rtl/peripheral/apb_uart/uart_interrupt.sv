@@ -60,10 +60,14 @@ module uart_interrupt
     always_comb
     begin
 
-        if (clr_int_i == 4'b0)
-            iir_n = iir_q;
+        // An acknowledge (IIR / LSR / RBR read) of the pending cause returns to
+        // "no interrupt" (4'b0001). The old iir_q & ~clr_int_i left 4'b0000,
+        // whose bit 0 = 0 kept interrupt_o (= ~iir_q[0]) high for ever. A still-
+        // active condition re-raises below, as before.
+        if (clr_int_i != 4'b0 && iir_q == clr_int_i)
+            iir_n = 4'b0001;
         else
-            iir_n = iir_q & ~(clr_int_i);
+            iir_n = iir_q;
 
         // Receiver line status interrupt on: Overrun error, parity error, framing error or break interrupt
         if (IER_i[2] & error_i)

@@ -178,6 +178,8 @@ class soc_irq_seq extends uvm_sequence #(obi_seq_item);
     check(vif_irq.irq_external === 1'b0, $sformatf("%s: disabled source does not reach the core (enable masking)", n));
 
     wr(PLIC_EN, 32'h1 << id);
+    rd(PLIC_EN, d);
+    check(d[12:0] == 13'(32'h1 << id), $sformatf("%s: enable register reads back bit %0d (enable=%03h)", n, id, d[12:0]));
     cycles(5);
     check(vif_irq.irq_external === 1'b1, $sformatf("%s: enabled -> irq_external to the core", n));
 

@@ -107,8 +107,10 @@ module plic_top #(
     .prio_o(prio_o),
     .prio_we_o(prio_we_o),
     .prio_re_o(), // don't care
-    // source zero is always zero
-    .ip_i({1'b0, ip}),
+    // source zero is always zero: bit n = source n (RISC-V PLIC spec), so the
+    // constant 0 is bit 0. It used to be concatenated at the top, which made
+    // the pending read-back report source n at bit n-1.
+    .ip_i({ip, 1'b0}),
     .ip_re_o(), // don't care
     .ie_i(ie_i),
     .ie_o(ie_o),
@@ -129,7 +131,7 @@ module plic_top #(
   assign prio_i[0] = '0;
 
   for (genvar i = 0; i < N_TARGET; i++) begin
-    assign ie_i[i] = {1'b0, ie_q[i]};
+    assign ie_i[i] = {ie_q[i], 1'b0};   // bit n = source n, matching the write side (ie_o[N_SOURCE:1])
   end
 
   for (genvar i = 1; i < N_SOURCE + 1; i++) begin

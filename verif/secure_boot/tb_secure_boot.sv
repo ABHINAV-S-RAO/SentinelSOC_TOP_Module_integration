@@ -37,7 +37,7 @@ module tb_secure_boot;
     .req_i(req), .we_i(we), .be_i(4'hF), .addr_i(addr), .wdata_i(wdata),
     .gnt_o(), .rvalid_o(rvalid), .rdata_o(rdata), .err_o(),
     .ver_req_o(vreq), .ver_addr_o(vaddr), .ver_gnt_i(vgnt), .ver_rvalid_i(vrv), .ver_rdata_i(vrdata),
-    .isram_write_i(1'b0), .fetch_addr_i(faddr), .fetch_accept_i(facc), .fetch_ok_o(fok),
+    .isram_write_i(1'b0), .fetch_addr_i(faddr), .fetch_half_i(1'b0), .fetch_accept_i(facc), .fetch_ok_o(fok),
     .verified_o(verified), .fw_entered_o(entered), .verify_started_o(started));
 
   logic [31:0]  pk [8];

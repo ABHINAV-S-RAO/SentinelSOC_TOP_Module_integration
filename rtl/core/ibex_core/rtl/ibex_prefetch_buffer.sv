@@ -31,6 +31,7 @@ module ibex_prefetch_buffer #(
   output logic        instr_req_o,
   input  logic        instr_gnt_i,
   output logic [31:0] instr_addr_o,
+  output logic        instr_addr_half_o, // SoC: bit 1 of the real fetch target (bus address is word-aligned)
   input  logic [31:0] instr_rdata_i,
   input  logic        instr_err_i,
   input  logic        instr_rvalid_i,
@@ -260,5 +261,9 @@ module ibex_prefetch_buffer #(
 
   assign instr_req_o  = valid_req;
   assign instr_addr_o = instr_addr_w_aligned;
+  // SoC secure boot: the bus address drops bit 1, so a jump to a half-word
+  // address (legal with compressed instructions) looks like the aligned word.
+  // Export the real bit so the entry check can refuse ENTRY+2.
+  assign instr_addr_half_o = instr_addr[1];
 
 endmodule

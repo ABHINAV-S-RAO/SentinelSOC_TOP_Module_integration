@@ -40,6 +40,8 @@
 //              no boot_done, watchdog -> recovery
 //     F-JOFF   bootrom verifies, then jumps to ENTRY+8 -> single entry
 //              refuses it, no boot_done, watchdog -> recovery
+//     F-JOFF2  same, but ENTRY+2 (a half-word target: the fetch bus shows the
+//              aligned word ENTRY, the gate must still refuse it)
 //     F-ISRW   bootrom writes ISRAM after VERIFY start -> bus error (lock),
 //              image intact, boots normally
 //     F-TAMPER tampered image, good bootrom -> rejected, watchdog -> recovery
@@ -1441,6 +1443,15 @@ module secure_boot_dbg_tb;
     check(ok && `SB.verified_q === 1'b1 && mon_bd_rise == 0 && u_dsram.mem[W_MCAUSE] == 32'h1,
           $sformatf("verified image entered at ENTRY+8 refused (single entry), no boot_done, watchdog -> recovery (verified=%0b)",
                     `SB.verified_q));
+
+    // F-JOFF2: verified, but the bootrom jumps to ENTRY+2. Ibex fetches the
+    // aligned word (bus address = ENTRY), so only the real target's bit 1
+    // tells it apart from a correct entry.
+    por("F-JOFF2", 1'b0, 1'b0, 1'b1, 1'b1, 1'b0, 1'b0, 1'b0, 2);
+    wait_recovery(ok);
+    check(ok && `SB.verified_q === 1'b1 && mon_bd_rise == 0 && u_dsram.mem[W_MCAUSE] == 32'h1,
+          $sformatf("verified image entered at ENTRY+2 (mid-instruction) refused, no boot_done, watchdog -> recovery (verified=%0b mcause=%0d)",
+                    `SB.verified_q, u_dsram.mem[W_MCAUSE]));
 
     // F-ISRW: bootrom writes ISRAM after VERIFY start
     por("F-ISRW", 1'b0, 1'b0, 1'b1, 1'b1, 1'b0, 1'b0, 1'b1);

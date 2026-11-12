@@ -90,6 +90,7 @@ module ibex_core import ibex_pkg::*; #(
   input  logic                         instr_gnt_i,
   input  logic                         instr_rvalid_i,
   output logic [31:0]                  instr_addr_o,
+  output logic                         instr_addr_half_o,   // SoC: bit 1 of the real fetch target
   input  logic [MemDataWidth-1:0]      instr_rdata_i,
   input  logic                         instr_err_i,
 
@@ -668,6 +669,7 @@ module ibex_core import ibex_pkg::*; #(
     // instruction cache interface
     .instr_req_o       (instr_req_o),
     .instr_addr_o      (instr_addr_o),
+    .instr_addr_half_o (instr_addr_half_o),
     .instr_gnt_i       (instr_gnt_i),
     .instr_rvalid_i    (instr_rvalid_i),
     .instr_rdata_i     (instr_rdata_i),

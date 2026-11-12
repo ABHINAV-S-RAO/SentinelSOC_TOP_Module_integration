@@ -112,6 +112,7 @@ module final_soc_top #(
   // Core Instruction OBI (now internal-only -- routes through soc_addr_decode)
   logic        instr_req_int, instr_gnt_int, instr_rvalid_int, instr_err_int;
   logic [31:0] instr_addr_int, instr_rdata_int;
+  logic        instr_addr_half_int;
  
   // Core Data OBI
   logic        core_data_req, core_data_gnt, core_data_rvalid;
@@ -224,6 +225,7 @@ module final_soc_top #(
     .instr_gnt_i          ( instr_gnt_int ),
     .instr_rvalid_i       ( instr_rvalid_int ),
     .instr_addr_o         ( instr_addr_int ),
+    .instr_addr_half_o    ( instr_addr_half_int ),  // real fetch target bit 1 (secure-boot entry check)
     .instr_rdata_i        ( instr_rdata_int ),
     .instr_rdata_intg_i   ( 7'h0 ),          // integrity checking disabled (SecureIbex=0)
     .instr_err_i          ( instr_err_int ),
@@ -470,6 +472,7 @@ module final_soc_top #(
       .ver_rdata_i   ( ver_rdata       ),
       .isram_write_i ( isram_req_o & isram_we_o & isram_gnt_i ),
       .fetch_addr_i  ( instr_addr_int  ),
+      .fetch_half_i  ( instr_addr_half_int ),
       .fetch_accept_i( instr_req_int & instr_gnt_int ),
       .fetch_ok_o    ( fw_fetch_ok     ),
       .verified_o    ( fw_verified     ),

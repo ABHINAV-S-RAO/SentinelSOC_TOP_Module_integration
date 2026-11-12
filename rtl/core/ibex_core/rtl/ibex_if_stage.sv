@@ -40,6 +40,7 @@ module ibex_if_stage import ibex_pkg::*; #(
   // instruction cache interface
   output logic                        instr_req_o,
   output logic [31:0]                 instr_addr_o,
+  output logic                        instr_addr_half_o,  // SoC: bit 1 of the real fetch target
   input  logic                        instr_gnt_i,
   input  logic                        instr_rvalid_i,
   input  logic [MemDataWidth-1:0]     instr_rdata_i,
@@ -360,6 +361,9 @@ module ibex_if_stage import ibex_pkg::*; #(
         .busy_o              ( prefetch_busy              ),
         .ecc_error_o         ( icache_ecc_error_o         )
     );
+    // ICache fetches whole lines; the SoC builds Ibex with ICache=0 and uses
+    // the prefetch buffer's instr_addr_half_o for the secure-boot entry check.
+    assign instr_addr_half_o = 1'b0;
   end else begin : gen_prefetch_buffer
     // prefetch buffer, caches a fixed number of instructions
     ibex_prefetch_buffer #(
@@ -382,6 +386,7 @@ module ibex_if_stage import ibex_pkg::*; #(
 
         .instr_req_o         ( instr_req_o                ),
         .instr_addr_o        ( instr_addr_o               ),
+        .instr_addr_half_o   ( instr_addr_half_o          ),
         .instr_gnt_i         ( instr_gnt_i                ),
         .instr_rvalid_i      ( instr_rvalid_i             ),
         .instr_rdata_i       ( instr_rdata_i[31:0]        ),

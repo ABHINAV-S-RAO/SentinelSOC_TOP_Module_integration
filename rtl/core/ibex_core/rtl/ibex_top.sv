@@ -79,6 +79,7 @@ module ibex_top import ibex_pkg::*; #(
   input  logic                                                         instr_gnt_i,
   input  logic                                                         instr_rvalid_i,
   output logic [31:0]                                                  instr_addr_o,
+  output logic                                                         instr_addr_half_o, // SoC: bit 1 of the real fetch target
   input  logic [31:0]                                                  instr_rdata_i,
   input  logic [6:0]                                                   instr_rdata_intg_i,
   input  logic                                                         instr_err_i,
@@ -370,6 +371,7 @@ module ibex_top import ibex_pkg::*; #(
     .instr_gnt_i,
     .instr_rvalid_i,
     .instr_addr_o,
+    .instr_addr_half_o,
     .instr_rdata_i(instr_rdata_core),
     .instr_err_i,
 

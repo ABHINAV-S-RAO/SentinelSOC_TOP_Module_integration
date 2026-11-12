@@ -1119,5 +1119,6 @@ endclass
   // Checklist tests (one file each, verif/vip_verif/tests/)
   // ---------------------------------------------------------------------------
   `include "soc_memmap_test.sv"
+  `include "soc_irq_test.sv"
 
 endpackage

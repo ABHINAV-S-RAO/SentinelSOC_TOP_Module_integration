@@ -100,6 +100,9 @@ module sentinel_soc_vip_uvm_top;
   // Timer IRQ
   timer_irq_if u_timer_if(clk_i, rst_ni);
 
+  // Interrupt lines into the core (interrupt-source test)
+  irq_mon_if u_irq_if(clk_i, rst_ni);
+
   // ---------------------------------------------------------------------------
   // DUT pins
   // ---------------------------------------------------------------------------
@@ -318,6 +321,15 @@ module sentinel_soc_vip_uvm_top;
   assign u_timer_if.irq_timer_raw = u_dut.timer_irqs;
 
   // ---------------------------------------------------------------------------
+  // Interrupt monitor: PLIC output, CLINT outputs and the PLIC source inputs
+  // ---------------------------------------------------------------------------
+  assign u_irq_if.irq_external = u_dut.irq_external;
+  assign u_irq_if.irq_mtimer   = u_dut.irq_mtimer;
+  assign u_irq_if.irq_msoft    = u_dut.irq_msoft;
+  assign u_irq_if.plic_src     = {4'h0, u_dut.irq_dift, 1'b0, 1'b0, u_dut.irq_timer_periph,
+                                  u_dut.irq_gpio, u_dut.irq_qspi, u_dut.irq_spi2, u_dut.irq_uart, 1'b0};
+
+  // ---------------------------------------------------------------------------
   // UVM
   // ---------------------------------------------------------------------------
   initial begin
@@ -326,6 +338,7 @@ module sentinel_soc_vip_uvm_top;
     uvm_config_db#(virtual obi_if)::set(null, "*", "vif_obi", u_obi_if);
     uvm_config_db#(virtual gpio_if)::set(null, "*", "vif_gpio", u_gpio_if);
     uvm_config_db#(virtual timer_irq_if)::set(null, "*", "vif_timer", u_timer_if);
+    uvm_config_db#(virtual irq_mon_if)::set(null, "*", "vif_irq", u_irq_if);
     uvm_config_db#(virtual SpiInterface)::set(null, "*", "vif_spi", u_spi_if);
     uvm_config_db#(virtual SpiMasterMonitorBFM)::set(null, "*", "SpiMasterMonitorBFM", u_spi_master_monitor_bfm);
     uvm_config_db#(virtual JtagIf)::set(null, "*", "vif_jtag", u_jtag_if);

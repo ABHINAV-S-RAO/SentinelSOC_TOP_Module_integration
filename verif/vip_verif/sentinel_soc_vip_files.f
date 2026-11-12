@@ -239,6 +239,7 @@ verif/vip_verif/gpio_vip/gpio_if.sv
 verif/vip_verif/gpio_vip/GpioEnvPkg.sv
 
 verif/vip_verif/timer_vip/timer_irq_if.sv
+verif/vip_verif/tests/irq_mon_if.sv
 
 verif/soc_verif/sentinel_soc_if.sv
 verif/vip_verif/sentinel_soc_vip_uvm_pkg.sv

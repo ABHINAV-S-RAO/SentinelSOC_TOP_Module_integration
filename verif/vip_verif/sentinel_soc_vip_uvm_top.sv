@@ -63,11 +63,20 @@ module sentinel_soc_vip_uvm_top;
 
   SpiSlaveAgentBFM  u_spi_slave_agent_bfm  (.spiInterface(u_spi_if));
 
-  // JTAG clock (25 MHz, period 40 ns)
+  // JTAG clock (25 MHz, period 40 ns). It runs only in the JTAG test: the
+  // JTAG AVIP's bound checker (JtagControllerDeviceAssertions.sv) $displays a
+  // line on every TCK edge, which floods every other test's log with
+  // "THE WIDTH OF ControllerDevice WIDTH IS 0 ..." (over a million lines in
+  // the UART test). With TCK held low the TAP simply idles.
+  // +JTAG_TCK forces the clock on in any test.
   logic jtag_tck;
   initial begin
+    string tn;
+    bit    tck_on;
+    tck_on = $test$plusargs("JTAG_TCK") ||
+             ($value$plusargs("UVM_TESTNAME=%s", tn) && tn == "sentinel_soc_vip_jtag_test");
     jtag_tck = 0;
-    forever #20 jtag_tck = ~jtag_tck;
+    if (tck_on) forever #20 jtag_tck = ~jtag_tck;
   end
 
   // JTAG AVIP

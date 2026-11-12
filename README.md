@@ -9,7 +9,8 @@ It has three security features:
 - **JTAG recovery.** If the flash is empty or corrupt, a debugger can load a signed image over JTAG and boot it. The image goes through **the same signature check**, so the debugger cannot bypass secure boot.
 
 <p align="center">
-  <img src="docs/soc_architecture.png" alt="SentinelSoC architecture" width="800">
+  <img width="615" height="493" alt="image" src="https://github.com/user-attachments/assets/f762f350-c4e0-42fe-96f6-de41acc133c9" />
+
 </p>
 
 ---
